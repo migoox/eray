@@ -231,7 +231,7 @@ struct Vec {
 
   auto length() const { return length(std::make_index_sequence<N>{}, data); }
 
-  Vec normalized() const { return *this / this->length(); }
+  Vec normalize() const { return *this / this->length(); }
 
   Vec abs() const {
     auto v = Vec(*this);
@@ -403,8 +403,8 @@ constexpr Vec<3, T> cross(const Vec<3, T>& lhs, const Vec<3, T>& rhs) {
  * @return Vec<N, T>
  */
 template <std::size_t N, CPrimitive T>
-constexpr Vec<N, T> normalized(const Vec<N, T>& vec) {
-  return vec.normalized();
+constexpr Vec<N, T> normalize(const Vec<N, T>& vec) {
+  return vec.normalize();
 }
 
 /**

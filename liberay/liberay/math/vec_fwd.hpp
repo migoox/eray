@@ -8,20 +8,28 @@ template <std::size_t N, CPrimitive T>
   requires(N >= 1)
 struct Vec;
 
-using Vec2f = Vec<2, float>;
-using Vec3f = Vec<3, float>;
-using Vec4f = Vec<4, float>;
+template <CPrimitive T>
+using Vec2 = Vec<2, T>;
 
-using Vec2d = Vec<2, double>;
-using Vec3d = Vec<3, double>;
-using Vec4d = Vec<4, double>;
+template <CPrimitive T>
+using Vec3 = Vec<3, T>;
 
-using Vec2i = Vec<2, int>;
-using Vec3i = Vec<3, int>;
-using Vec4i = Vec<4, int>;
+template <CPrimitive T>
+using Vec4 = Vec<4, T>;
 
-using Vec2u = Vec<2, uint32_t>;
-using Vec3u = Vec<3, uint32_t>;
-using Vec4u = Vec<4, uint32_t>;
+using Vec2i = Vec2<int>;
+using Vec2u = Vec2<uint32_t>;
+using Vec2f = Vec2<float>;
+using Vec2d = Vec2<double>;
+
+using Vec3i = Vec3<int>;
+using Vec3u = Vec3<uint32_t>;
+using Vec3f = Vec3<float>;
+using Vec3d = Vec3<double>;
+
+using Vec4i = Vec4<int>;
+using Vec4u = Vec4<uint32_t>;
+using Vec4f = Vec4<float>;
+using Vec4d = Vec4<double>;
 
 }  // namespace eray::math

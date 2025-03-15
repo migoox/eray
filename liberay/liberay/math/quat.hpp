@@ -221,11 +221,11 @@ struct Quat {
   // OPERATOR / and /= ///////////////////////////////////////////////////////////////////////////////
 
   [[nodiscard]] constexpr friend Quat operator/(Quat lhs, T rhs) {
-    rhs.w /= lhs;
-    rhs.x /= lhs;
-    rhs.y /= lhs;
-    rhs.z /= lhs;
-    return rhs;
+    lhs.w /= rhs;
+    lhs.x /= rhs;
+    lhs.y /= rhs;
+    lhs.z /= rhs;
+    return lhs;
   }
 
   [[nodiscard]] constexpr friend Quat operator/(T lhs, Quat rhs) { return rhs / lhs; }
@@ -245,21 +245,21 @@ struct Quat {
    *
    * @return constexpr T
    */
-  [[nodiscard]] constexpr T real() { return w; }
+  [[nodiscard]] constexpr T real() const { return w; }
 
   /**
    * @brief Returns an imaginary part of the quaternion as a 3D vector.
    *
    * @return constexpr Vec<3, T>
    */
-  [[nodiscard]] constexpr Vec<3, T> imaginary() { return Vec<3, T>{x, y, z}; }
+  [[nodiscard]] constexpr Vec<3, T> imaginary() const { return Vec<3, T>{x, y, z}; }
 
   /**
    * @brief Computes quaternion norm.
    *
    * @return constexpr T
    */
-  [[nodiscard]] constexpr T norm() { return std::sqrt(w * w + x * x + y * y + z * z); }
+  [[nodiscard]] constexpr T norm() const { return std::sqrt(w * w + x * x + y * y + z * z); }
 
   /**
    * @brief Computes conjugate of the quaternion. For unit quaternions (e.g. a rotation quaternions) it's faster
@@ -267,7 +267,7 @@ struct Quat {
    *
    * @return constexpr Quat
    */
-  [[nodiscard]] constexpr Quat conjugate() { return Quat{w, -x, -y, -z}; }
+  [[nodiscard]] constexpr Quat conjugate() const { return Quat{w, -x, -y, -z}; }
 
   /**
    * @brief Computes an inverse of the quaternion. Note that if the quaternion is an unit quaternion (e.g. a rotation
@@ -275,7 +275,9 @@ struct Quat {
    *
    * @return constexpr Quat
    */
-  [[nodiscard]] constexpr Quat inverse() { return conjugate() / norm(); }
+  [[nodiscard]] constexpr Quat inverse() const { return conjugate() / norm(); }
+
+  [[nodiscard]] constexpr Quat normalize() const { return *this / norm(); }
 
   /**
    * @brief Returns an affine 3D rotation matrix created from unit quaternion.
@@ -349,6 +351,11 @@ template <CFloatingPoint T>
 template <CFloatingPoint T>
 [[nodiscard]] constexpr Quat<T> inverse(const Quat<T>& unit_quat) {
   return unit_quat.inverse();
+}
+
+template <CFloatingPoint T>
+[[nodiscard]] constexpr Quat<T> normalize(const Quat<T>& quat) {
+  return quat.normalize();
 }
 
 /**
