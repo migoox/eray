@@ -7,4 +7,4 @@
 - `driver`: ships rendering API objects for OpenGL and in the future Direct3D11,
 - `res`: resource system based on handles.
 
-The main goal of the library is to serve me as a framework for building computer graphics applications while also providing an opportunity to learn about engine programming.
+The main goal of the library is to serve me as a framework for building computer graphics applications while also providing me an opportunity to learn about engine programming.
