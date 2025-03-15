@@ -97,13 +97,13 @@ struct Transform3 final {
     mark_dirty();
   }
 
-  const float& local_scale() const { return scale_; }
+  const Vec3<T>& local_scale() const { return scale_; }
 
-  float& local_scale() { return scale_; }
+  Vec3<T>& local_scale() { return scale_; }
 
-  float scale() const { return parent_.has_value() ? parent().scale() * scale_ : scale_; }
+  Vec3<T> scale() const { return parent_.has_value() ? parent().scale() * scale_ : scale_; }
 
-  void set_local_scale(float scale) {
+  void set_local_scale(Vec3<T> scale) {
     scale_ = scale;
     mark_dirty();
   }
