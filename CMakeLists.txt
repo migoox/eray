@@ -5,7 +5,7 @@ include(cmake/find_repo_version.cmake)
 find_repo_version(VERSION IS_STABLE)
 
 project(
-  resin
+  eray 
   DESCRIPTION "Cross-platform rendering library"
   LANGUAGES CXX C
   VERSION ${VERSION})
