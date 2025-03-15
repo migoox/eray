@@ -1,7 +1,7 @@
 # eray
 
 `eray` is a cross-platform rendering library written in C++23, which consists of the following modules:
-- `os`: provides operating system abstraction, allows for window creation and it's management (currently only GLFW is supported), provides a compile-time window event system,  
+- `os`: provides operating system abstraction, allows for window creation and it's management (currently, only GLFW is supported), provides a compile-time window event system,  
 - `math`: vectors, matrices, quaternions and more, greatly influenced by [glm](https://github.com/g-truc/glm),
 - `util`: utilities used among the codebase, e.g. logger, enum mapper, 
 - `driver`: ships rendering API objects for OpenGL and in the future Direct3D11,
