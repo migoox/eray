@@ -178,7 +178,7 @@ struct Mat {
    * @brief Returns a transposition of the matrix.
    *
    */
-  constexpr Mat<N, M, T> transposed() const {
+  constexpr Mat<N, M, T> transpose() const {
     auto result = Mat<N, M, T>();
     for (int i = 0; i < M; ++i) {
       for (int j = 0; j < N; ++j) {
@@ -246,9 +246,9 @@ struct Mat {
   static constexpr Mat<M, K, T> mult(const Mat& lhs, const Mat<N, K, T>& rhs) {
     // TODO(migoox): optimize this, especially for 4x4 matrices (maybe some sort of SIMD operation?)
     auto result = Mat<M, K, T>();
-    for (int i = 0; i < M; ++i) {
-      for (int j = 0; j < K; ++j) {
-        for (int k = 0; k < N; ++k) {
+    for (std::size_t i = 0; i < M; ++i) {
+      for (std::size_t j = 0; j < K; ++j) {
+        for (std::size_t k = 0; k < N; ++k) {
           result[j][i] += lhs[k][i] * rhs[j][k];
         }
       }
@@ -299,7 +299,7 @@ struct Mat {
  */
 template <std::size_t M, std::size_t N, CPrimitive T>
 constexpr Mat<N, M, T> transpose(const Mat<M, N, T>& mat) {
-  return mat.transposed();
+  return mat.transpose();
 }
 
 /**

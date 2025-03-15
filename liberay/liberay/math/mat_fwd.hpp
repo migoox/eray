@@ -14,13 +14,22 @@ namespace eray::math {
 template <std::size_t M, std::size_t N, CFloatingPoint T>
 struct Mat;
 
-using Mat2f = Mat<2, 2, float>;
-using Mat2d = Mat<2, 2, double>;
+template <CFloatingPoint T>
+using Mat2 = Mat<2, 2, T>;
 
-using Mat3f = Mat<3, 3, float>;
-using Mat3d = Mat<3, 3, double>;
+template <CFloatingPoint T>
+using Mat3 = Mat<3, 3, T>;
 
-using Mat4f = Mat<4, 4, float>;
-using Mat4d = Mat<4, 4, double>;
+template <CFloatingPoint T>
+using Mat4 = Mat<4, 4, T>;
+
+using Mat2f = Mat2<float>;
+using Mat2d = Mat2<double>;
+
+using Mat3f = Mat3<float>;
+using Mat3d = Mat3<double>;
+
+using Mat4f = Mat4<float>;
+using Mat4d = Mat4<double>;
 
 }  // namespace eray::math
