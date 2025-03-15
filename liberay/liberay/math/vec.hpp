@@ -6,7 +6,6 @@
 #include <numbers>
 #include <utility>
 
-
 #ifdef _MSC_VER
 #define ERAY_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
 #else
@@ -453,22 +452,22 @@ constexpr T distance(const Vec<N, T>& lhs, const Vec<N, T>& rhs) {
 
 template <CFloatingPoint T>
 [[nodiscard]] T radians(T deg) {
-  return deg / static_cast<T>(180) * std::numbers::pi;
+  return deg / static_cast<T>(180) * std::numbers::pi_v<T>;
 }
 
 template <CFloatingPoint T, std::size_t N>
 [[nodiscard]] Vec<N, T> radians(const Vec<N, T>& deg) {
-  return deg / static_cast<T>(180) * std::numbers::pi;
+  return deg / static_cast<T>(180) * std::numbers::pi_v<T>;
 }
 
 template <CFloatingPoint T>
 [[nodiscard]] T degrees(T radians) {
-  return radians * static_cast<T>(180) / std::numbers::pi;
+  return radians * static_cast<T>(180) / std::numbers::pi_v<T>;
 }
 
 template <CFloatingPoint T, std::size_t N>
 [[nodiscard]] Vec<N, T> degrees(const Vec<N, T>& radians) {
-  return radians * static_cast<T>(180) / std::numbers::pi;
+  return radians * static_cast<T>(180) / std::numbers::pi_v<T>;
 }
 
 template <CFloatingPoint T, std::size_t N>
