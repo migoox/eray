@@ -86,6 +86,17 @@ struct Quat {
   }
 
   /**
+   * @brief Creates an unit quaternion that represents a rotation from the provided euler angles. The X rotation
+   * is applied first.
+   *
+   * @param angles
+   * @return constexpr Quat
+   */
+  constexpr static Quat from_euler_xyz(const Vec<3, T>& angles) {
+    return (rotation_z(angles.x) * rotation_y(angles.x) * rotation_x(angles.x)).normalize();
+  }
+
+  /**
    * @brief Creates a quaternion that represents a 3D point. The point is converted from homogeneous to the
    * cartesian coordinates, by dividing each of the components by the 4th component.
    *
@@ -190,6 +201,11 @@ struct Quat {
   }
 
   // OPERATOR * and *= ///////////////////////////////////////////////////////////////////////////////
+
+  [[nodiscard]] constexpr friend Vec<3, T> operator*(Quat lhs, const Vec<3, T>& rhs) {
+    // TODO(migoox): make it more efficient
+    return (lhs * pure(rhs) * lhs.conjugate()).imaginary();
+  }
 
   [[nodiscard]] constexpr friend Quat operator*(Quat lhs, const Quat& rhs) {
     return Quat{
@@ -299,6 +315,27 @@ struct Quat {
                         Vec<4, T>{2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0},
                         Vec<4, T>{2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy), 0}, Vec<4, T>{0, 0, 0, 1}};
   }
+
+  /**
+   * @brief Returns an 3D rotation matrix created from unit quaternion.
+   *
+   * @return constexpr Mat<3, 3, T>
+   */
+  [[nodiscard]] constexpr Mat<3, 3, T> rot_mat3() const {
+    T xx = x * x;
+    T yy = y * y;
+    T zz = z * z;
+    T xy = x * y;
+    T xz = x * z;
+    T yz = y * z;
+    T wx = w * x;
+    T wy = w * y;
+    T wz = w * z;
+
+    return Mat<3, 3, T>{Vec<3, T>{1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy)},
+                        Vec<3, T>{2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx)},
+                        Vec<3, T>{2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy)}};
+  }
 };
 
 /**
@@ -366,6 +403,38 @@ template <CFloatingPoint T>
 template <CFloatingPoint T>
 [[nodiscard]] constexpr Mat<4, 4, T> rot_mat_from_quat(const Quat<T>& unit_quat) {
   return unit_quat.rot_mat();
+}
+
+/**
+ * @brief Returns an 3D rotation matrix created from unit quaternion.
+ *
+ * @return constexpr Mat<3, 3, T>
+ */
+template <CFloatingPoint T>
+[[nodiscard]] constexpr Mat<3, 3, T> rot_mat3_from_quat(const Quat<T>& unit_quat) {
+  return unit_quat.rot_mat3();
+}
+
+template <CFloatingPoint T>
+[[nodiscard]] constexpr T dot(const Quat<T>& quat1, const Quat<T>& quat2) {
+  return quat1.w * quat2.w + quat1.x * quat2.x + quat1.y * quat2.y + quat1.z * quat2.z;
+}
+
+template <CFloatingPoint T>
+[[nodiscard]] constexpr Quat<T> abs(const Quat<T>& quat) {
+  return Quat<T>{std::abs(quat.w), std::abs(quat.x), std::abs(quat.y), std::abs(quat.z)};
+}
+
+template <CFloatingPoint T>
+[[nodiscard]] constexpr bool eps_eq(const Quat<T>& quat1, const Quat<T>& quat2, const T epsilon) {
+  auto q = abs(quat1 - quat2);
+  return q.w < epsilon && q.x < epsilon && q.y < epsilon && q.z < epsilon;
+}
+
+template <CFloatingPoint T>
+[[nodiscard]] constexpr bool eps_neq(const Quat<T>& quat1, const Quat<T>& quat2, const T epsilon) {
+  auto q = abs(quat1 - quat2);
+  return q.w >= epsilon && q.x >= epsilon && q.y >= epsilon && q.z >= epsilon;
 }
 
 }  // namespace eray::math

@@ -138,7 +138,7 @@ struct Vec {
   //                             OPERATOR - and -=                                    //
   //////////////////////////////////////////////////////////////////////////////////////
 
-  Vec operator-() { return *this * (-1); }
+  Vec operator-() const { return *this * (-static_cast<T>(-1)); }
 
   friend Vec operator-(Vec lhs, T rhs) {
     lhs -= rhs;
@@ -307,6 +307,11 @@ struct Vec {
   }
 
   template <std::size_t... Is>
+  static constexpr void inv_sign(std::index_sequence<Is...>, T data[N]) {
+    ((data[Is] = -data[Is]), ...);
+  }
+
+  template <std::size_t... Is>
   static constexpr void scalar_div(std::index_sequence<Is...>, T data[N], T scalar) {
     ((data[Is] /= scalar), ...);
   }
@@ -347,6 +352,13 @@ template <std::size_t... Is, CPrimitive T>
 constexpr void clamp_base(std::index_sequence<Is...>, T* data, const T* min_data, const T* max_data) {
   ((data[Is] = data[Is] < min_data[Is] ? min_data[Is] : (data[Is] > max_data[Is] ? max_data[Is] : data[Is])),  // NOLINT
    ...);
+}
+
+template <std::size_t... Is, CPrimitive T>
+constexpr bool all_components_less_than(std::index_sequence<Is...>, T* data, const T value) {
+  bool result = true;
+  ((data[Is] = result && (data[Is] < value)), ...);
+  return result;
 }
 
 }  // namespace internal
@@ -482,6 +494,18 @@ template <CFloatingPoint T, std::size_t N>
   auto result = vec;
   internal::clamp_base(std::make_index_sequence<N>(), result.data, min.data, max.data);
   return result;
+}
+
+template <CFloatingPoint T, std::size_t N>
+[[nodiscard]] bool eps_eq(const Vec<N, T>& vec1, const Vec<N, T>& vec2, const T epsilon) {
+  auto t = eray::math::abs(vec1 - vec2);
+  return internal::all_components_less_than(std::make_index_sequence<N>(), t.data, epsilon);
+}
+
+template <CFloatingPoint T, std::size_t N>
+[[nodiscard]] bool eps_neq(const Vec<N, T>& vec1, const Vec<N, T>& vec2, const T epsilon) {
+  auto t = eray::math::abs(vec1 - vec2);
+  return !internal::all_components_less_than(std::make_index_sequence<N>(), t.data, epsilon);
 }
 
 }  // namespace eray::math

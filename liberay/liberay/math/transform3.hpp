@@ -78,7 +78,8 @@ struct Transform3 final {
   Vec3<T>& local_pos() { return pos_; }
 
   Vec3<T> pos() const {
-    return parent_.has_value() ? Vec3<T>(parent().local_to_world_matrix() * Vec4<T>(pos_, 1.0F)) : pos_;
+    return parent_.has_value() ? Vec3<T>(parent().local_to_world_matrix() * Vec4<T>(pos_.x, pos_.y, pos_.z, 1.0F))
+                               : pos_;
   }
 
   void set_local_pos(const Vec3<T>& pos) {
@@ -115,21 +116,41 @@ struct Transform3 final {
 
   Vec3<T> front() const {
     const Vec3<T> local = local_front();
-    return parent_ ? normalized(parent().local_to_world_matrix() * Vec4<T>(local, 0.0F)) : local;
+    return parent_ ? Vec3<T>(normalize(parent().local_to_world_matrix() * Vec4<T>(local.x, local.y, local.z, 0.0F)))
+                   : local;
   }
 
   Vec3<T> local_right() const { return rot_ * Vec3<T>(1, 0, 0); }
 
   Vec3<T> right() const {
     const Vec3<T> local = local_right();
-    return parent_ ? normalized(parent().local_to_world_matrix() * Vec4<T>(local, 0.0F)) : local;
+    return parent_ ? Vec3<T>(normalize(parent().local_to_world_matrix() * Vec4<T>(local.x, local.y, local.z, 0.0F)))
+                   : local;
   }
 
   Vec3<T> local_up() const { return rot_ * Vec3<T>(0, 1, 0); }
 
   Vec3<T> up() const {
     const Vec3<T> local = local_up();
-    return parent_ ? normalized(parent().local_to_world_matrix() * Vec4<T>(local, 0.0F)) : local;
+    return parent_ ? Vec3<T>(normalize(parent().local_to_world_matrix() * Vec4<T>(local.x, local.y, local.z, 0.0F)))
+                   : local;
+  }
+
+  Mat3<T> local_orientation() const {
+    Mat3<T> local = rot_mat3_from_quat(rot_);
+    return Mat3<T>{local[0], local[1], -local[2]};
+  }
+
+  Mat3<T> orientation() const {
+    const Mat3 local = local_orientation();
+    if (!parent_) {
+      return local;
+    }
+    const Mat3 orientation =
+        Mat3<T>(Vec3<T>(parent().local_to_world_matrix()[0]), Vec3<T>(parent().local_to_world_matrix()[1]),
+                Vec3<T>(parent().local_to_world_matrix()[2])) *
+        local;
+    return Mat3<T>{normalize(orientation[0]), normalize(orientation[1]), normalize(orientation[2])};
   }
 
   void mark_dirty() const {

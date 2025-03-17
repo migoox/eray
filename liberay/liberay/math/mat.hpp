@@ -40,8 +40,8 @@ struct Mat {
    *
    */
   template <typename... Args>
-    requires(sizeof...(Args) == N) && (std::convertible_to<Args, Vec<N, T>> && ...)
-  explicit Mat(Args&&... args) {
+    requires(sizeof...(Args) == N) && (std::convertible_to<Args, Vec<M, T>> && ...)
+  constexpr explicit Mat(Args&&... args) {
     init_data(std::make_index_sequence<N>{}, std::forward<Args>(args)...);
   }
 
