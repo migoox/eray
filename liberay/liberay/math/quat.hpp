@@ -24,7 +24,8 @@ struct Quat {
   // FACTORY METHODS //////////////////////////////////////////////////////////////////////////////////
 
   /**
-   * @brief Creates an unit quaternion that represents a rotation around `axis` by `rad_angle` in radians.
+   * @brief Creates an unit quaternion that represents a rotation around `axis` by `rad_angle` in radians. It is
+   * assumed that `axis` has been already normalized.
    *
    * @param rad_angle
    * @param axis
@@ -34,9 +35,9 @@ struct Quat {
     T s = std::sin(rad_angle / static_cast<T>(2));
     return Quat{
         std::cos(rad_angle / static_cast<T>(2)),
-        axis.x / s,
-        axis.y / s,
-        axis.z / s,
+        axis.x * s,
+        axis.y * s,
+        axis.z * s,
     };
   }
 

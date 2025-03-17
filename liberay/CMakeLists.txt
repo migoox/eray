@@ -42,6 +42,7 @@ if(BUILD_TESTS)
   target_link_libraries(
     "${PROJECT_NAME}_tests"
     GTest::gtest_main
+    ${PROJECT_NAME}
   )
 
   include(CTest)
