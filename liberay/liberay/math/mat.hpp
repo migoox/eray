@@ -429,6 +429,39 @@ Mat<4, 4, T> translation(Vec<3, T> vec) {
                       Vec<4, T>{vec.x, vec.y, vec.z, 1}};
 }
 
+/**
+ * @brief Right-handed perspective projection matrix with depth range -1 to 1 (OpenGL).
+ *
+ * @return Mat<4, 4, T>
+ */
+template <CFloatingPoint T>
+Mat<4, 4, T> perspective_gl_rh(T fovy, T aspect, T z_near, T z_far) {
+  T const tan_half_fovy = tan(fovy / static_cast<T>(2));
+
+  return Mat<4, 4, T>{
+      Vec<4, T>{static_cast<T>(1) / (aspect * tan_half_fovy), 0, 0, 0},             //
+      Vec<4, T>{0, static_cast<T>(1) / (tan_half_fovy), 0, 0},                      //
+      Vec<4, T>{0, 0, -(z_far + z_near) / (z_far - z_near), -static_cast<T>(1)},    //
+      Vec<4, T>{0, 0, -(static_cast<T>(2) * z_far * z_near) / (z_far - z_near), 0}  //
+  };
+}
+
+/**
+ * @brief Right-handed orthographic projection matrix with depth range -1 to 1 (OpenGL).
+ *
+ * @return Mat<4, 4, T>
+ */
+template <CFloatingPoint T>
+Mat<4, 4, T> orthographic_gl_rh(T left, T right, T bottom, T top, T z_near, T z_far) {
+  return Mat<4, 4, T>{
+      Vec<4, T>{static_cast<T>(2) / (right - left), 0, 0, 0},     //
+      Vec<4, T>{0, static_cast<T>(2) / (top - bottom), 0, 0},     //
+      Vec<4, T>{0, 0, -static_cast<T>(2) / (z_far - z_near), 0},  //
+      Vec<4, T>{-(right + left) / (right - left), -(top + bottom) / (top - bottom),
+                -(z_far + z_near) / (z_far - z_near), 0}  //
+  };
+}
+
 namespace internal {
 
 template <typename T>
