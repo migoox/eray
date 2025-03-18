@@ -122,7 +122,7 @@ std::expected<GLuint, ShaderProgram::ProgramCreationError> ShaderProgram::create
   glCompileShader(shader);
   auto compile_status = get_shader_status(shader, GL_COMPILE_STATUS);
   if (compile_status.has_value()) {
-    util::Logger::err(R"(Shader program compilation failed for shader {}, with status:)", shader_name_,
+    util::Logger::err(R"(Shader program compilation failed for shader {}, with status: {})", shader_name_, shader_name_,
                       compile_status.value());
     return std::unexpected(ProgramCreationError::CompilationFailed);
   }

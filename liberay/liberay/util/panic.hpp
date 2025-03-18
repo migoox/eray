@@ -26,4 +26,13 @@ inline T unwrap_or_panic(std::expected<T, Err> exp) {
   return std::move(*exp);
 }
 
+template <typename Err>
+inline void unwrap_or_panic(std::expected<void, Err> exp) {
+  if (!exp) {
+    Logger::err("Program has crashed!");
+    std::abort();
+  }
+  // No return statement needed for void
+}
+
 }  // namespace eray::util

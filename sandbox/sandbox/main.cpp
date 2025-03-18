@@ -10,6 +10,7 @@ int main() {
   using namespace eray;  // NOLINT
 
   util::Logger::instance().add_scribe(std::make_unique<util::TerminalLoggerScribe>());
+
   driver::GLSLShaderManager sm;
   auto sh = util::unwrap_or_panic(sm.load_shader(os::System::executable_dir() / "assets" / "main.vert"));
   sh.set_ext_defi("TEST", "1.0");
