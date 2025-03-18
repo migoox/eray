@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "liberay/util/try.hpp"
+
 namespace eray::driver {
 
 GLSLShader::GLSLShader(std::string&& content, ShaderType type, std::unordered_set<std::string>&& ext_defi_names,
@@ -222,17 +224,10 @@ std::expected<GLSLShader, GLSLShaderManager::LoadingError> GLSLShaderManager::lo
     const std::filesystem::path& path) {
   util::Logger::info("Loading a shader with path \"{}\"...", path.string());
 
-  auto sh_type = get_sh_type(path);
-  if (!sh_type) {
-    return std::unexpected(sh_type.error());
-  }
+  TRY_UNWRAP_DEFINE(sh_type, get_sh_type(path))
+  TRY_UNWRAP_DEFINE(content, load_content(path))
 
-  auto content = load_content(path);
-  if (!content) {
-    return std::unexpected(content.error());
-  }
-
-  auto lines = util::make_lines_view(*content) | std::views::enumerate;
+  auto lines = util::make_lines_view(content) | std::views::enumerate;
 
   std::unordered_set<std::string> defi_names;
   std::string preprocessed_content;
@@ -262,30 +257,18 @@ std::expected<GLSLShader, GLSLShaderManager::LoadingError> GLSLShaderManager::lo
 
     ++it;
     if (macro == internal::kIncludeMacro) {
-      auto result = process_include_macro(path, it, end, line, preprocessed_content, defi_names);
-      if (!result) {
-        return std::unexpected(result.error());
-      }
-
+      TRY(process_include_macro(path, it, end, line, preprocessed_content, defi_names));
     } else if (macro == internal::kVersionMacro) {
       if (version != std::nullopt) {
         continue;
       }
-      auto result = process_version_macro(path, *sh_type, it, end, line);
-      if (!result) {
-        return std::unexpected(result.error());
-      }
-
-      version = std::move(*result);
+      TRY_UNWRAP_ASSIGN(version, process_version_macro(path, sh_type, it, end, line));
     } else {
-      auto result = process_ext_defi_macro(path, it, end, line, defi_names);
-      if (!result) {
-        return std::unexpected(result.error());
-      }
+      TRY(process_ext_defi_macro(path, it, end, line, defi_names));
     }
   }
 
-  if (*sh_type != ShaderType::Library && !version.has_value()) {
+  if (sh_type != ShaderType::Library && !version.has_value()) {
     util::Logger::err(R"(Shader ("{}") parsing error: No version macro detected.)", path.string(),
                       std::string(internal::kVersionMacro));
     return std::unexpected(LoadingError::NoVersionProvided);
@@ -293,7 +276,7 @@ std::expected<GLSLShader, GLSLShaderManager::LoadingError> GLSLShaderManager::lo
 
   util::Logger::succ("Loaded a shader with path \"{}\".", path.string());
 
-  return GLSLShader(std::move(preprocessed_content), *sh_type, std::move(defi_names), std::move(version),
+  return GLSLShader(std::move(preprocessed_content), sh_type, std::move(defi_names), std::move(version),
                     std::filesystem::path(path));
 }
 
@@ -305,11 +288,8 @@ GLSLShaderManager::load_library_shader(const std::filesystem::path& path) {
     return cache_it->second;
   }
 
-  auto sh = load_shader(path);
-  if (!sh) {
-    return std::unexpected(sh.error());
-  }
-  auto result = cache_.emplace(path, std::move(*sh));
+  TRY_UNWRAP_DEFINE(sh, load_shader(path))
+  auto result = cache_.emplace(path, std::move(sh));
 
   return result.first->second;
 }
