@@ -1,4 +1,5 @@
 #pragma once
+#include <expected>
 #include <liberay/util/logger.hpp>
 
 namespace eray::util {
@@ -14,6 +15,15 @@ inline static void not_impl_yet(const std::source_location& l = std::source_loca
   Logger::instance().log(LogLevel::Err, false, l, "Not implemented yet.");
   Logger::err("Program has crashed!");
   std::abort();
+}
+
+template <typename T, typename Err>
+inline T unwrap_or_panic(std::expected<T, Err> exp) {
+  if (!exp) {
+    Logger::err("Program has crashed!");
+    std::abort();
+  }
+  return std::move(*exp);
 }
 
 }  // namespace eray::util

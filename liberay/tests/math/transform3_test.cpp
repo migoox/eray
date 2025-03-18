@@ -7,7 +7,7 @@
 
 constexpr float kPi = std::numbers::pi_v<float>;
 
-using namespace eray::math;
+using namespace eray::math;  // NOLINT
 
 class TransformTest : public testing::Test {
  protected:
@@ -35,15 +35,15 @@ TEST_F(TransformTest, DefaultConstructorWorks) {
   const Transform3f transform;
 
   // then
-  EXPECT_VEC_NEAR(transform.local_pos(), Vec3f(0, 0, 0), 1e-5F);
-  EXPECT_VEC_NEAR(transform.local_rot().imaginary(), Vec3f(0, 0, 0), 1e-5F);
+  EXPECT_VEC_NEAR(transform.local_pos(), Vec3f(0.F, 0.F, 0.F), 1e-5F);
+  EXPECT_VEC_NEAR(transform.local_rot().imaginary(), Vec3f(0.F, 0.F, 0.F), 1e-5F);
   EXPECT_EQ(transform.local_rot().real(), 1);
   EXPECT_VEC_NEAR(transform.local_scale(), Vec3f(1.F, 1.F, 1.F), 1e-5F);
 }
 
 TEST_F(TransformTest, ParametricConstructorWorks) {
   // given
-  const auto pos   = Vec3f(1, 2, 3);
+  const auto pos   = Vec3f(1.F, 2.F, 3.F);
   const auto rot   = Quatf(4, 5, 6, 7);
   const auto scale = Vec3f::filled(8.F);
 

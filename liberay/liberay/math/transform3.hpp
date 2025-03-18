@@ -203,6 +203,8 @@ struct Transform3 final {
     return inv_model_mat_;
   }
 
+  // TODO(migoox): add normal matrix function
+
   void remove_parent() {
     std::erase_if(parent_->get().children_, [this](auto ref) { return std::addressof(ref.get()) == this; });
 

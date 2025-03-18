@@ -2,15 +2,19 @@
 
 #include <array>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
+#include <liberay/util/enum_mapper.hpp>
+#include <liberay/util/ruleof.hpp>
+#include <liberay/util/string_views.hpp>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-namespace resin {
+namespace eray::driver {
 
-namespace shader_macros {
+namespace internal {
 
 static constexpr std::string_view kIncludeMacro = "#include";
 static constexpr std::string_view kExtDefiMacro = "#external_definition";
@@ -24,51 +28,89 @@ static constexpr std::array<std::string_view, 3> kAllMacros = {
 
 inline bool is_macro(std::string_view word) { return std::ranges::find(kAllMacros, word) != kAllMacros.end(); }
 
-}  // namespace shader_macros
+}  // namespace internal
 
 enum class ShaderType : uint8_t {
-  Vertex   = 0,
-  Fragment = 1,
-  Compute  = 2,
-  Library  = 3,
+  Vertex      = 0,
+  Fragment    = 1,
+  TessControl = 2,
+  TessEval    = 3,
+  Geometric   = 4,
+  Compute     = 5,
+  Library     = 6,
+  _Count      = 7  // NOLINT
 };
 
-static constexpr std::array<std::string_view, 4> kShaderTypeToExtensionMap = {".vert", ".frag", ".comp", ".glsl"};
+static constexpr auto kShaderTypeToExtensions = util::StringEnumMapper<ShaderType>({
+    {ShaderType::Vertex, ".vert"},
+    {ShaderType::Fragment, ".frag"},
+    {ShaderType::TessControl, ".tesc"},
+    {ShaderType::TessEval, ".tese"},
+    {ShaderType::Geometric, ".geom"},
+    {ShaderType::Compute, ".comp"},
+    {ShaderType::Library, ".glsl"},
+});
 
-inline std::optional<ShaderType> extension_to_shader_type(std::string_view extension) {
-  for (size_t i = 0; i < kShaderTypeToExtensionMap.size(); ++i) {
-    if (kShaderTypeToExtensionMap[i] == extension) {
-      return static_cast<ShaderType>(i);
-    }
-  }
-  return std::nullopt;
-}
+class GLSLShaderManager;
 
-class ShaderResource {
+class GLSLShader {
  public:
-  ShaderResource() = delete;
-  explicit ShaderResource(std::string&& content, ShaderType type, std::unordered_set<std::string>&& ext_defi_names,
-                          std::optional<std::string>&& version);
+  GLSLShader() = delete;
 
-  const std::unordered_set<std::string>& get_ext_defi_names() const;
+  const std::unordered_set<std::string>& get_ext_defi_names() const { return ext_defi_names_; }
+
+  /**
+   * @brief Allows to set a value for external definition.
+   *
+   * @param ext_defi_name
+   * @param defi_content
+   * @return void
+   */
   void set_ext_defi(std::string_view ext_defi_name, std::string&& defi_content);
 
-  // Checks if all external definitions has been defined.
+  /**
+   * @brief Checks if the shader is ready. If shader has no external definitions it's always ready. If it
+   * contains external defintions, this function checks whether all of them are set.
+   *
+   * @return true
+   * @return false
+   */
   bool is_glsl_ready() const;
 
-  // Returns raw glsl shader with inserted dependencies.
-  const std::string& get_raw() const;
-
-  // Returns glsl shader with inserted dependencies, external defintions and version macro.
+  /**
+   * @brief Returns glsl shader string with inserted dependencies, external defintions (if there are any) and version
+   * macro.
+   *
+   * @return const std::string&
+   */
   const std::string& get_glsl() const;
 
-  inline ShaderType get_type() const { return type_; }
+  /**
+   * @brief Returns shader type (e.g. Fragment Shader).
+   *
+   * @return ShaderType
+   */
+  ShaderType get_type() const { return type_; }
 
-  inline std::string_view get_extension() const { return kShaderTypeToExtensionMap[static_cast<uint8_t>(type_)]; }
+  /**
+   * @brief Returns shader extension string literal (e.g. ".frag").
+   *
+   * @return ShaderType
+   */
+  zstring_view get_extension() const { return kShaderTypeToExtensions[type_]; }
+
+ protected:
+  friend GLSLShaderManager;
+
+  GLSLShader(std::string&& content, ShaderType type, std::unordered_set<std::string>&& ext_defi_names,
+             std::optional<std::string>&& version, std::filesystem::path&& path);
+
+  const std::string& get_raw() const { return raw_content_; }
 
  private:
   std::unordered_set<std::string> ext_defi_names_;
   std::unordered_map<std::string, std::string> ext_defi_contents_;
+  std::filesystem::path path_;
 
   std::optional<std::string> version_;
   std::string raw_content_;
@@ -78,32 +120,58 @@ class ShaderResource {
   mutable std::string glsl_;
 };
 
-class ShaderResourceManager : public ResourceManager<ShaderResource> {
+class GLSLShaderManager {
  public:
-  ~ShaderResourceManager() override {}
+  ERAY_DISABLE_COPY_AND_MOVE(GLSLShaderManager)
 
- protected:
-  ShaderResource load_res(const std::filesystem::path& path) override;
+  GLSLShaderManager()  = default;
+  ~GLSLShaderManager() = default;
+
+  enum class LoadingError : uint8_t {
+    FileExtensionNotSupported = 0,
+    FileDoesNotExist          = 1,
+    InvalidFileType           = 2,
+    FileStreamNotAvailable    = 3,
+    ParsingError              = 4,
+    IncludeDependencyCycle    = 5,
+    NoVersionProvided         = 6,
+  };
+
+  /**
+   * @brief Loads glsl shader and caches it's dependencies (library shaders with ".glsl" extension)
+   * from absolute path.
+   *
+   * @return ShaderType
+   */
+  std::expected<GLSLShader, LoadingError> load_shader(const std::filesystem::path& path);
 
  private:
-  template <ExceptionConcept Exception>
-  [[noreturn]] void inline clear_log_throw(Exception&& e) {
-    visited_paths_.clear();
-    log_throw<Exception>(std::forward<Exception>(e));
-  }
+  std::expected<std::reference_wrapper<GLSLShader>, GLSLShaderManager::LoadingError> load_library_shader(
+      const std::filesystem::path& path);
 
-  void process_include_macro(const std::filesystem::path& sh_path, WordsStringViewIterator& it,
-                             const WordsStringViewIterator& end, size_t curr_line, std::string& content,
-                             std::unordered_set<std::string>& defi_names);
-  void process_ext_defi_macro(const std::filesystem::path& sh_path, WordsStringViewIterator& it,
-                              const WordsStringViewIterator& end, size_t curr_line,
-                              std::unordered_set<std::string>& defi_names);
-  std::optional<std::string> process_version_macro(const std::filesystem::path& sh_path, ShaderType sh_type,
-                                                   WordsStringViewIterator& it, const WordsStringViewIterator& end,
-                                                   size_t curr_line);
+  static std::expected<ShaderType, LoadingError> get_sh_type(const std::filesystem::path& path);
+
+  static std::expected<std::string, LoadingError> load_content(const std::filesystem::path& path);
+
+  std::expected<void, LoadingError> process_include_macro(const std::filesystem::path& sh_path,
+                                                          util::WordsStringViewIterator& it,
+                                                          const util::WordsStringViewIterator& end, size_t curr_line,
+                                                          std::string& content,
+                                                          std::unordered_set<std::string>& defi_names);
+
+  static std::expected<void, LoadingError> process_ext_defi_macro(const std::filesystem::path& sh_path,
+                                                                  util::WordsStringViewIterator& it,
+                                                                  const util::WordsStringViewIterator& end,
+                                                                  size_t curr_line,
+                                                                  std::unordered_set<std::string>& defi_names);
+
+  static std::expected<std::optional<std::string>, LoadingError> process_version_macro(
+      const std::filesystem::path& sh_path, ShaderType sh_type, util::WordsStringViewIterator& it,
+      const util::WordsStringViewIterator& end, size_t curr_line);
 
  private:
   std::vector<std::filesystem::path> visited_paths_;
+  std::unordered_map<std::filesystem::path, GLSLShader> cache_;
 };
 
-}  // namespace resin
+}  // namespace eray::driver
