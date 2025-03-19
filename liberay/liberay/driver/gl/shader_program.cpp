@@ -5,6 +5,8 @@
 #include <liberay/util/logger.hpp>
 #include <liberay/util/try.hpp>
 
+#include "liberay/driver/gl/gl_error.hpp"
+
 namespace eray::driver::gl {
 
 ShaderProgram::ShaderProgram(zstring_view name) : shader_name_(name), program_id_(glCreateProgram()) {
@@ -173,8 +175,8 @@ RenderingShaderProgram::RenderingShaderProgram(zstring_view name, GLSLShader&& v
                                                GLSLShader&& fragment_resource)
     : ShaderProgram(name), vertex_shader_(std::move(vertex_resource)), fragment_shader_(std::move(fragment_resource)) {}
 
-std::expected<RenderingShaderProgram, RenderingShaderProgram::ProgramCreationError> RenderingShaderProgram::create(
-    zstring_view name, GLSLShader vertex_resource, GLSLShader fragment_resource) {
+std::expected<std::unique_ptr<RenderingShaderProgram>, RenderingShaderProgram::ProgramCreationError>
+RenderingShaderProgram::create(zstring_view name, GLSLShader vertex_resource, GLSLShader fragment_resource) {
   if (vertex_resource.get_type() != ShaderType::Vertex) {
     util::Logger::err("Shader type mismatched. Expected .vert, but received {}.", vertex_resource.get_extension());
     return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
@@ -185,12 +187,14 @@ std::expected<RenderingShaderProgram, RenderingShaderProgram::ProgramCreationErr
     return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
   }
 
-  auto program = RenderingShaderProgram(name, std::move(vertex_resource), std::move(fragment_resource));
+  // TODO(migoox): Solve the move semantics problem (create a GLName class for automatic move semantics)
+  auto program = std::unique_ptr<RenderingShaderProgram>(
+      new RenderingShaderProgram(name, std::move(vertex_resource), std::move(fragment_resource)));
 
   using clock = std::chrono::high_resolution_clock;
   auto start  = clock::now();
 
-  TRY(program.create_program());
+  TRY(program->create_program());
 
   auto stop     = clock::now();
   auto duration = duration_cast<std::chrono::milliseconds>(stop - start);

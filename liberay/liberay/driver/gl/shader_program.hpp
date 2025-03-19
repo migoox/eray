@@ -93,9 +93,8 @@ class ShaderProgram {
 
 class RenderingShaderProgram : public ShaderProgram {
  public:
-  static std::expected<RenderingShaderProgram, ProgramCreationError> create(zstring_view name,
-                                                                            GLSLShader vertex_resource,
-                                                                            GLSLShader fragment_resource);
+  static std::expected<std::unique_ptr<RenderingShaderProgram>, ProgramCreationError> create(
+      zstring_view name, GLSLShader vertex_resource, GLSLShader fragment_resource);
 
   const GLSLShader& vertex_shader() const { return vertex_shader_; }
   GLSLShader& vertex_shader() { return vertex_shader_; }

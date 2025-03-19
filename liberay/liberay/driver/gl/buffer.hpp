@@ -75,7 +75,7 @@ class VertexBuffer : public Buffer {
      * @param stride_count
      * @param index
      */
-    Attribute(size_t index, size_t count, bool normalize) : index(index), count(count), normalize(normalize) {}
+    Attribute(size_t location, size_t count, bool normalize) : index(location), count(count), normalize(normalize) {}
 
     size_t index;
     size_t count;

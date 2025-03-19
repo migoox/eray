@@ -205,7 +205,7 @@ struct Mat {
    * @param index
    * @return T&
    */
-  const T* raw_ptr() const { return reinterpret_cast<T*>(data_); }
+  const T* raw_ptr() const { return reinterpret_cast<const T*>(data_); }
 
  private:
   template <typename... Args, std::size_t... Is>

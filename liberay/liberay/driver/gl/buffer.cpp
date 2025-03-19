@@ -28,7 +28,7 @@ VertexBuffer VertexBuffer::create(std::vector<VertexBuffer::Attribute>&& layout)
 void VertexBuffer::buffer_data(std::span<float> vertices, DataUsage usage) {
   glNamedBufferData(id_, static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
                     reinterpret_cast<const void*>(vertices.data()), kDataUsageGLMapper[usage]);
-  check_gl_errors();
+  //   check_gl_errors();
 }
 
 // -- IndexBuffer -----------------------------------------------------------------------------------------------------
