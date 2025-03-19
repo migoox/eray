@@ -462,6 +462,30 @@ Mat<4, 4, T> orthographic_gl_rh(T left, T right, T bottom, T top, T z_near, T z_
   };
 }
 
+template <CFloatingPoint T>
+Mat<4, 4, T> inv_perspective_gl_rh(T fovy, T aspect, T z_near, T z_far) {
+  T const tan_half_fovy = tan(fovy / static_cast<T>(2));
+  T inv_tan_half_fovy   = static_cast<T>(1) / tan_half_fovy;
+
+  return Mat<4, 4, T>{
+      Vec<4, T>{aspect * inv_tan_half_fovy, 0, 0, 0},                                               //
+      Vec<4, T>{0, inv_tan_half_fovy, 0, 0},                                                        //
+      Vec<4, T>{0, 0, 0, -(z_far - z_near) / (static_cast<T>(2) * z_far * z_near)},                 //
+      Vec<4, T>{0, 0, -static_cast<T>(1), (z_far + z_near) / (static_cast<T>(2) * z_far * z_near)}  //
+  };
+}
+
+template <CFloatingPoint T>
+Mat<4, 4, T> inv_orthographic_gl_rh(T left, T right, T bottom, T top, T z_near, T z_far) {
+  return Mat<4, 4, T>{
+      Vec<4, T>{(right - left) / static_cast<T>(2), 0, 0, 0},     //
+      Vec<4, T>{0, (top - bottom) / static_cast<T>(2), 0, 0},     //
+      Vec<4, T>{0, 0, (z_far - z_near) / static_cast<T>(-2), 0},  //
+      Vec<4, T>{(right + left) / static_cast<T>(2), (top + bottom) / static_cast<T>(2),
+                (z_far + z_near) / static_cast<T>(2), 1}  //
+  };
+}
+
 namespace internal {
 
 template <typename T>
