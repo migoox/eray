@@ -17,10 +17,11 @@ class ShaderProgram {
   virtual ~ShaderProgram();
 
   enum class ProgramCreationError : uint8_t {
-    LinkingFailed       = 0,
-    CompilationFailed   = 1,
-    CreationNotPossible = 2,
-    ShaderTypeMismatch  = 3,
+    LinkingFailed                   = 0,
+    CompilationFailed               = 1,
+    CreationNotPossible             = 2,
+    ShaderTypeMismatch              = 3,
+    TesselationShaderWithoutItsPair = 4,
   };
 
   void bind() const;
@@ -94,7 +95,8 @@ class ShaderProgram {
 class RenderingShaderProgram : public ShaderProgram {
  public:
   static std::expected<std::unique_ptr<RenderingShaderProgram>, ProgramCreationError> create(
-      zstring_view name, GLSLShader vertex_resource, GLSLShader fragment_resource);
+      zstring_view name, GLSLShader vert_shader, GLSLShader frag_shader,
+      std::optional<GLSLShader> tesc_shader = std::nullopt, std::optional<GLSLShader> tese_shader = std::nullopt);
 
   const GLSLShader& vertex_shader() const { return vertex_shader_; }
   GLSLShader& vertex_shader() { return vertex_shader_; }
@@ -102,13 +104,16 @@ class RenderingShaderProgram : public ShaderProgram {
   GLSLShader& fragment_shader() { return fragment_shader_; }
 
  private:
-  RenderingShaderProgram(zstring_view name, GLSLShader&& vertex_resource, GLSLShader&& fragment_resource);
+  RenderingShaderProgram(zstring_view name, GLSLShader&& vert_shader, GLSLShader&& frag_shader,
+                         std::optional<GLSLShader>&& tesc_shader, std::optional<GLSLShader>&& tese_shader);
 
   std::expected<void, ProgramCreationError> create_program() override;
 
  private:
   GLSLShader vertex_shader_;
   GLSLShader fragment_shader_;
+  std::optional<GLSLShader> tesc_shader_;
+  std::optional<GLSLShader> tese_shader_;
 };
 
 // TODO(migoox): add compute shaders

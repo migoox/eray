@@ -1,9 +1,13 @@
 
+#include <algorithm>
+#include <cstddef>
 #include <expected>
 #include <liberay/driver/gl/shader_program.hpp>
 #include <liberay/driver/glsl_shader.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/try.hpp>
+#include <memory>
+#include <optional>
 
 #include "liberay/driver/gl/gl_error.hpp"
 
@@ -110,6 +114,7 @@ GLint ShaderProgram::get_uniform_location(zstring_view name) const {
   return location;
 }
 
+// TODO(migoox): return GLName wrapper instead of the raw id
 std::expected<GLuint, ShaderProgram::ProgramCreationError> ShaderProgram::create_shader(const GLSLShader& resource,
                                                                                         GLenum type) {
   const GLuint shader = glCreateShader(type);
@@ -171,25 +176,48 @@ std::expected<GLuint, ShaderProgram::ProgramCreationError> ShaderProgram::create
 //                       shader_name_, binding);
 // }
 
-RenderingShaderProgram::RenderingShaderProgram(zstring_view name, GLSLShader&& vertex_resource,
-                                               GLSLShader&& fragment_resource)
-    : ShaderProgram(name), vertex_shader_(std::move(vertex_resource)), fragment_shader_(std::move(fragment_resource)) {}
+RenderingShaderProgram::RenderingShaderProgram(zstring_view name, GLSLShader&& vert_shader, GLSLShader&& frag_shader,
+                                               std::optional<GLSLShader>&& tesc_shader,
+                                               std::optional<GLSLShader>&& tese_shader)
+    : ShaderProgram(name),
+      vertex_shader_(std::move(vert_shader)),
+      fragment_shader_(std::move(frag_shader)),
+      tesc_shader_(std::move(tesc_shader)),
+      tese_shader_(std::move(tese_shader)) {}
 
 std::expected<std::unique_ptr<RenderingShaderProgram>, RenderingShaderProgram::ProgramCreationError>
-RenderingShaderProgram::create(zstring_view name, GLSLShader vertex_resource, GLSLShader fragment_resource) {
-  if (vertex_resource.get_type() != ShaderType::Vertex) {
-    util::Logger::err("Shader type mismatched. Expected .vert, but received {}.", vertex_resource.get_extension());
+RenderingShaderProgram::create(zstring_view name, GLSLShader vert_shader, GLSLShader frag_shader,
+                               std::optional<GLSLShader> tesc_shader, std::optional<GLSLShader> tese_shader) {
+  if (vert_shader.get_type() != ShaderType::Vertex) {
+    util::Logger::err("Shader type mismatched. Expected .vert, but received {}.", vert_shader.get_extension());
     return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
   }
 
-  if (fragment_resource.get_type() != ShaderType::Fragment) {
-    util::Logger::err("Shader type mismatched. Expected .frag, but received {}.", fragment_resource.get_extension());
+  if (frag_shader.get_type() != ShaderType::Fragment) {
+    util::Logger::err("Shader type mismatched. Expected .frag, but received {}.", frag_shader.get_extension());
     return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
+  }
+
+  if ((tesc_shader && !tese_shader) || (!tesc_shader && tese_shader)) {
+    util::Logger::err("Only one of the tesselation shaders has been provided.");
+    return std::unexpected(ProgramCreationError::TesselationShaderWithoutItsPair);
+  }
+
+  if (tesc_shader) {
+    if (tesc_shader->get_type() != ShaderType::TessControl) {
+      util::Logger::err("Shader type mismatched. Expected .tesc, but received {}.", tesc_shader->get_extension());
+      return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
+    }
+
+    if (tese_shader->get_type() != ShaderType::TessEval) {
+      util::Logger::err("Shader type mismatched. Expected .tese, but received {}.", tese_shader->get_extension());
+      return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
+    }
   }
 
   // TODO(migoox): Solve the move semantics problem (create a GLName class for automatic move semantics)
-  auto program = std::unique_ptr<RenderingShaderProgram>(
-      new RenderingShaderProgram(name, std::move(vertex_resource), std::move(fragment_resource)));
+  auto program = std::unique_ptr<RenderingShaderProgram>(new RenderingShaderProgram(
+      name, std::move(vert_shader), std::move(frag_shader), std::move(tesc_shader), std::move(tese_shader)));
 
   using clock = std::chrono::high_resolution_clock;
   auto start  = clock::now();
@@ -206,17 +234,32 @@ RenderingShaderProgram::create(zstring_view name, GLSLShader vertex_resource, GL
 std::expected<void, RenderingShaderProgram::ProgramCreationError> RenderingShaderProgram::create_program() {
   TRY_UNWRAP_DEFINE(vertex_shader, create_shader(vertex_shader_, GL_VERTEX_SHADER));
   TRY_UNWRAP_DEFINE(fragment_shader, create_shader(fragment_shader_, GL_FRAGMENT_SHADER));
-
   glAttachShader(program_id_, vertex_shader);
   glAttachShader(program_id_, fragment_shader);
 
+  std::optional<GLuint> tesc_shader = std::nullopt;
+  std::optional<GLuint> tese_shader = std::nullopt;
+  if (tesc_shader_) {
+    TRY_UNWRAP_ASSIGN(tesc_shader, create_shader(*tesc_shader_, GL_TESS_CONTROL_SHADER));
+    TRY_UNWRAP_ASSIGN(tese_shader, create_shader(*tese_shader_, GL_TESS_EVALUATION_SHADER));
+    glAttachShader(program_id_, *tesc_shader);
+    glAttachShader(program_id_, *tese_shader);
+  }
+
   TRY(link_program());
 
+  // TODO(migoox): Fix this when UNWRAP fails
   glDetachShader(program_id_, vertex_shader);
   glDetachShader(program_id_, fragment_shader);
-
   glDeleteShader(vertex_shader);
   glDeleteShader(fragment_shader);
+
+  if (tesc_shader_) {
+    glDetachShader(program_id_, *tesc_shader);
+    glDetachShader(program_id_, *tese_shader);
+    glDeleteShader(*tesc_shader);
+    glDeleteShader(*tese_shader);
+  }
 
   return {};
 }
