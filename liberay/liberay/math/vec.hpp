@@ -56,6 +56,16 @@ struct Vec {
   }
 
   /**
+   * @brief Constructor that sets all components of a vector
+   *
+   */
+  template <typename T2>
+    requires(std::convertible_to<T2, T>)
+  explicit constexpr Vec(const Vec<N, T2>& other) {
+    init_data(std::make_index_sequence<N>{}, other.data);
+  }
+
+  /**
    * @brief Constructor that sets all components of a vector to given value by using `index_sequence`. This
    * constructor is used internally.
    *
@@ -262,6 +272,12 @@ struct Vec {
   template <typename... Args, std::size_t... Is>
   constexpr void init_data(std::index_sequence<Is...>, Args&&... args) {
     ((data[Is] = std::forward<Args>(args)), ...);
+  }
+
+  template <typename T2, std::size_t... Is>
+    requires(std::convertible_to<T2, T>)
+  constexpr void init_data(std::index_sequence<Is...>, const T2* vec_data) {
+    ((data[Is] = static_cast<float>(vec_data[Is])), ...);
   }
 
   template <std::size_t... Is>

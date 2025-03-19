@@ -48,28 +48,49 @@ struct Transform3 final {
     parent_->get().children_.emplace_back(*this);
   }
 
+  /**
+   * @brief Updates the local positions by a displacement along global axises.
+   *
+   * @param delta
+   */
   void move(const Vec3<T>& delta) {
     pos_ += delta;
     mark_dirty();
   }
 
+  /**
+   * @brief Updates the local positions by a displacement along its local axises.
+   *
+   * @param delta
+   */
   void move_local(const Vec3<T>& delta) {
     pos_ += delta.x * local_right() + delta.y * local_up() + delta.z * local_front();
     mark_dirty();
   }
 
+  /**
+   * @brief Updates the local rotation around assuming the axis is expressed in global coordinate system.
+   *
+   * @param angle, axis
+   */
   void rotate(float angle, const Vec3<T>& axis) {
     rot_ = normalize(rot_ * Quat<T>::rotation_axis(angle, axis));
     mark_dirty();
   }
 
   void rotate(const Quat<T>& rotation) {
-    rot_ = normalize(rotation * rot_);
+    rot_ = normalize(rot_ * rotation);
     mark_dirty();
   }
 
+  /**
+   * @brief Updates the local rotation around assuming the axis (encoded in quaternion) is expressed in local
+   * coordinate system.
+   *
+   * @param rotation
+   */
   void rotate_local(const Quat<T>& rotation) {
-    rot_ = normalize(rot_ * rotation);
+    rot_ = normalize(rotation * rot_);
     mark_dirty();
   }
 
