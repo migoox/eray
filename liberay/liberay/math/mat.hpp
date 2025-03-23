@@ -458,7 +458,7 @@ Mat<4, 4, T> orthographic_gl_rh(T left, T right, T bottom, T top, T z_near, T z_
       Vec<4, T>{0, static_cast<T>(2) / (top - bottom), 0, 0},     //
       Vec<4, T>{0, 0, -static_cast<T>(2) / (z_far - z_near), 0},  //
       Vec<4, T>{-(right + left) / (right - left), -(top + bottom) / (top - bottom),
-                -(z_far + z_near) / (z_far - z_near), 0}  //
+                -(z_far + z_near) / (z_far - z_near), static_cast<T>(1)}  //
   };
 }
 
@@ -482,7 +482,7 @@ Mat<4, 4, T> inv_orthographic_gl_rh(T left, T right, T bottom, T top, T z_near, 
       Vec<4, T>{0, (top - bottom) / static_cast<T>(2), 0, 0},     //
       Vec<4, T>{0, 0, (z_far - z_near) / static_cast<T>(-2), 0},  //
       Vec<4, T>{(right + left) / static_cast<T>(2), (top + bottom) / static_cast<T>(2),
-                (z_far + z_near) / static_cast<T>(2), 1}  //
+                (z_far + z_near) / static_cast<T>(2), static_cast<T>(1)}  //
   };
 }
 
