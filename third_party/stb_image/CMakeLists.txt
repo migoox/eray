@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(stb_image C)
+message(STATUS "Configuring " ${PROJECT_NAME})
+set(CMAKE_EXPORT_COMPILE_COMMANDS OFF)
+add_library(${PROJECT_NAME} INTERFACE)
+target_include_directories(${PROJECT_NAME} SYSTEM INTERFACE .)

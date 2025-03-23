@@ -54,6 +54,7 @@ if(NOT BUILD_ASSIMP)
 endif()
 
 add_subdirectory(cmake/dependencies)
+add_subdirectory(third_party/stb_image)
 add_subdirectory(liberay)
 if(BUILD_SANDBOX) 
     add_subdirectory(sandbox)

@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <vector>
 
 namespace eray::res {
@@ -47,6 +49,13 @@ class Image {
  public:
   Image(uint32_t width, uint32_t height, ColorU32 color = 0x000000FF);
   Image(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data);
+
+  enum class LoadError : uint8_t {
+    FileDoesNotExist = 0,
+    InvalidFile      = 1,
+  };
+
+  static std::expected<Image, LoadError> load_from_path(const std::filesystem::path& path);
 
   bool is_in_bounds(ColorU32 x, ColorU32 y) const;
   void set_pixel(ColorU32 x, ColorU32 y, ColorU32 color);
