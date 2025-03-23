@@ -337,9 +337,12 @@ struct Quat {
     T wy = w * y;
     T wz = w * z;
 
-    return Mat<3, 3, T>{Vec<3, T>{1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy)},
-                        Vec<3, T>{2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx)},
-                        Vec<3, T>{2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy)}};
+    return Mat<3, 3, T>{Vec<3, T>{static_cast<T>(1) - static_cast<T>(2) * (yy + zz), static_cast<T>(2) * (xy + wz),
+                                  static_cast<T>(2) * (xz - wy)},
+                        Vec<3, T>{static_cast<T>(2) * (xy - wz), static_cast<T>(1) - static_cast<T>(2) * (xx + zz),
+                                  static_cast<T>(2) * (yz + wx)},
+                        Vec<3, T>{static_cast<T>(2) * (xz + wy), static_cast<T>(2) * (yz - wx),
+                                  static_cast<T>(1) - static_cast<T>(2) * (xx + yy)}};
   }
 };
 
