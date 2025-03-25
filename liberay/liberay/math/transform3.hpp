@@ -99,8 +99,9 @@ struct Transform3 final {
   Vec3<T>& local_pos() { return pos_; }
 
   Vec3<T> pos() const {
-    return parent_.has_value() ? Vec3<T>(parent().local_to_world_matrix() * Vec4<T>(pos_.x, pos_.y, pos_.z, 1.0F))
-                               : pos_;
+    return parent_.has_value()
+               ? Vec3<T>(parent().local_to_world_matrix() * Vec4<T>(pos_.x, pos_.y, pos_.z, static_cast<T>(1)))
+               : pos_;
   }
 
   void set_local_pos(const Vec3<T>& pos) {

@@ -148,7 +148,7 @@ struct Vec {
   //                             OPERATOR - and -=                                    //
   //////////////////////////////////////////////////////////////////////////////////////
 
-  Vec operator-() const { return *this * (-static_cast<T>(-1)); }
+  Vec operator-() const { return *this * (static_cast<T>(-1)); }
 
   friend Vec operator-(Vec lhs, T rhs) {
     lhs -= rhs;
