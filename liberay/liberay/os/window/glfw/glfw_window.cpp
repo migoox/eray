@@ -9,6 +9,8 @@
 #include <liberay/os/window/mouse_cursor_codes.hpp>
 #include <liberay/util/logger.hpp>
 
+#include "liberay/math/vec_fwd.hpp"
+
 namespace eray::os {
 
 namespace glfw {
@@ -156,9 +158,17 @@ void GLFWWindow::set_fullscreen(bool /* fullscreen */) {  // NOLINT
 }
 
 math::Vec2d GLFWWindow::mouse_pos() const {
-  auto pos = math::Vec2d(1.0, 2.0);
+  auto pos = math::Vec2d(1.0, 1.0);
   glfwGetCursorPos(glfw::win_native(glfw_window_ptr_), &pos.x, &pos.y);
   return pos;
+}
+
+math::Vec2d GLFWWindow::mouse_pos_ndc() const {
+  auto pos = math::Vec2d(1.0, 1.0);
+  glfwGetCursorPos(glfw::win_native(glfw_window_ptr_), &pos.x, &pos.y);
+  auto s       = math::Vec2d(static_cast<double>(size().x), static_cast<double>(size().y));
+  auto ndc_pos = 2 * pos / s - 1.0;
+  return math::Vec2d(ndc_pos.x, -ndc_pos.y);
 }
 
 bool GLFWWindow::is_btn_held(KeyCode code) {

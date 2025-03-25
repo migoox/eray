@@ -44,7 +44,8 @@ class Window {
   bool fullscreen() const { return props_.fullscreen; }
   virtual void set_fullscreen(bool fullscreen) = 0;
 
-  virtual math::Vec2d mouse_pos() const = 0;
+  virtual math::Vec2d mouse_pos() const     = 0;
+  virtual math::Vec2d mouse_pos_ndc() const = 0;
 
   virtual Driver driver() const = 0;
 

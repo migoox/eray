@@ -32,6 +32,7 @@ class GLFWWindow final : public Window {
   void set_fullscreen(bool fullscreen) final;
 
   math::Vec2d mouse_pos() const final;
+  math::Vec2d mouse_pos_ndc() const final;
 
   Driver driver() const final { return driver_; }
 
