@@ -504,7 +504,7 @@ constexpr bool is_zero(T value) {
  * @return Vec<3, T>
  */
 template <CFloatingPoint T, std::size_t N>
-[[nodiscard]] Vec<3, T> eulers_xyz(Mat<N, N, T> mat)
+[[nodiscard]] Vec<3, T> eulers_xyz(const Mat<N, N, T>& mat)
   requires(N == 3 || N == 4)
 {
   auto eulers = Vec<3, T>();

@@ -17,3 +17,15 @@
 #define ERAY_DEFAULT_MOVE(ClassName)           \
   ClassName(ClassName&&)            = default; \
   ClassName& operator=(ClassName&&) = default;
+
+#define ERAY_DISABLE_MOVE_AND_COPY_ASSIGN(ClassName) \
+  ClassName& operator=(const ClassName&) = delete;   \
+  ClassName& operator=(ClassName&&)      = delete;
+
+#define ERAY_ENABLE_DEFAULT_MOVE_AND_COPY_ASSIGN(ClassName) \
+  ClassName& operator=(const ClassName&) = delete;          \
+  ClassName& operator=(ClassName&&)      = delete;
+
+#define ERAY_ENABLE_DEFAULT_MOVE_AND_COPY_CTR(ClassName) \
+  ClassName(ClassName&&)      = default;                 \
+  ClassName(const ClassName&) = default;
