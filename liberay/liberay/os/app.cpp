@@ -40,6 +40,7 @@ void Application::run() {
     ++frames;
     if (!minimized_) {
       window_->imgui().new_frame();
+      render_gui(delta);
       render(delta);
       window_->imgui().generate_draw_data();
       window_->imgui().render_draw_data();
@@ -58,6 +59,8 @@ void Application::run() {
     }
   }
 }
+
+void Application::render_gui(Duration /* delta */) {}
 
 void Application::render(Duration /* delta */) {
   ImGui::ShowDemoWindow();

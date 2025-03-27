@@ -29,6 +29,13 @@ class Application {
    *
    * @param delta
    */
+  virtual void render_gui(Duration delta);
+
+  /**
+   * @brief Invoked with a delta time between two frames
+   *
+   * @param delta
+   */
   virtual void render(Duration delta);
 
   /**
