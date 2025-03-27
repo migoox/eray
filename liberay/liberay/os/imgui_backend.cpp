@@ -4,7 +4,10 @@
 
 #include <expected>
 #include <liberay/os/imgui_backend.hpp>
+#include <liberay/os/system.hpp>
+#include <liberay/util/logger.hpp>
 #include <memory>
+
 
 namespace eray::os {
 
@@ -16,6 +19,8 @@ std::expected<std::unique_ptr<ImGuiGLFWBackend>, ImGuiGLFWBackend::ImGuiBackendC
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   io.IniFilename = nullptr;
+  auto path      = System::path_to_utf8str(System::executable_dir() / "imgui.ini");
+  ImGui::LoadIniSettingsFromDisk(path.c_str());
 
   ImGui::StyleColorsDark();
 
@@ -58,6 +63,9 @@ void ImGuiGLFWBackend::render_draw_data() {
 }
 
 ImGuiGLFWBackend::~ImGuiGLFWBackend() {
+  util::Logger::info("Saved imgui.ini file");
+  auto path = System::path_to_utf8str(System::executable_dir() / "imgui.ini");
+  ImGui::SaveIniSettingsToDisk(path.c_str());
   if (driver_ == Driver::OpenGL) {
     ImGui_ImplOpenGL3_Shutdown();
   } else if (driver_ == Driver::Vulcan) {

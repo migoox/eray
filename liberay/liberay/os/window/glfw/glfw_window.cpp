@@ -3,13 +3,13 @@
 #include <imgui/imgui_impl_opengl3.h>
 
 #include <liberay/math/vec.hpp>
+#include <liberay/math/vec_fwd.hpp>
 #include <liberay/os/window/events/event.hpp>
 #include <liberay/os/window/glfw/glfw_mappings.hpp>
 #include <liberay/os/window/glfw/glfw_window.hpp>
 #include <liberay/os/window/mouse_cursor_codes.hpp>
 #include <liberay/util/logger.hpp>
 
-#include "liberay/math/vec_fwd.hpp"
 
 namespace eray::os {
 

@@ -5,11 +5,11 @@ namespace eray::util {
 // from: https://www.cppstories.com/2018/06/variant/#overload
 
 template <class... Ts>
-struct Overload : Ts... {
+struct match : Ts... {  // NOLINT
   using Ts::operator()...;
 };
 
 template <class... Ts>
-Overload(Ts...) -> Overload<Ts...>;
+match(Ts...) -> match<Ts...>;
 
 }  // namespace eray::util

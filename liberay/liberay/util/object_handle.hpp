@@ -20,7 +20,7 @@ struct Handle {
   Handle(std::uint32_t _owner_signature, std::uint32_t _timestamp, std::uint32_t _obj_id)
       : owner_signature(_owner_signature), timestamp(_timestamp), obj_id(_obj_id) {}
 
-  ERAY_ENABLE_DEFAULT_MOVE_AND_COPY_CTR(Handle)
+  ERAY_ENABLE_DEFAULT_MOVE_AND_COPY_CTOR(Handle)
   ERAY_DISABLE_MOVE_AND_COPY_ASSIGN(Handle)
 
   template <typename OtherObject>

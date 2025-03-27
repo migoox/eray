@@ -26,6 +26,6 @@
   ClassName& operator=(const ClassName&) = delete;          \
   ClassName& operator=(ClassName&&)      = delete;
 
-#define ERAY_ENABLE_DEFAULT_MOVE_AND_COPY_CTR(ClassName) \
-  ClassName(ClassName&&)      = default;                 \
-  ClassName(const ClassName&) = default;
+#define ERAY_ENABLE_DEFAULT_MOVE_AND_COPY_CTOR(ClassName) \
+  ClassName(ClassName&&) noexcept = default;              \
+  ClassName(const ClassName&)     = default;
