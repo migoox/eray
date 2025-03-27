@@ -1,10 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <liberay/util/hash_combine.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <type_traits>
-
-#include "hash_combine.hpp"
 
 namespace eray::util {
 
@@ -20,24 +19,15 @@ struct Handle {
   Handle(std::uint32_t _owner_signature, std::uint32_t _timestamp, std::uint32_t _obj_id)
       : owner_signature(_owner_signature), timestamp(_timestamp), obj_id(_obj_id) {}
 
-  ERAY_ENABLE_DEFAULT_MOVE_AND_COPY_CTOR(Handle)
-  ERAY_DISABLE_MOVE_AND_COPY_ASSIGN(Handle)
-
   template <typename OtherObject>
   explicit Handle(const Handle<OtherObject>& other)
     requires(std::is_same_v<Object, util::Any>)
       : owner_signature(other.owner_signature), timestamp(other.timestamp), obj_id(other.obj_id) {}
-
-  bool operator==(const Handle<Object>& rhs) {
-    return owner_signature == rhs.owner_signature && timestamp == rhs.timestamp && obj_id == rhs.obj_id;
-  }
-
-  bool operator!=(const Handle<Object>& rhs) { return !(*this == rhs); }
 };
 
 template <typename T>
 bool operator==(const Handle<T>& lhs, const Handle<T>& rhs) {
-  return lhs == rhs;
+  return lhs.owner_signature == rhs.owner_signature && lhs.timestamp == rhs.timestamp && lhs.obj_id == rhs.obj_id;
 }
 
 template <typename T>
