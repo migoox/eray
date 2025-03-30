@@ -46,6 +46,101 @@ void Framebuffer::end_init() const {  // NOLINT
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+ViewportFramebuffer::ViewportFramebuffer(size_t width, size_t height)
+    : Framebuffer(width, height),
+      color_attachment_texture_(0),
+      mouse_pick_attachment_texture_(0),
+      depth_renderbuffer_(0) {
+  start_init();
+
+  // Setup color attachment
+  glGenTextures(1, &color_attachment_texture_);
+  glBindTexture(GL_TEXTURE_2D, color_attachment_texture_);
+  prepare_texture(GL_RGBA, GL_RGBA8, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_attachment_texture_, 0);
+
+  // Setup depth attachment (without stencil)
+  glGenRenderbuffers(1, &depth_renderbuffer_);
+  glBindRenderbuffer(GL_RENDERBUFFER, depth_renderbuffer_);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, static_cast<GLsizei>(width),
+                        static_cast<GLsizei>(height));
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_renderbuffer_);
+
+  // Setup mouse pick attachment
+  glGenTextures(1, &mouse_pick_attachment_texture_);
+  glBindTexture(GL_TEXTURE_2D, mouse_pick_attachment_texture_);
+  prepare_texture(GL_RED_INTEGER, GL_R32I, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, mouse_pick_attachment_texture_, 0);
+
+  end_init();
+
+  util::Logger::info("Created new image framebuffer with id {}", color_attachment_texture_);
+}
+
+ViewportFramebuffer::~ViewportFramebuffer() {
+  if (color_attachment_texture_ == 0) {
+    return;
+  }
+
+  glDeleteRenderbuffers(1, &depth_renderbuffer_);
+  glDeleteTextures(1, &color_attachment_texture_);
+  glDeleteTextures(1, &mouse_pick_attachment_texture_);
+
+  util::Logger::info("Deleted image framebuffer with id {}", framebuffer_id_);
+}
+
+ViewportFramebuffer::ViewportFramebuffer(ViewportFramebuffer&& other) noexcept
+    : Framebuffer(std::move(other)),
+      color_attachment_texture_(other.color_attachment_texture_),
+      mouse_pick_attachment_texture_(other.mouse_pick_attachment_texture_),
+      depth_renderbuffer_(other.depth_renderbuffer_) {
+  other.color_attachment_texture_      = 0;
+  other.mouse_pick_attachment_texture_ = 0;
+  other.depth_renderbuffer_            = 0;
+}
+
+void ViewportFramebuffer::begin_pick_render() const {
+  static constexpr std::array<GLenum, 2> kAttachments = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+  glDrawBuffers(static_cast<GLsizei>(kAttachments.size()), kAttachments.data());
+
+  static constexpr int kClear = -1;
+  glClearTexImage(mouse_pick_attachment_texture_, 0, GL_RED_INTEGER, GL_INT, &kClear);
+}
+
+void ViewportFramebuffer::end_pick_render() const {  // NOLINT
+  static constexpr std::array<GLenum, 2> kAttachments = {GL_COLOR_ATTACHMENT0, GL_NONE};
+  glDrawBuffers(static_cast<GLsizei>(kAttachments.size()), kAttachments.data());
+}
+
+void ViewportFramebuffer::clear() { glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); }
+
+void ViewportFramebuffer::resize(size_t width, size_t height) {
+  width_  = width;
+  height_ = height;
+
+  // Resize color attachment
+  glBindTexture(GL_TEXTURE_2D, color_attachment_texture_);
+  prepare_texture(GL_RGBA, GL_RGBA8, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+
+  // Resize depth attachment
+  glBindRenderbuffer(GL_RENDERBUFFER, depth_renderbuffer_);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, static_cast<GLsizei>(width),
+                        static_cast<GLsizei>(height));
+
+  // Resize mouse pick attachment
+  glBindTexture(GL_TEXTURE_2D, mouse_pick_attachment_texture_);
+  prepare_texture(GL_RED_INTEGER, GL_R32I, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+}
+
+int ViewportFramebuffer::sample_mouse_pick(const size_t x, const size_t y) const {  // NOLINT
+  glReadBuffer(GL_COLOR_ATTACHMENT1);
+  int pixel = -1;
+  glReadPixels(static_cast<GLint>(x), static_cast<GLint>(height_ - y), 1, 1, GL_RED_INTEGER, GL_INT, &pixel);
+  return pixel;
+}
+
 ImageFramebuffer::ImageFramebuffer(size_t width, size_t height)
     : Framebuffer(width, height), color_attachment_texture_(0) {
   start_init();

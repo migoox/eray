@@ -35,6 +35,31 @@ class Framebuffer {
   GLuint framebuffer_id_;
 };
 
+class ViewportFramebuffer : public Framebuffer {
+ public:
+  ViewportFramebuffer(size_t width, size_t height);
+  virtual ~ViewportFramebuffer();
+
+  ViewportFramebuffer(const ViewportFramebuffer& other) = delete;
+  ViewportFramebuffer(ViewportFramebuffer&& other) noexcept;
+  ViewportFramebuffer& operator=(const ViewportFramebuffer& other) = delete;
+  ViewportFramebuffer& operator=(ViewportFramebuffer&& other)      = delete;
+
+  void begin_pick_render() const;
+  void end_pick_render() const;
+
+  int sample_mouse_pick(size_t x, size_t y) const;
+
+  void clear() override;
+  void resize(size_t width, size_t height) override;
+
+  GLuint color_texture() const { return color_attachment_texture_; }
+
+ private:
+  GLuint color_attachment_texture_, mouse_pick_attachment_texture_;
+  GLuint depth_renderbuffer_;
+};
+
 class ImageFramebuffer : public Framebuffer {
  public:
   ImageFramebuffer(size_t width, size_t height);
