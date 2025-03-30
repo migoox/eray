@@ -2,14 +2,13 @@
 #include <algorithm>
 #include <cstddef>
 #include <expected>
+#include <liberay/driver/gl/gl_error.hpp>
 #include <liberay/driver/gl/shader_program.hpp>
 #include <liberay/driver/glsl_shader.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/try.hpp>
 #include <memory>
 #include <optional>
-
-#include "liberay/driver/gl/gl_error.hpp"
 
 namespace eray::driver::gl {
 
@@ -178,16 +177,19 @@ std::expected<GLuint, ShaderProgram::ProgramCreationError> ShaderProgram::create
 
 RenderingShaderProgram::RenderingShaderProgram(zstring_view name, GLSLShader&& vert_shader, GLSLShader&& frag_shader,
                                                std::optional<GLSLShader>&& tesc_shader,
-                                               std::optional<GLSLShader>&& tese_shader)
+                                               std::optional<GLSLShader>&& tese_shader,
+                                               std::optional<GLSLShader>&& geom_shader)
     : ShaderProgram(name),
       vertex_shader_(std::move(vert_shader)),
       fragment_shader_(std::move(frag_shader)),
       tesc_shader_(std::move(tesc_shader)),
-      tese_shader_(std::move(tese_shader)) {}
+      tese_shader_(std::move(tese_shader)),
+      geom_shader_(std::move(geom_shader)) {}
 
 std::expected<std::unique_ptr<RenderingShaderProgram>, RenderingShaderProgram::ProgramCreationError>
 RenderingShaderProgram::create(zstring_view name, GLSLShader vert_shader, GLSLShader frag_shader,
-                               std::optional<GLSLShader> tesc_shader, std::optional<GLSLShader> tese_shader) {
+                               std::optional<GLSLShader> tesc_shader, std::optional<GLSLShader> tese_shader,
+                               std::optional<GLSLShader> geom_shader) {
   if (vert_shader.get_type() != ShaderType::Vertex) {
     util::Logger::err("Shader type mismatched. Expected .vert, but received {}.", vert_shader.get_extension());
     return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
@@ -215,9 +217,17 @@ RenderingShaderProgram::create(zstring_view name, GLSLShader vert_shader, GLSLSh
     }
   }
 
+  if (geom_shader) {
+    if (geom_shader->get_type() != ShaderType::Geometric) {
+      util::Logger::err("Shader type mismatched. Expected .geom, but received {}.", geom_shader->get_extension());
+      return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
+    }
+  }
+
   // TODO(migoox): Solve the move semantics problem (create a GLName class for automatic move semantics)
-  auto program = std::unique_ptr<RenderingShaderProgram>(new RenderingShaderProgram(
-      name, std::move(vert_shader), std::move(frag_shader), std::move(tesc_shader), std::move(tese_shader)));
+  auto program = std::unique_ptr<RenderingShaderProgram>(
+      new RenderingShaderProgram(name, std::move(vert_shader), std::move(frag_shader), std::move(tesc_shader),
+                                 std::move(tese_shader), std::move(geom_shader)));
 
   using clock = std::chrono::high_resolution_clock;
   auto start  = clock::now();
@@ -246,6 +256,12 @@ std::expected<void, RenderingShaderProgram::ProgramCreationError> RenderingShade
     glAttachShader(program_id_, *tese_shader);
   }
 
+  std::optional<GLuint> geom_shader = std::nullopt;
+  if (geom_shader_) {
+    TRY_UNWRAP_ASSIGN(geom_shader, create_shader(*geom_shader_, GL_GEOMETRY_SHADER));
+    glAttachShader(program_id_, *geom_shader);
+  }
+
   TRY(link_program());
 
   // TODO(migoox): Fix this when UNWRAP fails
@@ -259,6 +275,11 @@ std::expected<void, RenderingShaderProgram::ProgramCreationError> RenderingShade
     glDetachShader(program_id_, *tese_shader);
     glDeleteShader(*tesc_shader);
     glDeleteShader(*tese_shader);
+  }
+
+  if (geom_shader_) {
+    glDetachShader(program_id_, *geom_shader);
+    glDeleteShader(*geom_shader);
   }
 
   return {};

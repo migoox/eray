@@ -96,7 +96,8 @@ class RenderingShaderProgram : public ShaderProgram {
  public:
   static std::expected<std::unique_ptr<RenderingShaderProgram>, ProgramCreationError> create(
       zstring_view name, GLSLShader vert_shader, GLSLShader frag_shader,
-      std::optional<GLSLShader> tesc_shader = std::nullopt, std::optional<GLSLShader> tese_shader = std::nullopt);
+      std::optional<GLSLShader> tesc_shader = std::nullopt, std::optional<GLSLShader> tese_shader = std::nullopt,
+      std::optional<GLSLShader> geom_shader = std::nullopt);
 
   const GLSLShader& vertex_shader() const { return vertex_shader_; }
   GLSLShader& vertex_shader() { return vertex_shader_; }
@@ -105,7 +106,8 @@ class RenderingShaderProgram : public ShaderProgram {
 
  private:
   RenderingShaderProgram(zstring_view name, GLSLShader&& vert_shader, GLSLShader&& frag_shader,
-                         std::optional<GLSLShader>&& tesc_shader, std::optional<GLSLShader>&& tese_shader);
+                         std::optional<GLSLShader>&& tesc_shader, std::optional<GLSLShader>&& tese_shader,
+                         std::optional<GLSLShader>&& geom_shader);
 
   std::expected<void, ProgramCreationError> create_program() override;
 
@@ -114,6 +116,7 @@ class RenderingShaderProgram : public ShaderProgram {
   GLSLShader fragment_shader_;
   std::optional<GLSLShader> tesc_shader_;
   std::optional<GLSLShader> tese_shader_;
+  std::optional<GLSLShader> geom_shader_;
 };
 
 // TODO(migoox): add compute shaders

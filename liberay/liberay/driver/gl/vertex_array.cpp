@@ -3,6 +3,8 @@
 #include <liberay/driver/gl/buffer.hpp>
 #include <liberay/driver/gl/vertex_array.hpp>
 
+#include "liberay/driver/gl/gl_error.hpp"
+
 namespace eray::driver::gl {
 
 VertexArray VertexArray::create(VertexBuffer&& vert_buff, ElementBuffer&& ebo_buff) {
@@ -32,11 +34,18 @@ VertexArray VertexArray::create(VertexBuffer&& vert_buff, ElementBuffer&& ebo_bu
 
   glVertexArrayVertexBuffer(id, 0, vert_buff.id_, 0, vertex_size);
 
+  check_gl_errors();
+
   return VertexArray({
       .vbo = std::move(vert_buff),
       .ebo = std::move(ebo_buff),
       .id  = id,
   });
+}
+
+void VertexArray::set_binding_divisor(GLuint binding_index, GLuint divisor) {  // NOLINT
+  glVertexArrayBindingDivisor(m_.id, binding_index, divisor);
+  check_gl_errors();
 }
 
 VertexArray::VertexArray(VertexArray&& other) noexcept : m_(std::move(other.m_)) { other.m_.id = 0; }

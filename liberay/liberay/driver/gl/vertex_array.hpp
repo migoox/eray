@@ -16,16 +16,21 @@ class VertexArray {
   static VertexArray create(VertexBuffer&& vert_buff, ElementBuffer&& ebo_buff);
 
   /**
-   * @brief Binds the VertexArray. It's required only before calling the draw.
+   * @brief Binds the VertexArray. It's required only before calling the draw as the
+   * class uses DSA (Direct State Access).
    *
    */
   void bind() const { glBindVertexArray(m_.id); }
 
   static void unbind() { glBindVertexArray(0); }
 
+  void set_binding_divisor(GLuint binding_index, GLuint divisor);
+
   const VertexBuffer& vbo() const { return m_.vbo; }
+  VertexBuffer& vbo() { return m_.vbo; }
 
   const ElementBuffer& ebo() const { return m_.ebo; }
+  ElementBuffer& ebo() { return m_.ebo; }
 
  private:
   struct Members {

@@ -1,3 +1,6 @@
+#include <glad/gl.h>
+
+#include <cstdint>
 #include <liberay/driver/gl/buffer.hpp>
 #include <liberay/driver/gl/gl_error.hpp>
 
@@ -30,6 +33,12 @@ void VertexBuffer::buffer_data(std::span<float> vertices, DataUsage usage) {
                     reinterpret_cast<const void*>(vertices.data()), kDataUsageGLMapper[usage]);
   check_gl_errors();
 }
+void VertexBuffer::sub_buffer_data(GLuint offset_count, std::span<float> vertices) {
+  glNamedBufferSubData(id_, static_cast<GLintptr>(offset_count * sizeof(float)),
+                       static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                       reinterpret_cast<const void*>(vertices.data()));
+  check_gl_errors();
+}
 
 // -- IndexBuffer -----------------------------------------------------------------------------------------------------
 
@@ -39,11 +48,17 @@ ElementBuffer ElementBuffer::create() {
   return ElementBuffer(id);
 }
 
-void ElementBuffer::buffer_data(std::span<uint32_t> data, DataUsage usage) {  // NOLINT
-  count_ = data.size();
-  glNamedBufferData(id_, static_cast<GLsizeiptr>(data.size() * sizeof(uint32_t)),
-                    reinterpret_cast<const void*>(data.data()), kDataUsageGLMapper[usage]);
+void ElementBuffer::buffer_data(std::span<uint32_t> indices, DataUsage usage) {  // NOLINT
+  count_ = indices.size();
+  glNamedBufferData(id_, static_cast<GLsizeiptr>(indices.size() * sizeof(uint32_t)),
+                    reinterpret_cast<const void*>(indices.data()), kDataUsageGLMapper[usage]);
   check_gl_errors();
+}
+
+void ElementBuffer::sub_buffer_data(GLuint offset_count, std::span<uint32_t> indices) {
+  glNamedBufferSubData(id_, static_cast<GLintptr>(offset_count * sizeof(uint32_t)),
+                       static_cast<GLsizeiptr>(indices.size() * sizeof(uint32_t)),
+                       reinterpret_cast<const void*>(indices.data()));
 }
 
 // -- PixelBuffer -----------------------------------------------------------------------------------------------------

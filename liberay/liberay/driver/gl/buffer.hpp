@@ -93,6 +93,14 @@ class VertexBuffer : public Buffer {
   static VertexBuffer create(std::vector<Attribute>&& layout);
 
   void buffer_data(std::span<float> vertices, DataUsage usage);
+  /**
+   * @brief Calls glNamedBufferSubData.
+   *
+   * @param offset_count is measured in floats not bytes.
+   * @param vertices
+   */
+  void sub_buffer_data(GLuint offset_count, std::span<float> vertices);
+
   const std::vector<Attribute>& layout() { return layout_; }
 
  private:
@@ -108,7 +116,16 @@ class ElementBuffer : public Buffer {
   ERAY_DEFAULT_MOVE(ElementBuffer)
 
   static ElementBuffer create();
-  void buffer_data(std::span<uint32_t> data, DataUsage usage);
+  void buffer_data(std::span<uint32_t> indices, DataUsage usage);
+
+  /**
+   * @brief Calls glNamedBufferSubData.
+   *
+   * @param indices is measured in floats not bytes.
+   * @param vertices
+   */
+  void sub_buffer_data(GLuint offset_count, std::span<uint32_t> indices);
+
   size_t count() const { return count_; }
 
  private:
