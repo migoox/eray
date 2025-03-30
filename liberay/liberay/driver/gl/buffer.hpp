@@ -46,6 +46,8 @@ class Buffer {
   Buffer& operator=(Buffer&& other) noexcept;
   ~Buffer();
 
+  GLuint raw_gl_id() const { return id_; }
+
  protected:
   explicit Buffer(GLuint id);
 
@@ -101,7 +103,7 @@ class VertexBuffer : public Buffer {
    */
   void sub_buffer_data(GLuint offset_count, std::span<float> vertices);
 
-  const std::vector<Attribute>& layout() { return layout_; }
+  const std::vector<Attribute>& layout() const { return layout_; }
 
  private:
   VertexBuffer(GLuint id, std::vector<Attribute>&& layout) : Buffer(id), layout_(std::move(layout)) {}

@@ -14,6 +14,7 @@ class VertexArray {
   VertexArray& operator=(VertexArray&& other) noexcept;
 
   static VertexArray create(VertexBuffer&& vert_buff, ElementBuffer&& ebo_buff);
+  ~VertexArray();
 
   /**
    * @brief Binds the VertexArray. It's required only before calling the draw as the

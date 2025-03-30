@@ -1,17 +1,14 @@
 #include <glad/gl.h>
 
 #include <liberay/driver/gl/buffer.hpp>
+#include <liberay/driver/gl/gl_error.hpp>
 #include <liberay/driver/gl/vertex_array.hpp>
-
-#include "liberay/driver/gl/gl_error.hpp"
 
 namespace eray::driver::gl {
 
 VertexArray VertexArray::create(VertexBuffer&& vert_buff, ElementBuffer&& ebo_buff) {
   GLuint id = 0;
   glCreateVertexArrays(1, &id);
-
-  // Bind VBO to VAO
 
   // Bind EBO to VAO
   glVertexArrayElementBuffer(id, ebo_buff.id_);
@@ -56,5 +53,7 @@ VertexArray& VertexArray::operator=(VertexArray&& other) noexcept {
 
   return *this;
 }
+
+VertexArray::~VertexArray() { glDeleteVertexArrays(1, &m_.id); }
 
 }  // namespace eray::driver::gl
