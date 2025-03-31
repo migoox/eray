@@ -80,7 +80,7 @@ std::expected<void, ShaderProgram::ProgramCreationError> ShaderProgram::link_pro
 
   auto link_status = get_program_status(program_id_, GL_LINK_STATUS);
   if (link_status.has_value()) {
-    util::Logger::err("Shader program linking failed for shader {}.", shader_name_);
+    util::Logger::err("Shader program linking failed for shader {} with status {}.", shader_name_, *link_status);
     return std::unexpected(ProgramCreationError::LinkingFailed);
   }
 
