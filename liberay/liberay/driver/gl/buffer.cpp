@@ -28,18 +28,6 @@ VertexBuffer VertexBuffer::create(std::vector<VertexBuffer::Attribute>&& layout)
   return VertexBuffer(id, std::move(layout));
 }
 
-void VertexBuffer::buffer_data(std::span<float> vertices, DataUsage usage) {
-  glNamedBufferData(id_, static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
-                    reinterpret_cast<const void*>(vertices.data()), kDataUsageGLMapper[usage]);
-  check_gl_errors();
-}
-void VertexBuffer::sub_buffer_data(GLuint offset_count, std::span<float> vertices) {
-  glNamedBufferSubData(id_, static_cast<GLintptr>(offset_count * sizeof(float)),
-                       static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
-                       reinterpret_cast<const void*>(vertices.data()));
-  check_gl_errors();
-}
-
 // -- IndexBuffer -----------------------------------------------------------------------------------------------------
 
 ElementBuffer ElementBuffer::create() {

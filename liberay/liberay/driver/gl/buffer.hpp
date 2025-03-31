@@ -56,6 +56,9 @@ class Buffer {
   GLuint id_;
 };
 
+template <typename T>
+concept CPrimitiveType = (std::is_same<T, float>::value || std::is_same<T, int>::value);
+
 /**
  * @brief Represents a buffer of floats, interpreted as a sequence of vertices. Each vertex
  * is composed of attributes.
@@ -70,18 +73,38 @@ class VertexBuffer : public Buffer {
  public:
   struct Attribute {
     /**
-     * @brief Creates an attribute. Note that every `count` value is measured in number of floats, not in bytes.
+     * @brief Creates an attribute.
      *
-     * @param count
+     * @param count measured in number of elements, e.g. if element is of float type, count=3 means 12 bytes.
      * @param normalize
-     * @param stride_count
+     * @param count
      * @param index
      */
-    Attribute(size_t location, size_t count, bool normalize) : index(location), count(count), normalize(normalize) {}
+    template <CPrimitiveType PrimitiveType>
+    static Attribute create(size_t location, size_t count, bool normalize) {
+      GLenum type = GL_FLOAT;
+      if constexpr (std::is_same_v<PrimitiveType, float>) {
+        type = GL_FLOAT;
+      } else if constexpr (std::is_same_v<PrimitiveType, int>) {
+        type = GL_INT;
+      } else {
+        static_assert(false, "Unsupported PrimitiveType");
+      }
+
+      return {
+          .index     = location,               //
+          .count     = count,                  //
+          .normalize = normalize,              //
+          .type_size = sizeof(PrimitiveType),  //
+          .type      = type,                   //
+      };
+    }
 
     size_t index;
     size_t count;
     bool normalize;
+    size_t type_size;
+    GLenum type;
   };
 
   VertexBuffer() = delete;
@@ -94,14 +117,26 @@ class VertexBuffer : public Buffer {
    */
   static VertexBuffer create(std::vector<Attribute>&& layout);
 
-  void buffer_data(std::span<float> vertices, DataUsage usage);
+  template <CPrimitiveType PrimitiveType>
+  void buffer_data(std::span<PrimitiveType> vertices, DataUsage usage) {
+    glNamedBufferData(id_, static_cast<GLsizeiptr>(vertices.size() * sizeof(PrimitiveType)),
+                      reinterpret_cast<const void*>(vertices.data()), kDataUsageGLMapper[usage]);
+    check_gl_errors();
+  }
+
   /**
    * @brief Calls glNamedBufferSubData.
    *
    * @param offset_count is measured in floats not bytes.
    * @param vertices
    */
-  void sub_buffer_data(GLuint offset_count, std::span<float> vertices);
+  template <CPrimitiveType PrimitiveType>
+  void sub_buffer_data(GLuint offset_count, std::span<PrimitiveType> vertices) {
+    glNamedBufferSubData(id_, static_cast<GLintptr>(offset_count * sizeof(PrimitiveType)),
+                         static_cast<GLsizeiptr>(vertices.size() * sizeof(PrimitiveType)),
+                         reinterpret_cast<const void*>(vertices.data()));
+    check_gl_errors();
+  }
 
   const std::vector<Attribute>& layout() const { return layout_; }
 

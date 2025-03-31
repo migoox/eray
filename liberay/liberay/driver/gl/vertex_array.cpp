@@ -24,7 +24,7 @@ VertexArray VertexArray::create(VertexBuffer&& vert_buff, ElementBuffer&& ebo_bu
     glVertexArrayAttribFormat(id,                                     //
                               attrib.index,                           //
                               static_cast<GLint>(attrib.count),       //
-                              GL_FLOAT,                               //
+                              attrib.type,                            //
                               attrib.normalize ? GL_TRUE : GL_FALSE,  //
                               vertex_size);                           //
 
