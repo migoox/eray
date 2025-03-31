@@ -120,4 +120,11 @@ struct std::formatter<basic_zstring_view<TChar>, TChar> : std::formatter<std::ba
 using zstring_view  = basic_zstring_view<char>;
 using zwstring_view = basic_zstring_view<wchar_t>;
 
+namespace std {
+template <>
+struct hash<basic_zstring_view<char>> {
+  size_t operator()(const basic_zstring_view<char>& txt) const noexcept { return hash<std::string_view>{}(txt); }
+};
+}  // namespace std
+
 // NOLINTEND
