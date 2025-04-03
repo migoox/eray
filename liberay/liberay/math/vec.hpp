@@ -59,6 +59,17 @@ struct Vec {
    * @brief Constructor that sets all components of a vector
    *
    */
+  template <std::size_t N2, typename... Args>
+    requires(sizeof...(Args) + N2 == N) && (std::convertible_to<Args, T> && ...)
+  explicit constexpr Vec(const Vec<N2, T>& other, Args&&... args) {
+    init_data(std::make_index_sequence<N2>{}, other.data);
+    init_data<N2>(std::make_index_sequence<N - N2>{}, std::forward<Args>(args)...);
+  }
+
+  /**
+   * @brief Constructor that sets all components of a vector
+   *
+   */
   template <typename T2>
     requires(std::convertible_to<T2, T>)
   explicit constexpr Vec(const Vec<N, T2>& other) {
@@ -274,10 +285,21 @@ struct Vec {
     ((data[Is] = std::forward<Args>(args)), ...);
   }
 
+  template <std::size_t Start, typename... Args, std::size_t... Is>
+  constexpr void init_data(std::index_sequence<Is...>, Args&&... args) {
+    ((data[Start + Is] = std::forward<Args>(args)), ...);
+  }
+
   template <typename T2, std::size_t... Is>
     requires(std::convertible_to<T2, T>)
   constexpr void init_data(std::index_sequence<Is...>, const T2* vec_data) {
-    ((data[Is] = static_cast<float>(vec_data[Is])), ...);
+    ((data[Is] = static_cast<T>(vec_data[Is])), ...);
+  }
+
+  template <std::size_t Start, typename T2, std::size_t... Is>
+    requires(std::convertible_to<T2, T>)
+  constexpr void init_data(std::index_sequence<Is...>, const T2* vec_data) {
+    ((data[Start + Is] = static_cast<T>(vec_data[Is])), ...);
   }
 
   template <std::size_t... Is>

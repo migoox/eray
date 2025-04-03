@@ -9,6 +9,8 @@
 #include <liberay/util/panic.hpp>
 #include <print>
 
+#include "liberay/math/vec_fwd.hpp"
+
 struct Test {
   int x = 5;
 };
@@ -33,9 +35,14 @@ int main() {
   auto t = std::reference_wrapper<Test>(x);
   t      = std::reference_wrapper<Test>(y);
 
-  auto h  = util::Handle<Test>(1, 1, 1);
-  auto h2 = util::Handle<Test>(1, 1, 1);
-  auto h3 = util::Handle<Test2>(1, 1, 1);
+  auto h     = util::Handle<Test>(1, 1, 1);
+  auto h2    = util::Handle<Test>(1, 1, 1);
+  auto h3    = util::Handle<Test2>(1, 1, 1);
+  auto vec   = eray::math::Vec2f(2.F, 1.F);
+  auto test  = eray::math::Vec4f(vec, 4.F, 4.F);
+  auto test2 = eray::math::Vec3f(vec, 1.F);
+  std::println("{}", test);
+  std::println("{}", test2);
 
   if (util::AnyObjectHandle(h) == util::AnyObjectHandle(h3)) {
   }

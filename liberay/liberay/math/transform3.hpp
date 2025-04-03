@@ -226,10 +226,38 @@ struct Transform3 final {
   }
 
   // TODO(migoox): add normal matrix function
+  /**
+   * @brief Detaches from parent if the parent exists. After detachment the transform will be set to the
+   * local transform.
+   *
+   */
+  void local_detach_from_parent() {
+    if (parent_) {
+      remove_parent();
+      mark_dirty();
+    }
+  }
 
+  /**
+   * @brief Detaches from parent if the parent exists. Updates the local transform to match the world transform
+   * inherited from parent.
+   *
+   */
+  void world_detach_from_parent() {
+    if (!parent_) {
+      return;
+    }
+
+    auto new_pos   = Vec3<T>(parent().local_to_world_matrix() * Vec4<T>(pos_, static_cast<T>(1)));
+    auto new_rot   = Vec3<T>(parent().rot() * rot_);
+    auto new_scale = Vec3<T>(parent().scale() * scale_);
+    remove_parent();
+    mark_dirty();
+  }
+
+ private:
   void remove_parent() {
     std::erase_if(parent_->get().children_, [this](auto ref) { return std::addressof(ref.get()) == this; });
-
     parent_.reset();
   }
 
