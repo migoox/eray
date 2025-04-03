@@ -32,24 +32,51 @@ struct Transform3 final {
 
   const Transform3& parent() const { return *parent_; }
 
-  void set_parent(std::optional<std::reference_wrapper<Transform3>> parent) {
-    // clear reference from old parent
-    if (parent_.has_value()) {
-      remove_parent();
-    }
-
+  void reset_local(const Vec3<T> pos   = Vec3<T>{static_cast<T>(0), static_cast<T>(0), static_cast<T>(0)},
+                   const Quat<T> rot   = Quat<T>{static_cast<T>(1), static_cast<T>(0), static_cast<T>(0),
+                                                 static_cast<T>(0)},
+                   const Vec3<T> scale = Vec3<T>{static_cast<T>(1), static_cast<T>(1), static_cast<T>(1)}) {
+    pos_   = pos;
+    rot_   = rot;
+    scale_ = scale;
     mark_dirty();
-    if (!parent.has_value()) {
-      return;
-    }
-
-    // setup reference in new parent
-    parent_ = parent;
-    parent_->get().children_.emplace_back(*this);
   }
 
   /**
-   * @brief Updates the local positions by a displacement along global axises.
+   * @brief Set parent. Treat the current local transform as a transform in parent's coordinates.
+   *
+   * @param parent
+   */
+  void local_set_parent(Transform3& parent) {
+    if (parent_) {
+      remove_parent();
+    }
+    parent_ = parent;
+    parent_->get().children_.emplace_back(*this);
+    mark_dirty();
+  }
+
+  /**
+   * @brief Set parent while preserving the world transform.
+   *
+   * @param parent
+   */
+  void set_parent(Transform3& parent) {
+    if (parent_) {
+      remove_parent();
+    }
+
+    auto new_pos   = pos() - parent.pos();
+    auto new_rot   = math::normalize(parent.rot().conjugate() * rot());
+    auto new_scale = 1.F / parent.scale() * scale();
+    parent_        = parent;
+    parent_->get().children_.emplace_back(*this);
+    reset_local(new_pos, new_rot, new_scale);
+    mark_dirty();
+  }
+
+  /**
+   * @brief Updates the local positions by a displacement along world axises.
    *
    * @param delta
    */
@@ -69,7 +96,7 @@ struct Transform3 final {
   }
 
   /**
-   * @brief Updates the local rotation around assuming the axis is expressed in global coordinate system.
+   * @brief Updates the local rotation around assuming the axis is expressed in world coordinate system.
    *
    * @param angle, axis
    */
@@ -243,15 +270,16 @@ struct Transform3 final {
    * inherited from parent.
    *
    */
-  void world_detach_from_parent() {
+  void detach_from_parent() {
     if (!parent_) {
       return;
     }
 
     auto new_pos   = Vec3<T>(parent().local_to_world_matrix() * Vec4<T>(pos_, static_cast<T>(1)));
-    auto new_rot   = Vec3<T>(parent().rot() * rot_);
+    auto new_rot   = Quat<T>(parent().rot() * rot_);
     auto new_scale = Vec3<T>(parent().scale() * scale_);
     remove_parent();
+    reset_local(new_pos, new_rot, new_scale);
     mark_dirty();
   }
 
