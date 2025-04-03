@@ -21,6 +21,13 @@
   }                                                  \
   auto var = std::move(_##var##_result.value());
 
+#define TRY_UNWRAP_DEFINE_TRANSFORM_ERR(var, expr, new_err) \
+  auto _##var##_result = (expr);                            \
+  if (!_##var##_result.has_value()) {                       \
+    return std::unexpected(new_err);                        \
+  }                                                         \
+  auto var = std::move(_##var##_result.value());
+
 /**
  * @brief Use when the function returns std::expected<Type, Err>
  *
