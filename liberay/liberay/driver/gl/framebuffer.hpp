@@ -46,7 +46,9 @@ class ViewportFramebuffer : public Framebuffer {
   ViewportFramebuffer& operator=(const ViewportFramebuffer& other) = delete;
   ViewportFramebuffer& operator=(ViewportFramebuffer&& other)      = delete;
 
+  void clear_pick_render() const;
   void begin_pick_render() const;
+  void begin_pick_render_only() const;
   void end_pick_render() const;
 
   int sample_mouse_pick(size_t x, size_t y) const;

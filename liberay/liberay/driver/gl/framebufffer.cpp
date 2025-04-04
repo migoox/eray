@@ -98,12 +98,19 @@ ViewportFramebuffer::ViewportFramebuffer(ViewportFramebuffer&& other) noexcept
   other.depth_renderbuffer_            = 0;
 }
 
+void ViewportFramebuffer::clear_pick_render() const {
+  static constexpr int kClear = -1;
+  glClearTexImage(mouse_pick_attachment_texture_, 0, GL_RED_INTEGER, GL_INT, &kClear);
+}
+
 void ViewportFramebuffer::begin_pick_render() const {
   static constexpr std::array<GLenum, 2> kAttachments = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
   glDrawBuffers(static_cast<GLsizei>(kAttachments.size()), kAttachments.data());
+}
 
-  static constexpr int kClear = -1;
-  glClearTexImage(mouse_pick_attachment_texture_, 0, GL_RED_INTEGER, GL_INT, &kClear);
+void ViewportFramebuffer::begin_pick_render_only() const {
+  static constexpr std::array<GLenum, 2> kAttachments = {GL_NONE, GL_COLOR_ATTACHMENT1};
+  glDrawBuffers(static_cast<GLsizei>(kAttachments.size()), kAttachments.data());
 }
 
 void ViewportFramebuffer::end_pick_render() const {  // NOLINT
