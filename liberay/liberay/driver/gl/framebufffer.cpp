@@ -2,6 +2,7 @@
 
 #include <liberay/driver/gl/framebuffer.hpp>
 #include <liberay/util/logger.hpp>
+#include <unordered_set>
 
 namespace eray::driver::gl {
 
@@ -135,6 +136,37 @@ int ViewportFramebuffer::sample_mouse_pick(const size_t x, const size_t y) const
   int pixel = -1;
   glReadPixels(static_cast<GLint>(x), static_cast<GLint>(height_ - y), 1, 1, GL_RED_INTEGER, GL_INT, &pixel);
   return pixel;
+}
+
+std::unordered_set<int> ViewportFramebuffer::sample_mouse_pick_box(const size_t x, const size_t y, const size_t width,
+                                                                   const size_t height) const {  // NOLINT
+  auto glwidth  = width;
+  auto glheight = height;
+  if (width + x > width_) {
+    glwidth = width_ - x;
+  }
+  if (height + y > height_) {
+    glheight = height_ - y;
+  }
+
+  glReadBuffer(GL_COLOR_ATTACHMENT1);
+  auto pixels = std::vector<int>(width * height);
+
+  auto gly = static_cast<GLint>(height_ - y - height);
+  if (gly < 1) {
+    return {};
+  }
+
+  glReadPixels(static_cast<GLint>(x), gly, glwidth, glheight, GL_RED_INTEGER, GL_INT, pixels.data());
+
+  std::unordered_set<int> result;
+  for (auto id : pixels) {
+    if (id == -1) {
+      continue;
+    }
+    result.insert(id);
+  }
+  return result;
 }
 
 ImageFramebuffer::ImageFramebuffer(size_t width, size_t height)

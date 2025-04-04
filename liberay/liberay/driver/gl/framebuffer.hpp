@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <liberay/util/ruleof.hpp>
+#include <unordered_set>
 
 namespace eray::driver::gl {
 
@@ -49,6 +50,7 @@ class ViewportFramebuffer : public Framebuffer {
   void end_pick_render() const;
 
   int sample_mouse_pick(size_t x, size_t y) const;
+  std::unordered_set<int> sample_mouse_pick_box(size_t x, size_t y, size_t width, size_t height) const;
 
   void clear() override;
   void resize(size_t width, size_t height) override;
