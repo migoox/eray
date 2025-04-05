@@ -14,25 +14,25 @@ VertexArray VertexArray::create(VertexBuffer&& vert_buff, ElementBuffer&& ebo_bu
   glCreateVertexArrays(1, &id);
 
   // Bind EBO to VAO
-  glVertexArrayElementBuffer(id, ebo_buff.id_);
+  glVertexArrayElementBuffer(id, ebo_buff.raw_gl_id());
 
   // Apply layouts of VBO
   GLsizei vertex_size = 0;
 
   for (const auto& attrib : vert_buff.layout()) {
-    glEnableVertexArrayAttrib(id, attrib.index);
+    glEnableVertexArrayAttrib(id, attrib.location);
     glVertexArrayAttribFormat(id,                                     //
-                              attrib.index,                           //
+                              attrib.location,                        //
                               static_cast<GLint>(attrib.count),       //
                               attrib.type,                            //
                               attrib.normalize ? GL_TRUE : GL_FALSE,  //
                               vertex_size);                           //
 
     vertex_size += static_cast<GLint>(sizeof(float) * attrib.count);
-    glVertexArrayAttribBinding(id, attrib.index, 0);
+    glVertexArrayAttribBinding(id, attrib.location, 0);
   }
 
-  glVertexArrayVertexBuffer(id, 0, vert_buff.id_, 0, vertex_size);
+  glVertexArrayVertexBuffer(id, 0, vert_buff.raw_gl_id(), 0, vertex_size);
 
   check_gl_errors();
 
@@ -76,16 +76,16 @@ VertexArrays VertexArrays::create(std::unordered_map<zstring_view, VertexBuffer>
   for (const auto& [name, vert_buff] : vert_buffs) {
     GLsizei vertex_size = 0;
     for (const auto& attrib : vert_buff.layout()) {
-      glEnableVertexArrayAttrib(id, attrib.index);
+      glEnableVertexArrayAttrib(id, attrib.location);
       glVertexArrayAttribFormat(id,                                     //
-                                attrib.index,                           //
+                                attrib.location,                        //
                                 static_cast<GLint>(attrib.count),       //
                                 GL_FLOAT,                               //
                                 attrib.normalize ? GL_TRUE : GL_FALSE,  //
                                 vertex_size);                           //
 
       vertex_size += static_cast<GLint>(sizeof(float) * attrib.count);
-      glVertexArrayAttribBinding(id, attrib.index, binding_ind);
+      glVertexArrayAttribBinding(id, attrib.location, binding_ind);
     }
     vbos_binding_ind.insert({name, binding_ind});
 

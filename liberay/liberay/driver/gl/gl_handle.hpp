@@ -1,3 +1,4 @@
+#pragma once
 #include <glad/gl.h>
 
 #include <liberay/util/ruleof.hpp>
@@ -27,7 +28,8 @@ class GLObjectHandle {
     other.id_ = 0;
   }
 
-  GLuint get() { return id_; }
+  GLuint get() const { return id_; }
+
   GLuint release() {
     GLuint id = id_;
     id_       = 0;

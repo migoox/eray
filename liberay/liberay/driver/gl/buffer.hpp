@@ -5,9 +5,14 @@
 #include <expected>
 #include <functional>
 #include <liberay/driver/gl/gl_error.hpp>
+#include <liberay/driver/gl/gl_handle.hpp>
 #include <liberay/util/enum_mapper.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <span>
+#include <unordered_map>
+#include <vector>
+
+#include "liberay/util/zstring_view.hpp"
 
 namespace eray::driver::gl {
 
@@ -41,26 +46,23 @@ class VertexArray;
 class Buffer {
  public:
   ERAY_DISABLE_COPY(Buffer)
+  ERAY_DEFAULT_MOVE(Buffer)
 
-  Buffer(Buffer&& other) noexcept;
-  Buffer& operator=(Buffer&& other) noexcept;
-  ~Buffer();
-
-  GLuint raw_gl_id() const { return id_; }
+  GLuint raw_gl_id() const { return id_.get(); }
 
  protected:
   explicit Buffer(GLuint id);
 
  protected:
   friend VertexArray;
-  GLuint id_;
+  BufferHandle id_;
 };
 
 template <typename T>
-concept CPrimitiveType = (std::is_same<T, float>::value || std::is_same<T, int>::value);
+concept CPrimitiveType = (std::is_same_v<T, float> || std::is_same_v<T, int>);
 
 /**
- * @brief Represents a buffer of floats, interpreted as a sequence of vertices. Each vertex
+ * @brief Represents a buffer, interpreted as a sequence of vertices. Each vertex
  * is composed of attributes.
  *
  * @example A vertex consisting of 2 3d vectors representing position and normal is 6 floats wide. It consists
@@ -71,55 +73,82 @@ concept CPrimitiveType = (std::is_same<T, float>::value || std::is_same<T, int>:
  */
 class VertexBuffer : public Buffer {
  public:
-  struct Attribute {
-    /**
-     * @brief Creates an attribute.
-     *
-     * @param count measured in number of elements, e.g. if element is of float type, count=3 means 12 bytes.
-     * @param normalize
-     * @param count
-     * @param index
-     */
-    template <CPrimitiveType PrimitiveType>
-    static Attribute create(size_t location, size_t count, bool normalize) {
-      GLenum type = GL_FLOAT;
-      if constexpr (std::is_same_v<PrimitiveType, float>) {
-        type = GL_FLOAT;
-      } else if constexpr (std::is_same_v<PrimitiveType, int>) {
-        type = GL_INT;
-      } else {
-        static_assert(false, "Unsupported PrimitiveType");
+  VertexBuffer() = delete;
+  /**
+   * @brief Defines array of vertices layout that is used to in OpenGL vertex buffer.
+   *
+   */
+  class Layout {
+   public:
+    struct Attribute {
+      /**
+       * @brief Creates an attribute.
+       *
+       * @param location refers to a location, that the attribute will be bound to in VAO.
+       * @param count measured in number of elements, e.g. if element is of float type, count=3 means 12 bytes.
+       * @param bytes_offset represents an offset from the begining of a structure in the array in bytes.
+       * @param normalize
+       * @param index
+       */
+      template <CPrimitiveType PrimitiveType>
+      static Attribute create(size_t location, size_t count, size_t bytes_offset, bool normalize = false) {
+        GLenum type = GL_FLOAT;
+        if constexpr (std::is_same_v<PrimitiveType, float>) {
+          type = GL_FLOAT;
+        } else if constexpr (std::is_same_v<PrimitiveType, int>) {
+          type = GL_INT;
+        } else {
+          static_assert(false, "Unsupported PrimitiveType");
+        }
+
+        return {
+            .location        = location,               //
+            .count           = count,                  //
+            .normalize       = normalize,              //
+            .bytes_type_size = sizeof(PrimitiveType),  //
+            .type            = type,                   //
+            .bytes_offset    = bytes_offset,           //
+        };
       }
 
-      return {
-          .index     = location,               //
-          .count     = count,                  //
-          .normalize = normalize,              //
-          .type_size = sizeof(PrimitiveType),  //
-          .type      = type,                   //
-      };
+      size_t location;
+      size_t count;
+      bool normalize;
+      size_t bytes_type_size;
+      GLenum type;
+      size_t bytes_offset;
+    };
+
+    template <CPrimitiveType PrimitiveType>
+    auto add_attribute(zstring_view name, size_t location, size_t count, bool normalize = false) {
+      attribs_.emplace_back(Attribute::create<PrimitiveType>(location, count, current_bytes_offset_, normalize));
+      indices_.insert({name, attribs_.size() - 1});
+      current_bytes_offset_ += sizeof(PrimitiveType) * count;
     }
+    const Attribute& attribute(zstring_view name) const { return attribs_.at(indices_.at(name)); }
 
-    size_t index;
-    size_t count;
-    bool normalize;
-    size_t type_size;
-    GLenum type;
+    size_t bytes_size() const { return current_bytes_offset_; }
+
+    auto begin() const { return attribs_.begin(); }
+    auto end() const { return attribs_.end(); }
+
+   private:
+    std::unordered_map<zstring_view, size_t> indices_;
+    std::vector<Attribute> attribs_;
+    size_t current_bytes_offset_;
   };
-
-  VertexBuffer() = delete;
 
   /**
    * @brief Create a vertex buffer with the specified layout.
    *
-   * @param layout
+   * @param layout keys should represent locations
    * @return VertexBuffer
    */
-  static VertexBuffer create(std::vector<Attribute>&& layout);
+  static VertexBuffer create(Layout&& layout);
 
   template <CPrimitiveType PrimitiveType>
   void buffer_data(std::span<PrimitiveType> vertices, DataUsage usage) {
-    glNamedBufferData(id_, static_cast<GLsizeiptr>(vertices.size() * sizeof(PrimitiveType)),
+    glNamedBufferData(id_.get(), static_cast<GLsizeiptr>(vertices.size() * sizeof(PrimitiveType)),
                       reinterpret_cast<const void*>(vertices.data()), kDataUsageGLMapper[usage]);
     check_gl_errors();
   }
@@ -130,21 +159,34 @@ class VertexBuffer : public Buffer {
    * @param offset_count is measured in floats not bytes.
    * @param vertices
    */
-  template <CPrimitiveType PrimitiveType>
-  void sub_buffer_data(GLuint offset_count, std::span<PrimitiveType> vertices) {
-    glNamedBufferSubData(id_, static_cast<GLintptr>(offset_count * sizeof(PrimitiveType)),
-                         static_cast<GLsizeiptr>(vertices.size() * sizeof(PrimitiveType)),
-                         reinterpret_cast<const void*>(vertices.data()));
+  void sub_buffer_data(GLuint vert_start_index, const void* vertices, size_t count) {
+    glNamedBufferSubData(id_.get(), static_cast<GLintptr>(vert_start_index * layout_.bytes_size()),
+                         static_cast<GLsizeiptr>(count * layout_.bytes_size()), vertices);
     check_gl_errors();
   }
 
-  const std::vector<Attribute>& layout() const { return layout_; }
+  /**
+   * @brief Calls glNamedBufferSubData.
+   *
+   * @param offset_count is measured in floats not bytes.
+   * @param vertices
+   */
+  template <CPrimitiveType PrimitiveType>
+  void set_attribute_value(GLuint vert_start_index, zstring_view attr_name, const PrimitiveType* attr_value) {
+    const auto& attrib = layout_.attribute(attr_name);
+    glNamedBufferSubData(
+        id_.get(), static_cast<GLintptr>(vert_start_index * layout_.bytes_size() + attrib.bytes_offset),
+        static_cast<GLsizeiptr>(attrib.count * attrib.bytes_type_size), reinterpret_cast<const void*>(attr_value));
+    check_gl_errors();
+  }
+
+  const Layout& layout() const { return layout_; }
 
  private:
-  VertexBuffer(GLuint id, std::vector<Attribute>&& layout) : Buffer(id), layout_(std::move(layout)) {}
+  VertexBuffer(GLuint id, Layout&& layout) : Buffer(id), layout_(std::move(layout)) {}
 
  private:
-  std::vector<Attribute> layout_;
+  Layout layout_;
 };
 
 class ElementBuffer : public Buffer {
