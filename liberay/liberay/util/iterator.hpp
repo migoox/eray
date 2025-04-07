@@ -4,9 +4,9 @@
 
 namespace eray::util {
 
-template <typename It, typename T>
+template <typename It, typename... Ts>
 concept Iterator = requires(It it) {
-  { *it } -> std::convertible_to<T>;
+  requires(std::convertible_to<decltype(*it), Ts> || ...);
   requires std::input_iterator<It>;
 };
 
