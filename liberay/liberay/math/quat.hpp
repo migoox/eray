@@ -134,11 +134,11 @@ struct Quat {
    * @brief Creates an unit quaternion that represents a rotation from the provided euler angles. The X rotation
    * is applied first.
    *
-   * @param angles
+   * @param angles in radians
    * @return constexpr Quat
    */
   constexpr static Quat from_euler_xyz(const Vec<3, T>& angles) {
-    return (rotation_z(angles.x) * rotation_y(angles.x) * rotation_x(angles.x)).normalize();
+    return (rotation_z(angles.z) * rotation_y(angles.y) * rotation_x(angles.x)).normalize();
   }
 
   /**
