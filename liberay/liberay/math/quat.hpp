@@ -1,9 +1,10 @@
 #pragma once
 
+#include <cassert>
 #include <liberay/math/mat.hpp>
+#include <liberay/math/mat_fwd.hpp>
 #include <liberay/math/quat_fwd.hpp>
-
-#include "liberay/math/mat_fwd.hpp"
+#include <liberay/math/types.hpp>
 
 namespace eray::math {
 
