@@ -59,7 +59,8 @@ class Buffer {
 };
 
 template <typename T>
-concept CPrimitiveType = (std::is_same_v<T, float> || std::is_same_v<T, int>);
+concept CPrimitiveType = (std::is_same_v<T, float> || std::is_same_v<T, const float> || std::is_same_v<T, int> ||
+                          std::is_same_v<T, const int>);
 
 /**
  * @brief Represents a buffer, interpreted as a sequence of vertices. Each vertex
