@@ -23,9 +23,9 @@ class VertexArray {
    * class uses DSA (Direct State Access).
    *
    */
-  void bind() const { glBindVertexArray(m_.id); }
+  void bind() const { ERAY_GL_CALL(glBindVertexArray(m_.id)); }
 
-  static void unbind() { glBindVertexArray(0); }
+  static void unbind() { ERAY_GL_CALL(glBindVertexArray(0)); }
 
   void set_binding_divisor(GLuint divisor);
 
@@ -62,9 +62,9 @@ class VertexArrays {
    * class uses DSA (Direct State Access).
    *
    */
-  void bind() const { glBindVertexArray(m_.id); }
+  void bind() const { ERAY_GL_CALL(glBindVertexArray(m_.id)); }
 
-  static void unbind() { glBindVertexArray(0); }
+  static void unbind() { ERAY_GL_CALL(glBindVertexArray(0)); }
 
   void set_binding_divisor(zstring_view name, GLuint divisor);
 

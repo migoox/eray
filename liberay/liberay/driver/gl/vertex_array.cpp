@@ -11,30 +11,28 @@ namespace eray::driver::gl {
 
 VertexArray VertexArray::create(VertexBuffer&& vert_buff, ElementBuffer&& ebo_buff) {
   GLuint id = 0;
-  glCreateVertexArrays(1, &id);
+  ERAY_GL_CALL(glCreateVertexArrays(1, &id));
 
   // Bind EBO to VAO
-  glVertexArrayElementBuffer(id, ebo_buff.raw_gl_id());
+  ERAY_GL_CALL(glVertexArrayElementBuffer(id, ebo_buff.raw_gl_id()));
 
   // Apply layouts of VBO
   GLsizei vertex_size = 0;
 
   for (const auto& attrib : vert_buff.layout()) {
-    glEnableVertexArrayAttrib(id, attrib.location);
-    glVertexArrayAttribFormat(id,                                     //
-                              attrib.location,                        //
-                              static_cast<GLint>(attrib.count),       //
-                              attrib.type,                            //
-                              attrib.normalize ? GL_TRUE : GL_FALSE,  //
-                              vertex_size);                           //
+    ERAY_GL_CALL(glEnableVertexArrayAttrib(id, attrib.location));
+    ERAY_GL_CALL(glVertexArrayAttribFormat(id,                                     //
+                                           attrib.location,                        //
+                                           static_cast<GLint>(attrib.count),       //
+                                           attrib.type,                            //
+                                           attrib.normalize ? GL_TRUE : GL_FALSE,  //
+                                           vertex_size));                          //
 
     vertex_size += static_cast<GLint>(sizeof(float) * attrib.count);
-    glVertexArrayAttribBinding(id, attrib.location, 0);
+    ERAY_GL_CALL(glVertexArrayAttribBinding(id, attrib.location, 0));
   }
 
-  glVertexArrayVertexBuffer(id, 0, vert_buff.raw_gl_id(), 0, vertex_size);
-
-  check_gl_errors();
+  ERAY_GL_CALL(glVertexArrayVertexBuffer(id, 0, vert_buff.raw_gl_id(), 0, vertex_size));
 
   return VertexArray({
       .vbo = std::move(vert_buff),
@@ -44,8 +42,7 @@ VertexArray VertexArray::create(VertexBuffer&& vert_buff, ElementBuffer&& ebo_bu
 }
 
 void VertexArray::set_binding_divisor(GLuint divisor) {  // NOLINT
-  glVertexArrayBindingDivisor(m_.id, 0, divisor);
-  check_gl_errors();
+  ERAY_GL_CALL(glVertexArrayBindingDivisor(m_.id, 0, divisor));
 }
 
 VertexArray::VertexArray(VertexArray&& other) noexcept : m_(std::move(other.m_)) { other.m_.id = 0; }
@@ -57,17 +54,17 @@ VertexArray& VertexArray::operator=(VertexArray&& other) noexcept {
   return *this;
 }
 
-VertexArray::~VertexArray() { glDeleteVertexArrays(1, &m_.id); }
+VertexArray::~VertexArray() { ERAY_GL_CALL(glDeleteVertexArrays(1, &m_.id)); }
 
 // -- VertexArrays ----------------------------------------------------------------------------------------------------
 
 VertexArrays VertexArrays::create(std::unordered_map<zstring_view, VertexBuffer>&& vert_buffs,
                                   ElementBuffer&& ebo_buff) {
   GLuint id = 0;
-  glCreateVertexArrays(1, &id);
+  ERAY_GL_CALL(glCreateVertexArrays(1, &id));
 
   // Bind EBO to VAO
-  glVertexArrayElementBuffer(id, ebo_buff.raw_gl_id());
+  ERAY_GL_CALL(glVertexArrayElementBuffer(id, ebo_buff.raw_gl_id()));
 
   std::unordered_map<zstring_view, GLuint> vbos_binding_ind;
 
@@ -76,23 +73,21 @@ VertexArrays VertexArrays::create(std::unordered_map<zstring_view, VertexBuffer>
   for (const auto& [name, vert_buff] : vert_buffs) {
     GLsizei vertex_size = 0;
     for (const auto& attrib : vert_buff.layout()) {
-      glEnableVertexArrayAttrib(id, attrib.location);
-      glVertexArrayAttribFormat(id,                                     //
-                                attrib.location,                        //
-                                static_cast<GLint>(attrib.count),       //
-                                GL_FLOAT,                               //
-                                attrib.normalize ? GL_TRUE : GL_FALSE,  //
-                                vertex_size);                           //
+      ERAY_GL_CALL(glEnableVertexArrayAttrib(id, attrib.location));
+      ERAY_GL_CALL(glVertexArrayAttribFormat(id,                                     //
+                                             attrib.location,                        //
+                                             static_cast<GLint>(attrib.count),       //
+                                             GL_FLOAT,                               //
+                                             attrib.normalize ? GL_TRUE : GL_FALSE,  //
+                                             vertex_size));                          //
 
       vertex_size += static_cast<GLint>(sizeof(float) * attrib.count);
-      glVertexArrayAttribBinding(id, attrib.location, binding_ind);
+      ERAY_GL_CALL(glVertexArrayAttribBinding(id, attrib.location, binding_ind));
     }
     vbos_binding_ind.insert({name, binding_ind});
 
-    glVertexArrayVertexBuffer(id, binding_ind++, vert_buff.raw_gl_id(), 0, vertex_size);
+    ERAY_GL_CALL(glVertexArrayVertexBuffer(id, binding_ind++, vert_buff.raw_gl_id(), 0, vertex_size));
   }
-
-  check_gl_errors();
 
   return VertexArrays({
       .vbos             = std::move(vert_buffs),
@@ -103,8 +98,7 @@ VertexArrays VertexArrays::create(std::unordered_map<zstring_view, VertexBuffer>
 }
 
 void VertexArrays::set_binding_divisor(zstring_view name, GLuint divisor) {  // NOLINT
-  glVertexArrayBindingDivisor(m_.id, m_.vbos_binding_ind.at(name), divisor);
-  check_gl_errors();
+  ERAY_GL_CALL(glVertexArrayBindingDivisor(m_.id, m_.vbos_binding_ind.at(name), divisor));
 }
 
 VertexArrays::VertexArrays(VertexArrays&& other) noexcept : m_(std::move(other.m_)) { other.m_.id = 0; }
@@ -116,6 +110,6 @@ VertexArrays& VertexArrays::operator=(VertexArrays&& other) noexcept {
   return *this;
 }
 
-VertexArrays::~VertexArrays() { glDeleteVertexArrays(1, &m_.id); }
+VertexArrays::~VertexArrays() { ERAY_GL_CALL(glDeleteVertexArrays(1, &m_.id)); }
 
 }  // namespace eray::driver::gl

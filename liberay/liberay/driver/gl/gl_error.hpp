@@ -2,6 +2,7 @@
 #include <glad/gl.h>
 
 #include <liberay/util/panic.hpp>
+#include <liberay/util/platform.hpp>
 
 namespace eray::driver::gl {
 
@@ -46,3 +47,27 @@ inline void check_gl_errors() {
 }  // namespace eray::driver::gl
 
 }  // namespace eray::driver::gl
+
+// NOLINTBEGIN
+#ifndef IS_DEBUG
+#define ERAY_GL_CALL(call) call
+#else
+#define ERAY_GL_CALL(call)               \
+  do {                                   \
+    call;                                \
+    eray::driver::gl::check_gl_errors(); \
+  } while (0)
+#endif
+
+#ifdef NDEBUG
+#define ERAY_GL_CALL_RET(expr) (expr)
+#else
+#define ERAY_GL_CALL_RET(expr)           \
+  ([&]() {                               \
+    auto result = (expr);                \
+    eray::driver::gl::check_gl_errors(); \
+    return result;                       \
+  })()
+#endif
+
+// NOLINTEND

@@ -3,7 +3,6 @@
 #include <glad/gl.h>
 
 #include <expected>
-#include <functional>
 #include <liberay/driver/gl/gl_error.hpp>
 #include <liberay/driver/gl/gl_handle.hpp>
 #include <liberay/util/enum_mapper.hpp>
@@ -148,9 +147,8 @@ class VertexBuffer : public Buffer {
 
   template <CPrimitiveType PrimitiveType>
   void buffer_data(std::span<PrimitiveType> vertices, DataUsage usage) {
-    glNamedBufferData(id_.get(), static_cast<GLsizeiptr>(vertices.size() * sizeof(PrimitiveType)),
-                      reinterpret_cast<const void*>(vertices.data()), kDataUsageGLMapper[usage]);
-    check_gl_errors();
+    ERAY_GL_CALL(glNamedBufferData(id_.get(), static_cast<GLsizeiptr>(vertices.size() * sizeof(PrimitiveType)),
+                                   reinterpret_cast<const void*>(vertices.data()), kDataUsageGLMapper[usage]));
   }
 
   /**
@@ -160,9 +158,8 @@ class VertexBuffer : public Buffer {
    * @param vertices
    */
   void sub_buffer_data(GLuint vert_start_index, const void* vertices, size_t count) {
-    glNamedBufferSubData(id_.get(), static_cast<GLintptr>(vert_start_index * layout_.bytes_size()),
-                         static_cast<GLsizeiptr>(count * layout_.bytes_size()), vertices);
-    check_gl_errors();
+    ERAY_GL_CALL(glNamedBufferSubData(id_.get(), static_cast<GLintptr>(vert_start_index * layout_.bytes_size()),
+                                      static_cast<GLsizeiptr>(count * layout_.bytes_size()), vertices));
   }
 
   /**
@@ -174,10 +171,9 @@ class VertexBuffer : public Buffer {
   template <CPrimitiveType PrimitiveType>
   void set_attribute_value(GLuint vert_start_index, zstring_view attr_name, const PrimitiveType* attr_value) {
     const auto& attrib = layout_.attribute(attr_name);
-    glNamedBufferSubData(
+    ERAY_GL_CALL(glNamedBufferSubData(
         id_.get(), static_cast<GLintptr>(vert_start_index * layout_.bytes_size() + attrib.bytes_offset),
-        static_cast<GLsizeiptr>(attrib.count * attrib.bytes_type_size), reinterpret_cast<const void*>(attr_value));
-    check_gl_errors();
+        static_cast<GLsizeiptr>(attrib.count * attrib.bytes_type_size), reinterpret_cast<const void*>(attr_value)));
   }
 
   const Layout& layout() const { return layout_; }
@@ -210,18 +206,6 @@ class ElementBuffer : public Buffer {
  private:
   explicit ElementBuffer(GLuint id) : Buffer(id) {}
   size_t count_{};
-};
-
-class PixelBuffer : public Buffer {
- public:
-  PixelBuffer() = delete;
-
-  static PixelBuffer create();
-  void buffer_data(std::span<uint32_t> data, DataUsage usage);
-  void map_data(const std::function<void(std::span<uint32_t> data)>& data_operator, size_t size);
-
- private:
-  explicit PixelBuffer(GLuint id) : Buffer(id) {}
 };
 
 }  // namespace eray::driver::gl

@@ -1,6 +1,3 @@
-
-#include <algorithm>
-#include <cstddef>
 #include <expected>
 #include <liberay/driver/gl/gl_error.hpp>
 #include <liberay/driver/gl/shader_program.hpp>
@@ -18,18 +15,18 @@ ShaderProgram::ShaderProgram(zstring_view name) : shader_name_(name), program_id
   }
 }
 
-ShaderProgram::~ShaderProgram() { glDeleteProgram(program_id_); }
+ShaderProgram::~ShaderProgram() { ERAY_GL_CALL(glDeleteProgram(program_id_)); }
 
-void ShaderProgram::bind() const { glUseProgram(program_id_); }
+void ShaderProgram::bind() const { ERAY_GL_CALL(glUseProgram(program_id_)); }
 
-void ShaderProgram::unbind() const { glUseProgram(0); }  // NOLINT
+void ShaderProgram::unbind() const { ERAY_GL_CALL(glUseProgram(0)); }  // NOLINT
 
 std::expected<void, ShaderProgram::ProgramCreationError> ShaderProgram::recompile() {
   using clock = std::chrono::high_resolution_clock;
   auto start  = clock::now();
 
-  glDeleteProgram(program_id_);
-  program_id_ = glCreateProgram();
+  ERAY_GL_CALL(glDeleteProgram(program_id_));
+  program_id_ = ERAY_GL_CALL_RET(glCreateProgram());
 
   TRY(create_program());
 
@@ -39,7 +36,7 @@ std::expected<void, ShaderProgram::ProgramCreationError> ShaderProgram::recompil
 
   // Reconnect UBO bindings
   for (auto& pair : uniform_block_bindings_) {
-    glUniformBlockBinding(program_id_, pair.first, pair.second);
+    ERAY_GL_CALL(glUniformBlockBinding(program_id_, pair.first, pair.second));
   }
 
   return {};
@@ -47,13 +44,13 @@ std::expected<void, ShaderProgram::ProgramCreationError> ShaderProgram::recompil
 
 std::optional<std::string> ShaderProgram::get_shader_status(GLuint shader, GLenum type) {
   GLint status = 0;
-  glGetShaderiv(shader, type, &status);
+  ERAY_GL_CALL(glGetShaderiv(shader, type, &status));
   if (status == GL_FALSE) {
     GLint length = 0;
-    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &length);
+    ERAY_GL_CALL(glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &length));
 
     std::string info(static_cast<GLuint>(length), '\0');
-    glGetShaderInfoLog(shader, length, &length, info.data());
+    ERAY_GL_CALL(glGetShaderInfoLog(shader, length, &length, info.data()));
     return info;
   }
 
@@ -62,13 +59,13 @@ std::optional<std::string> ShaderProgram::get_shader_status(GLuint shader, GLenu
 
 std::optional<std::string> ShaderProgram::get_program_status(GLuint program, GLenum type) {
   GLint status = 0;
-  glGetProgramiv(program, type, &status);
+  ERAY_GL_CALL(glGetProgramiv(program, type, &status));
   if (status == GL_FALSE) {
     GLint length = 0;
-    glGetProgramiv(program, GL_INFO_LOG_LENGTH, &length);
+    ERAY_GL_CALL(glGetProgramiv(program, GL_INFO_LOG_LENGTH, &length));
 
     std::string info(static_cast<GLuint>(length), '\0');
-    glGetProgramInfoLog(program, length, &length, info.data());
+    ERAY_GL_CALL(glGetProgramInfoLog(program, length, &length, info.data()));
     return info;
   }
 
@@ -76,7 +73,7 @@ std::optional<std::string> ShaderProgram::get_program_status(GLuint program, GLe
 }
 
 std::expected<void, ShaderProgram::ProgramCreationError> ShaderProgram::link_program() {
-  glLinkProgram(program_id_);
+  ERAY_GL_CALL(glLinkProgram(program_id_));
 
   auto link_status = get_program_status(program_id_, GL_LINK_STATUS);
   if (link_status.has_value()) {
@@ -84,7 +81,7 @@ std::expected<void, ShaderProgram::ProgramCreationError> ShaderProgram::link_pro
     return std::unexpected(ProgramCreationError::LinkingFailed);
   }
 
-  glValidateProgram(program_id_);
+  ERAY_GL_CALL(glValidateProgram(program_id_));
 
   auto validate_status = get_program_status(program_id_, GL_VALIDATE_STATUS);
   if (validate_status.has_value()) {
@@ -102,7 +99,7 @@ GLint ShaderProgram::get_uniform_location(zstring_view name) const {
   }
 
   const std::string key(name);
-  const GLint location    = glGetUniformLocation(program_id_, key.c_str());
+  const GLint location    = ERAY_GL_CALL_RET(glGetUniformLocation(program_id_, key.c_str()));
   uniform_locations_[key] = location;
   if (location == -1) {
     util::Logger::err(R"(Unable to find uniform "{}" in shader "{}")", name, shader_name_);
@@ -116,7 +113,7 @@ GLint ShaderProgram::get_uniform_location(zstring_view name) const {
 // TODO(migoox): return GLName wrapper instead of the raw id
 std::expected<GLuint, ShaderProgram::ProgramCreationError> ShaderProgram::create_shader(const GLSLShader& resource,
                                                                                         GLenum type) {
-  const GLuint shader = glCreateShader(type);
+  const GLuint shader = ERAY_GL_CALL_RET(glCreateShader(type));
 
   if (shader == 0) {
     util::Logger::err(R"(Unable to create a shader program)");
@@ -124,8 +121,8 @@ std::expected<GLuint, ShaderProgram::ProgramCreationError> ShaderProgram::create
   }
 
   const GLchar* source = resource.get_glsl().c_str();
-  glShaderSource(shader, 1, &source, nullptr);
-  glCompileShader(shader);
+  ERAY_GL_CALL(glShaderSource(shader, 1, &source, nullptr));
+  ERAY_GL_CALL(glCompileShader(shader));
   auto compile_status = get_shader_status(shader, GL_COMPILE_STATUS);
   if (compile_status.has_value()) {
     util::Logger::err(R"(Shader program compilation failed for shader {}, with status: {})", shader_name_,
@@ -137,14 +134,14 @@ std::expected<GLuint, ShaderProgram::ProgramCreationError> ShaderProgram::create
 }
 
 // void ShaderProgram::bind_uniform_buffer(zstring_view name, const UniformBuffer& ubo) const {
-//   const GLuint index = glGetUniformBlockIndex(program_id_, name.data());
+//   const GLuint index = ERAY_GL_CALL( glGetUniformBlockIndex(program_id_, name.data()) );
 //   if (index == GL_INVALID_INDEX) {
 //     log_throw(ShaderProgramValidationException(
 //         shader_name_, std::format(R"(Unable to find uniform block "{}" in shader "{}")", name, shader_name_)));
 //   }
 
 //   GLint size = 0;
-//   glGetActiveUniformBlockiv(program_id_, index, GL_UNIFORM_BLOCK_DATA_SIZE, &size);
+//   ERAY_GL_CALL( glGetActiveUniformBlockiv(program_id_, index, GL_UNIFORM_BLOCK_DATA_SIZE, &size) );
 
 //   // According to std140 standard the padding at the end of an array MAY be added
 //   // https://registry.khronos.org/OpenGL/specs/gl/glspec45.core.pdf#page=159
@@ -157,20 +154,20 @@ std::expected<GLuint, ShaderProgram::ProgramCreationError> ShaderProgram::create
 //   }
 
 //   uniform_block_bindings_[index] = static_cast<GLuint>(ubo.binding());
-//   glUniformBlockBinding(program_id_, index, uniform_block_bindings_[index]);
+//   ERAY_GL_CALL( glUniformBlockBinding(program_id_, index, uniform_block_bindings_[index]) );
 //   util::Logger::debug(R"(Bound uniform block "{}" (index: {}, size: {} bytes) in shader "{}" to binding: {})", name,
 //                       index, size, shader_name_, ubo.binding());
 // }
 
 // void ShaderProgram::bind_uniform_buffer(zstring_view name, size_t binding) const {
-//   const GLuint index = glGetUniformBlockIndex(program_id_, name.data());
+//   const GLuint index = ERAY_GL_CALL( glGetUniformBlockIndex(program_id_, name.data()) );
 //   if (index == GL_INVALID_INDEX) {
 //     log_throw(ShaderProgramValidationException(
 //         shader_name_, std::format(R"(Unable to find uniform block "{}" in shader "{}")", name, shader_name_)));
 //   }
 
 //   uniform_block_bindings_[index] = static_cast<GLuint>(binding);
-//   glUniformBlockBinding(program_id_, index, uniform_block_bindings_[index]);
+//   ERAY_GL_CALL( glUniformBlockBinding(program_id_, index, uniform_block_bindings_[index]) );
 //   util::Logger::debug(R"(Bound uniform block "{}" (index: {}) in shader "{}" to binding: {})", name, index,
 //                       shader_name_, binding);
 // }
@@ -244,42 +241,42 @@ RenderingShaderProgram::create(zstring_view name, GLSLShader vert_shader, GLSLSh
 std::expected<void, RenderingShaderProgram::ProgramCreationError> RenderingShaderProgram::create_program() {
   TRY_UNWRAP_DEFINE(vertex_shader, create_shader(vertex_shader_, GL_VERTEX_SHADER));
   TRY_UNWRAP_DEFINE(fragment_shader, create_shader(fragment_shader_, GL_FRAGMENT_SHADER));
-  glAttachShader(program_id_, vertex_shader);
-  glAttachShader(program_id_, fragment_shader);
+  ERAY_GL_CALL(glAttachShader(program_id_, vertex_shader));
+  ERAY_GL_CALL(glAttachShader(program_id_, fragment_shader));
 
   std::optional<GLuint> tesc_shader = std::nullopt;
   std::optional<GLuint> tese_shader = std::nullopt;
   if (tesc_shader_) {
     TRY_UNWRAP_ASSIGN(tesc_shader, create_shader(*tesc_shader_, GL_TESS_CONTROL_SHADER));
     TRY_UNWRAP_ASSIGN(tese_shader, create_shader(*tese_shader_, GL_TESS_EVALUATION_SHADER));
-    glAttachShader(program_id_, *tesc_shader);
-    glAttachShader(program_id_, *tese_shader);
+    ERAY_GL_CALL(glAttachShader(program_id_, *tesc_shader));
+    ERAY_GL_CALL(glAttachShader(program_id_, *tese_shader));
   }
 
   std::optional<GLuint> geom_shader = std::nullopt;
   if (geom_shader_) {
     TRY_UNWRAP_ASSIGN(geom_shader, create_shader(*geom_shader_, GL_GEOMETRY_SHADER));
-    glAttachShader(program_id_, *geom_shader);
+    ERAY_GL_CALL(glAttachShader(program_id_, *geom_shader));
   }
 
   TRY(link_program());
 
   // TODO(migoox): Fix this when UNWRAP fails
-  glDetachShader(program_id_, vertex_shader);
-  glDetachShader(program_id_, fragment_shader);
-  glDeleteShader(vertex_shader);
-  glDeleteShader(fragment_shader);
+  ERAY_GL_CALL(glDetachShader(program_id_, vertex_shader));
+  ERAY_GL_CALL(glDetachShader(program_id_, fragment_shader));
+  ERAY_GL_CALL(glDeleteShader(vertex_shader));
+  ERAY_GL_CALL(glDeleteShader(fragment_shader));
 
   if (tesc_shader_) {
-    glDetachShader(program_id_, *tesc_shader);
-    glDetachShader(program_id_, *tese_shader);
-    glDeleteShader(*tesc_shader);
-    glDeleteShader(*tese_shader);
+    ERAY_GL_CALL(glDetachShader(program_id_, *tesc_shader));
+    ERAY_GL_CALL(glDetachShader(program_id_, *tese_shader));
+    ERAY_GL_CALL(glDeleteShader(*tesc_shader));
+    ERAY_GL_CALL(glDeleteShader(*tese_shader));
   }
 
   if (geom_shader_) {
-    glDetachShader(program_id_, *geom_shader);
-    glDeleteShader(*geom_shader);
+    ERAY_GL_CALL(glDetachShader(program_id_, *geom_shader));
+    ERAY_GL_CALL(glDeleteShader(*geom_shader));
   }
 
   return {};
@@ -304,12 +301,12 @@ std::expected<void, RenderingShaderProgram::ProgramCreationError> RenderingShade
 
 // void ComputeShaderProgram::create_program() {
 //   GLuint compute_shader = create_shader(compute_shader_, GL_COMPUTE_SHADER);
-//   glAttachShader(program_id_, compute_shader);
+//   ERAY_GL_CALL( glAttachShader(program_id_, compute_shader) );
 
 //   link_program();
 
-//   glDetachShader(program_id_, compute_shader);
-//   glDeleteShader(compute_shader);
+//   ERAY_GL_CALL( glDetachShader(program_id_, compute_shader) );
+//   ERAY_GL_CALL( glDeleteShader(compute_shader) );
 // }
 
 }  // namespace eray::driver::gl

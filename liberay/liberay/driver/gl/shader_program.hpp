@@ -33,23 +33,23 @@ class ShaderProgram {
   void set_uniform(zstring_view name, const T& value) const {
     GLint location = get_uniform_location(name);
     if constexpr (std::is_same_v<T, bool>) {
-      glProgramUniform1i(program_id_, location, value ? 1 : 0);
+      ERAY_GL_CALL(glProgramUniform1i(program_id_, location, value ? 1 : 0));
     } else if constexpr (std::is_same_v<T, int>) {
-      glProgramUniform1i(program_id_, location, value);
+      ERAY_GL_CALL(glProgramUniform1i(program_id_, location, value));
     } else if constexpr (std::is_same_v<T, uint32_t>) {
-      glProgramUniform1ui(program_id_, location, value);
+      ERAY_GL_CALL(glProgramUniform1ui(program_id_, location, value));
     } else if constexpr (std::is_same_v<T, float>) {
-      glProgramUniform1f(program_id_, location, value);
+      ERAY_GL_CALL(glProgramUniform1f(program_id_, location, value));
     } else if constexpr (std::is_same_v<T, math::Vec2f>) {
-      glProgramUniform2f(program_id_, location, value.x, value.y);
+      ERAY_GL_CALL(glProgramUniform2f(program_id_, location, value.x, value.y));
     } else if constexpr (std::is_same_v<T, math::Vec3f>) {
-      glProgramUniform3f(program_id_, location, value.x, value.y, value.z);
+      ERAY_GL_CALL(glProgramUniform3f(program_id_, location, value.x, value.y, value.z));
     } else if constexpr (std::is_same_v<T, math::Vec4f>) {
-      glProgramUniform4f(program_id_, location, value.x, value.y, value.z, value.w);
+      ERAY_GL_CALL(glProgramUniform4f(program_id_, location, value.x, value.y, value.z, value.w));
     } else if constexpr (std::is_same_v<T, math::Mat3f>) {
-      glProgramUniformMatrix3fv(program_id_, location, 1, GL_FALSE, value.raw_ptr());
+      ERAY_GL_CALL(glProgramUniformMatrix3fv(program_id_, location, 1, GL_FALSE, value.raw_ptr()));
     } else if constexpr (std::is_same_v<T, math::Mat4f>) {
-      glProgramUniformMatrix4fv(program_id_, location, 1, GL_FALSE, value.raw_ptr());
+      ERAY_GL_CALL(glProgramUniformMatrix4fv(program_id_, location, 1, GL_FALSE, value.raw_ptr()));
     } else {
       static_assert(false, "Unsupported uniform type");
     }

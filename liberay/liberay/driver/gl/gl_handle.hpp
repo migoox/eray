@@ -1,6 +1,7 @@
 #pragma once
 #include <glad/gl.h>
 
+#include <liberay/driver/gl/gl_error.hpp>
 #include <liberay/util/ruleof.hpp>
 
 namespace eray::driver::gl {
@@ -26,6 +27,7 @@ class GLObjectHandle {
   GLObjectHandle& operator=(GLObjectHandle&& other) noexcept {
     id_       = other.id_;
     other.id_ = 0;
+    return *this;
   }
 
   GLuint get() const { return id_; }
@@ -41,18 +43,18 @@ class GLObjectHandle {
 };
 
 struct ShaderTag {};
-using ShaderHandle = GLObjectHandle<ShaderTag, [](auto id) { glDeleteShader(id); }>;
+using ShaderHandle = GLObjectHandle<ShaderTag, [](auto id) { ERAY_GL_CALL(glDeleteShader(id)); }>;
 
 struct ShaderProgramTag {};
-using ShaderProgramHandle = GLObjectHandle<ShaderProgramTag, [](auto id) { glDeleteProgram(id); }>;
+using ShaderProgramHandle = GLObjectHandle<ShaderProgramTag, [](auto id) { ERAY_GL_CALL(glDeleteProgram(id)); }>;
 
 struct TextureTag {};
-using TextureHandle = GLObjectHandle<ShaderProgramTag, [](auto id) { glDeleteTextures(1, &id); }>;
+using TextureHandle = GLObjectHandle<ShaderProgramTag, [](auto id) { ERAY_GL_CALL(glDeleteTextures(1, &id)); }>;
 
 struct VertexArrayTag {};
-using VertexArrayHandle = GLObjectHandle<VertexArrayTag, [](auto id) { glDeleteVertexArrays(1, &id); }>;
+using VertexArrayHandle = GLObjectHandle<VertexArrayTag, [](auto id) { ERAY_GL_CALL(glDeleteVertexArrays(1, &id)); }>;
 
 struct BufferTag {};
-using BufferHandle = GLObjectHandle<BufferTag, [](auto id) { glDeleteBuffers(1, &id); }>;
+using BufferHandle = GLObjectHandle<BufferTag, [](auto id) { ERAY_GL_CALL(glDeleteBuffers(1, &id)); }>;
 
 }  // namespace eray::driver::gl

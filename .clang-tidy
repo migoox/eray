@@ -39,6 +39,7 @@ Checks: >
   -readability-redundant-access-specifiers,
   -readability-magic-numbers,
   -readability-math-missing-parentheses,
+  -readability-convert-member-functions-to-static,
   -bugprone-narrowing-conversions,
   -bugprone-easily-swappable-parameters,
   -bugprone-implicit-widening-of-multiplication-result,

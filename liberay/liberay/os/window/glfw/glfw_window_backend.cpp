@@ -2,6 +2,7 @@
 #include <glad/gl.h>
 
 #include <expected>
+#include <liberay/driver/gl/gl_error.hpp>
 #include <liberay/os/driver.hpp>
 #include <liberay/os/imgui_backend.hpp>
 #include <liberay/os/window/glfw/glfw_window.hpp>
@@ -29,8 +30,8 @@ bool init_opengl_ctx(GLFWwindow* window_ptr_) {
   util::Logger::info("\tVersion: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
   GLint max_uniform_block_size     = 0;
   GLint max_uniform_block_bindings = 0;
-  glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &max_uniform_block_size);
-  glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &max_uniform_block_bindings);
+  ERAY_GL_CALL(glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &max_uniform_block_size));
+  ERAY_GL_CALL(glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &max_uniform_block_bindings));
   util::Logger::info("\tMax uniform block size: {}", max_uniform_block_size);
   util::Logger::info("\tMax uniform block bindings: {}", max_uniform_block_bindings);
 

@@ -64,8 +64,8 @@ void Application::render_gui(Duration /* delta */) {}
 
 void Application::render(Duration /* delta */) {
   ImGui::ShowDemoWindow();
-  glClearColor(0.5F, 0.6F, 0.6F, 1.0F);
-  glClear(GL_COLOR_BUFFER_BIT);
+  ERAY_GL_CALL(glClearColor(0.5F, 0.6F, 0.6F, 1.0F));
+  ERAY_GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
 }
 
 void Application::update(Duration /* delta */) {}
