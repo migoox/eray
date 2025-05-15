@@ -47,6 +47,7 @@ class Buffer {
   ERAY_DEFAULT_MOVE(Buffer)
 
   GLuint raw_gl_id() const { return id_.get(); }
+  const BufferHandle& handle() const { return id_; }
 
  protected:
   explicit Buffer(GLuint id);
