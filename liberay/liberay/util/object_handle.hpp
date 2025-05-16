@@ -9,8 +9,11 @@ namespace eray::util {
 
 struct Any {};
 
-template <typename Object>
+template <typename TObject>
 struct Handle {
+  using Object   = TObject;
+  using ObjectId = std::uint32_t;
+
   std::uint32_t owner_signature;
   std::uint32_t timestamp;
   std::uint32_t obj_id;

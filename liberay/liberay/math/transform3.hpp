@@ -10,8 +10,6 @@ namespace eray::math {
 template <CFloatingPoint T>
 struct Transform3 final {
  public:
-  ERAY_DISABLE_COPY_AND_MOVE(Transform3)
-
   explicit Transform3(const Vec3<T> pos   = Vec3<T>{static_cast<T>(0), static_cast<T>(0), static_cast<T>(0)},
                       const Quat<T> rot   = Quat<T>{static_cast<T>(1), static_cast<T>(0), static_cast<T>(0),
                                                     static_cast<T>(0)},
@@ -26,6 +24,73 @@ struct Transform3 final {
     if (parent_.has_value()) {
       remove_parent();
     }
+  }
+
+  ERAY_DISABLE_COPY(Transform3)
+
+  Transform3(Transform3&& other) noexcept
+      : parent_(std::move(other.parent_)),
+        children_(std::move(other.children_)),
+        pos_(std::move(other.pos_)),
+        rot_(std::move(other.rot_)),
+        scale_(std::move(other.scale_)),
+        dirty_(other.dirty_),
+        model_mat_(std::move(other.model_mat_)),
+        inv_dirty_(other.inv_dirty_),
+        inv_model_mat_(std::move(other.inv_model_mat_)) {
+    for (auto& child : children_) {
+      child.get().parent_ = *this;
+    }
+
+    if (parent_.has_value()) {
+      auto& parent_children = parent_->get().children_;
+      auto it               = std::find_if(parent_children.begin(), parent_children.end(),
+                                           [&other](const auto& ref) { return &ref.get() == &other; });
+      if (it != parent_children.end()) {
+        *it = *this;
+      }
+    }
+
+    other.parent_.reset();
+    other.children_.clear();
+  }
+
+  Transform3& operator=(Transform3&& other) noexcept {
+    if (this != &other) {
+      if (parent_.has_value()) {
+        remove_parent();
+      }
+      for (const auto& child : children_) {
+        child.get().parent_.reset();
+      }
+
+      parent_        = std::move(other.parent_);
+      children_      = std::move(other.children_);
+      pos_           = std::move(other.pos_);
+      rot_           = std::move(other.rot_);
+      scale_         = std::move(other.scale_);
+      dirty_         = other.dirty_;
+      model_mat_     = std::move(other.model_mat_);
+      inv_dirty_     = other.inv_dirty_;
+      inv_model_mat_ = std::move(other.inv_model_mat_);
+
+      for (auto& child : children_) {
+        child.get().parent_ = *this;
+      }
+
+      if (parent_.has_value()) {
+        auto& parent_children = parent_->get().children_;
+        auto it               = std::find_if(parent_children.begin(), parent_children.end(),
+                                             [&other](const auto& ref) { return &ref.get() == &other; });
+        if (it != parent_children.end()) {
+          *it = *this;
+        }
+      }
+
+      other.parent_.reset();
+      other.children_.clear();
+    }
+    return *this;
   }
 
   bool has_parent() const { return parent_.has_value(); }
