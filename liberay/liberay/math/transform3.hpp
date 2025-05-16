@@ -26,7 +26,7 @@ struct Transform3 final {
     }
   }
 
-  ERAY_DISABLE_COPY(Transform3)
+  ERAY_DELETE_COPY(Transform3)
 
   Transform3(Transform3&& other) noexcept
       : parent_(std::move(other.parent_)),

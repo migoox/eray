@@ -122,7 +122,7 @@ class GLSLShader {
 
 class GLSLShaderManager {
  public:
-  ERAY_DISABLE_COPY_AND_MOVE(GLSLShaderManager)
+  ERAY_DELETE_COPY_AND_MOVE(GLSLShaderManager)
 
   GLSLShaderManager()  = default;
   ~GLSLShaderManager() = default;

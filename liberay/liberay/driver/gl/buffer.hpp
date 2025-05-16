@@ -43,7 +43,7 @@ class VertexArray;
 
 class Buffer {
  public:
-  ERAY_DISABLE_COPY(Buffer)
+  ERAY_DELETE_COPY(Buffer)
   ERAY_DEFAULT_MOVE(Buffer)
 
   GLuint raw_gl_id() const { return id_.get(); }

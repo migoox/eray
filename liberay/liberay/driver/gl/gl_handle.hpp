@@ -21,7 +21,7 @@ class GLObjectHandle {
   GLObjectHandle() = default;
   explicit GLObjectHandle(GLuint id) : id_(id) {}
 
-  ERAY_DISABLE_COPY(GLObjectHandle)
+  ERAY_DELETE_COPY(GLObjectHandle)
 
   GLObjectHandle(GLObjectHandle&& other) noexcept : id_(other.id_) { other.id_ = 0; }
   GLObjectHandle& operator=(GLObjectHandle&& other) noexcept {

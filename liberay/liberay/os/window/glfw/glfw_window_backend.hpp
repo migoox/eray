@@ -7,7 +7,7 @@ namespace eray::os {
 class GLFWWindowBackend : public IWindowBackend {
  public:
   GLFWWindowBackend() = delete;
-  ERAY_DISABLE_COPY_AND_MOVE(GLFWWindowBackend)
+  ERAY_DELETE_COPY_AND_MOVE(GLFWWindowBackend)
 
   ~GLFWWindowBackend() override;
 

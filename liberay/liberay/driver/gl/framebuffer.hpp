@@ -13,7 +13,7 @@ class Framebuffer {
   Framebuffer(size_t width, size_t height);
   virtual ~Framebuffer();
 
-  ERAY_DISABLE_COPY(Framebuffer)
+  ERAY_DELETE_COPY(Framebuffer)
 
   Framebuffer(Framebuffer&& other) noexcept;
   Framebuffer& operator=(Framebuffer&& other) = delete;

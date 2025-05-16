@@ -9,7 +9,7 @@ class ObserverPtr {
  public:
   explicit ObserverPtr(WatchedObject& obj) : ptr_(&obj) {}
 
-  ERAY_DISABLE_COPY_AND_MOVE(ObserverPtr)
+  ERAY_DELETE_COPY_AND_MOVE(ObserverPtr)
 
   WatchedObject* operator->() { return ptr_; }
   WatchedObject& operator*() { return *ptr_; }

@@ -10,7 +10,7 @@ namespace eray::driver::gl {
 
 class VertexArray {
  public:
-  ERAY_DISABLE_COPY(VertexArray)
+  ERAY_DELETE_COPY(VertexArray)
 
   VertexArray(VertexArray&& other) noexcept;
   VertexArray& operator=(VertexArray&& other) noexcept;
@@ -49,7 +49,7 @@ class VertexArray {
 
 class VertexArrays {
  public:
-  ERAY_DISABLE_COPY(VertexArrays)
+  ERAY_DELETE_COPY(VertexArrays)
 
   VertexArrays(VertexArrays&& other) noexcept;
   VertexArrays& operator=(VertexArrays&& other) noexcept;

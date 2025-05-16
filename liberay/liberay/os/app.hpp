@@ -16,7 +16,7 @@ class Application {
 
   virtual ~Application() = default;
 
-  ERAY_DISABLE_COPY_AND_MOVE(Application)
+  ERAY_DELETE_COPY_AND_MOVE(Application)
 
   using Duration = std::chrono::nanoseconds;
   using Clock    = std::chrono::high_resolution_clock;

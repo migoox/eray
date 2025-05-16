@@ -13,7 +13,7 @@ class GLFWWindowBackend;
 class GLFWWindow final : public Window {
  public:
   GLFWWindow() = delete;
-  ERAY_DISABLE_COPY_AND_MOVE(GLFWWindow)
+  ERAY_DELETE_COPY_AND_MOVE(GLFWWindow)
 
   ~GLFWWindow() final;
 

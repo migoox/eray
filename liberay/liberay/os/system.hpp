@@ -36,7 +36,7 @@ constexpr auto kOperatingSystemName = util::StringEnumMapper<OperatingSystem>({
 class System {
  public:
   System() = delete;
-  ERAY_DISABLE_COPY_AND_MOVE(System)
+  ERAY_DELETE_COPY_AND_MOVE(System)
 
   enum class DriverRequestError : uint8_t {
     OperatingSystemDoesNotSupportRequestedDriver = 0,
