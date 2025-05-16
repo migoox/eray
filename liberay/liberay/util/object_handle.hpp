@@ -5,6 +5,8 @@
 #include <liberay/util/ruleof.hpp>
 #include <type_traits>
 
+#define ERAY_HANDLE_OBJ(value) std::decay_t<decltype(value)>::Object
+
 namespace eray::util {
 
 struct Any {};
