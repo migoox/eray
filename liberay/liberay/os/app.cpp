@@ -3,7 +3,9 @@
 
 #include <liberay/driver/gl/vertex_array.hpp>
 #include <liberay/os/app.hpp>
+#include <liberay/os/system.hpp>
 #include <liberay/os/window/events/event.hpp>
+#include <liberay/util/logger.hpp>
 
 namespace eray::os {
 
@@ -47,6 +49,9 @@ void Application::run() {
     }
 
     window_->update();
+    if (auto result = System::file_dialog().update(); !result) {
+      util::Logger::err("File dialog update failed");
+    }
 
     if (second > 1s) {
       uint16_t seconds = static_cast<uint16_t>(std::chrono::duration_cast<std::chrono::seconds>(second).count());

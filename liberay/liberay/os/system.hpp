@@ -11,6 +11,8 @@
 #include <liberay/util/zstring_view.hpp>
 #include <optional>
 
+#include "liberay/os/file_dialog.hpp"
+
 namespace eray::os {
 
 enum class OperatingSystem : uint8_t {
@@ -151,6 +153,8 @@ class System {
    */
   [[nodiscard]] std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> create_window(
       WindowProperties props);
+
+  [[nodiscard]] static FileDialog& file_dialog() { return FileDialog::instance(); }
 
  private:
   explicit System(Driver driver);
