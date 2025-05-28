@@ -348,6 +348,20 @@ struct Transform3 final {
     mark_dirty();
   }
 
+  /**
+   * @brief Creates a copy of transform detached from parent (if exists) and without children. Sets the local
+   * transform to match the world transform of the cloned object.
+   *
+   * @return Transform3
+   */
+  Transform3 clone_detached() const {
+    auto new_pos   = Vec3<T>(parent().local_to_world_matrix() * Vec4<T>(pos_, static_cast<T>(1)));
+    auto new_rot   = Quat<T>(parent().rot() * rot_);
+    auto new_scale = Vec3<T>(parent().scale() * scale_);
+
+    return Transform3(new_pos, new_rot, new_scale);
+  }
+
  private:
   void remove_parent() {
     std::erase_if(parent_->get().children_, [this](auto ref) { return std::addressof(ref.get()) == this; });

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <linux/limits.h>
+
 #include <cmath>
 #include <liberay/math/mat_fwd.hpp>
 #include <liberay/math/types.hpp>
@@ -435,6 +437,25 @@ Mat<4, 4, T> translation(Vec<3, T> vec) {
  * @return Mat<4, 4, T>
  */
 template <CFloatingPoint T>
+Mat<4, 4, T> frustum_gl_rh(T left, T right, T bottom, T top, T z_near, T z_far) {
+  auto a = (right + left) / (right - left);
+  auto b = (top + bottom) / (top - bottom);
+  auto c = -(z_far + z_near) / (z_far - z_near);
+  auto d = -(static_cast<T>(2) * z_far * z_near) / (z_far - z_near);
+  return Mat<4, 4, T>{
+      Vec<4, T>{static_cast<T>(2) * z_near / (right - left), 0, 0, 0},  //
+      Vec<4, T>{0, static_cast<T>(2) * z_near / (top - bottom), 0, 0},  //
+      Vec<4, T>{a, b, c, -static_cast<T>(1)},                           //
+      Vec<4, T>{0, 0, d, 0}                                             //
+  };
+}
+
+/**
+ * @brief Right-handed perspective projection matrix with depth range -1 to 1 (OpenGL).
+ *
+ * @return Mat<4, 4, T>
+ */
+template <CFloatingPoint T>
 Mat<4, 4, T> perspective_gl_rh(T fovy, T aspect, T z_near, T z_far) {
   const T tan_half_fovy = std::tan(fovy / static_cast<T>(2));
 
@@ -452,15 +473,18 @@ Mat<4, 4, T> perspective_gl_rh(T fovy, T aspect, T z_near, T z_far) {
  * @return Mat<4, 4, T>
  */
 template <CFloatingPoint T>
-Mat<4, 4, T> stereo_right_perspective_gl_rh(T fovy, T aspect, T z_near, T z_far) {
+Mat<4, 4, T> stereo_right_perspective_gl_rh(T fovy, T aspect, T z_near, T z_far, T convergence) {
   const T tan_half_fovy = std::tan(fovy / static_cast<T>(2));
-  const T d             = 0.008;
+  T eye_separation      = convergence / static_cast<T>(30);
+
   return Mat<4, 4, T>{
-      Vec<4, T>{static_cast<T>(1) / (aspect * tan_half_fovy) * z_near, 0, 0, 0},                                  //
-      Vec<4, T>{0, static_cast<T>(1) / (tan_half_fovy), 0, 0},                                                    //
-      Vec<4, T>{d / static_cast<T>(2), 0, -(z_far + z_near) / (z_far - z_near), -static_cast<T>(1)},              //
-      Vec<4, T>{-z_near * d / static_cast<T>(2), 0, -(static_cast<T>(2) * z_far * z_near) / (z_far - z_near), 0}  //
-  };
+             Vec<4, T>{static_cast<T>(1) / (aspect * tan_half_fovy), 0, 0, 0},  //
+             Vec<4, T>{0, static_cast<T>(1) / (tan_half_fovy), 0, 0},           //
+             Vec<4, T>{-eye_separation / static_cast<T>(2) / aspect / tan_half_fovy / convergence, 0,
+                       -(z_far + z_near) / (z_far - z_near), -static_cast<T>(1)},          //
+             Vec<4, T>{0, 0, -(static_cast<T>(2) * z_far * z_near) / (z_far - z_near), 0}  //
+         } *
+         math::translation(math::Vec3f(-eye_separation / static_cast<T>(2), 0, 0));
 }
 
 /**
@@ -469,15 +493,18 @@ Mat<4, 4, T> stereo_right_perspective_gl_rh(T fovy, T aspect, T z_near, T z_far)
  * @return Mat<4, 4, T>
  */
 template <CFloatingPoint T>
-Mat<4, 4, T> stereo_left_perspective_gl_rh(T fovy, T aspect, T z_near, T z_far) {
+Mat<4, 4, T> stereo_left_perspective_gl_rh(T fovy, T aspect, T z_near, T z_far, T convergence) {
   const T tan_half_fovy = std::tan(fovy / static_cast<T>(2));
-  const T d             = 0.008;
+  T eye_separation      = convergence / static_cast<T>(30);
+
   return Mat<4, 4, T>{
-      Vec<4, T>{static_cast<T>(1) / (aspect * tan_half_fovy) * z_near, 0, 0, 0},                                 //
-      Vec<4, T>{0, static_cast<T>(1) / (tan_half_fovy), 0, 0},                                                   //
-      Vec<4, T>{-d / static_cast<T>(2), 0, -(z_far + z_near) / (z_far - z_near), -static_cast<T>(1)},            //
-      Vec<4, T>{z_near * d / static_cast<T>(2), 0, -(static_cast<T>(2) * z_far * z_near) / (z_far - z_near), 0}  //
-  };
+             Vec<4, T>{static_cast<T>(1) / (aspect * tan_half_fovy), 0, 0, 0},  //
+             Vec<4, T>{0, static_cast<T>(1) / (tan_half_fovy), 0, 0},           //
+             Vec<4, T>{eye_separation / static_cast<T>(2) / aspect / tan_half_fovy / convergence, 0,
+                       -(z_far + z_near) / (z_far - z_near), -static_cast<T>(1)},          //
+             Vec<4, T>{0, 0, -(static_cast<T>(2) * z_far * z_near) / (z_far - z_near), 0}  //
+         } *
+         math::translation(math::Vec3f(eye_separation / static_cast<T>(2), 0, 0));
 }
 
 /**
