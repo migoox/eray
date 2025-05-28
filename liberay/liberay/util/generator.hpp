@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <generator>
 
 namespace eray::util {
@@ -14,9 +15,10 @@ struct SizedGenerator {
   auto end() { return gen.end(); }
 };
 
-template <typename T>
-std::generator<T> container_to_generator(T container) {
-  for (const auto& item : container) {
+template <typename Container>
+std::generator<typename Container::value_type> container_to_generator(
+    std::reference_wrapper<const Container> container) {
+  for (const auto& item : container.get()) {
     co_yield item;
   }
 }
