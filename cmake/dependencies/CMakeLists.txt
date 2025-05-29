@@ -121,6 +121,22 @@ list(POP_BACK CMAKE_MESSAGE_INDENT)
 message(CHECK_PASS "fetched")
 
 # ##############################################################################
+# Tracy 
+# ##############################################################################
+message(CHECK_START "Fetching nativefiledialog-extended")
+list(APPEND CMAKE_MESSAGE_INDENT "  ")
+
+FetchContent_Declare(
+  Tracy 
+  GIT_REPOSITORY "https://github.com/wolfpld/tracy"
+  GIT_TAG "v0.11.1"
+  UPDATE_DISCONNECTED 1)
+FetchContent_MakeAvailable(Tracy)
+
+list(POP_BACK CMAKE_MESSAGE_INDENT)
+message(CHECK_PASS "fetched")
+
+# ##############################################################################
 # GTest
 # ##############################################################################
 if(BUILD_TESTS)

@@ -15,7 +15,11 @@ add_library(${PROJECT_NAME} ${SOURCES})
 # (GLAD in our case).
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLFW_INCLUDE_NONE)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC glad glfw imgui stb_image nfd)
+set(LIBS glad glfw imgui stb_image nfd)
+if (${TRACY_ENABLE})
+    list(APPEND LIBS TracyClient)
+endif()
+target_link_libraries(${PROJECT_NAME} PUBLIC ${LIBS})
 
 if (USE_SYSTEM_INCLUDE)
     target_include_directories(${PROJECT_NAME}
