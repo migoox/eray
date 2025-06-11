@@ -1,7 +1,5 @@
 #pragma once
 
-#include <linux/limits.h>
-
 #include <cmath>
 #include <liberay/math/mat_fwd.hpp>
 #include <liberay/math/types.hpp>
