@@ -393,6 +393,15 @@ constexpr void clamp_base(std::index_sequence<Is...>, T* data, const T* min_data
 }
 
 template <std::size_t... Is, CPrimitive T>
+constexpr void min_base(std::index_sequence<Is...>, T* data, const T* vec1_data, const T* vec2_data) {
+  ((data[Is] = std::min(vec1_data[Is], vec2_data[Is])), ...);
+}
+template <std::size_t... Is, CPrimitive T>
+constexpr void max_base(std::index_sequence<Is...>, T* data, const T* vec1_data, const T* vec2_data) {
+  ((data[Is] = std::max(vec1_data[Is], vec2_data[Is])), ...);
+}
+
+template <std::size_t... Is, CPrimitive T>
 constexpr bool all_components_less_than(std::index_sequence<Is...>, T* data, const T value) {
   bool result = true;
   ((data[Is] = result && (data[Is] < value)), ...);
@@ -531,6 +540,20 @@ template <CFloatingPoint T, std::size_t N>
 [[nodiscard]] Vec<N, T> clamp(const Vec<N, T>& vec, const Vec<N, T>& min, const Vec<N, T>& max) {
   auto result = vec;
   internal::clamp_base(std::make_index_sequence<N>(), result.data, min.data, max.data);
+  return result;
+}
+
+template <CFloatingPoint T, std::size_t N>
+[[nodiscard]] Vec<N, T> min(const Vec<N, T>& vec1, const Vec<N, T>& vec2) {
+  auto result = Vec<N, T>::filled(0.F);
+  internal::min_base(std::make_index_sequence<N>(), result.data, vec1.data, vec2.data);
+  return result;
+}
+
+template <CFloatingPoint T, std::size_t N>
+[[nodiscard]] Vec<N, T> max(const Vec<N, T>& vec1, const Vec<N, T>& vec2) {
+  auto result = Vec<N, T>::filled(0.F);
+  internal::max_base(std::make_index_sequence<N>(), result.data, vec1.data, vec2.data);
   return result;
 }
 
