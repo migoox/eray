@@ -5,6 +5,7 @@
 #include <liberay/math/types.hpp>
 #include <liberay/math/vec.hpp>
 #include <numbers>
+#include <optional>
 #include <utility>
 
 namespace eray::math {
@@ -125,11 +126,9 @@ struct Mat {
   friend Vec<M, T> operator*(const Mat& lhs, Vec<M, T> rhs) { return mult_vec_rhs(lhs, rhs); }
 
   friend Mat operator*(Mat lhs, T rhs) {
-    scalar_mult(lhs, rhs);
+    scalar_mult(std::make_index_sequence<N>{}, lhs.data_, rhs);
     return lhs;
   }
-
-  friend Mat operator*(T rhs, const Mat& lhs) { return rhs * lhs; }
 
   Mat& operator*=(T rhs) {
     scalar_mult(std::make_index_sequence<N>{}, data_, rhs);
@@ -281,8 +280,8 @@ struct Mat {
   }
 
   template <std::size_t... Is>
-  static constexpr void scalar_mult(std::index_sequence<Is...>, Vec<M, T> lhs[N], const Vec<M, T> rhs[N]) {
-    ((lhs[Is] *= rhs[Is]), ...);
+  static constexpr void scalar_mult(std::index_sequence<Is...>, Vec<M, T> lhs[N], T rhs) {
+    ((lhs[Is] *= rhs), ...);
   }
 
  private:
@@ -543,6 +542,64 @@ Mat<4, 4, T> inv_orthographic_gl_rh(T left, T right, T bottom, T top, T z_near, 
       Vec<4, T>{(right + left) / static_cast<T>(2), (top + bottom) / static_cast<T>(2),
                 (z_far + z_near) / static_cast<T>(2), static_cast<T>(1)}  //
   };
+}
+template <CFloatingPoint T>
+constexpr std::optional<Mat<4, 4, T>> inverse(const Mat<4, 4, T>& m) {
+  const T coef00 = m[2][2] * m[3][3] - m[3][2] * m[2][3];
+  const T coef02 = m[1][2] * m[3][3] - m[3][2] * m[1][3];
+  const T coef03 = m[1][2] * m[2][3] - m[2][2] * m[1][3];
+  const T coef04 = m[2][1] * m[3][3] - m[3][1] * m[2][3];
+  const T coef06 = m[1][1] * m[3][3] - m[3][1] * m[1][3];
+  const T coef07 = m[1][1] * m[2][3] - m[2][1] * m[1][3];
+  const T coef08 = m[2][1] * m[3][2] - m[3][1] * m[2][2];
+  const T coef10 = m[1][1] * m[3][2] - m[3][1] * m[1][2];
+  const T coef11 = m[1][1] * m[2][2] - m[2][1] * m[1][2];
+  const T coef12 = m[2][0] * m[3][3] - m[3][0] * m[2][3];
+  const T coef14 = m[1][0] * m[3][3] - m[3][0] * m[1][3];
+  const T coef15 = m[1][0] * m[2][3] - m[2][0] * m[1][3];
+  const T coef16 = m[2][0] * m[3][2] - m[3][0] * m[2][2];
+  const T coef18 = m[1][0] * m[3][2] - m[3][0] * m[1][2];
+  const T coef19 = m[1][0] * m[2][2] - m[2][0] * m[1][2];
+  const T coef20 = m[2][0] * m[3][1] - m[3][0] * m[2][1];
+  const T coef22 = m[1][0] * m[3][1] - m[3][0] * m[1][1];
+  const T coef23 = m[1][0] * m[2][1] - m[2][0] * m[1][1];
+
+  auto fac0 = Vec<4, T>{coef00, coef00, coef02, coef03};
+  auto fac1 = Vec<4, T>{coef04, coef04, coef06, coef07};
+  auto fac2 = Vec<4, T>{coef08, coef08, coef10, coef11};
+  auto fac3 = Vec<4, T>{coef12, coef12, coef14, coef15};
+  auto fac4 = Vec<4, T>{coef16, coef16, coef18, coef19};
+  auto fac5 = Vec<4, T>{coef20, coef20, coef22, coef23};
+
+  auto vec0 = Vec<4, T>{m[1][0], m[0][0], m[0][0], m[0][0]};
+  auto vec1 = Vec<4, T>{m[1][1], m[0][1], m[0][1], m[0][1]};
+  auto vec2 = Vec<4, T>{m[1][2], m[0][2], m[0][2], m[0][2]};
+  auto vec3 = Vec<4, T>{m[1][3], m[0][3], m[0][3], m[0][3]};
+
+  auto inv0 = vec1 * fac0 - vec2 * fac1 + vec3 * fac2;
+  auto inv1 = vec0 * fac0 - vec2 * fac3 + vec3 * fac4;
+  auto inv2 = vec0 * fac1 - vec1 * fac3 + vec3 * fac5;
+  auto inv3 = vec0 * fac2 - vec1 * fac4 + vec2 * fac5;
+
+  auto sign_a = Vec<4, T>{+static_cast<T>(1), -static_cast<T>(1), +static_cast<T>(1), -static_cast<T>(1)};
+  auto sign_b = Vec<4, T>{-static_cast<T>(1), +static_cast<T>(1), -static_cast<T>(1), +static_cast<T>(1)};
+
+  auto inverse = Mat<4, 4, T>::identity();
+  inverse[0]   = inv0 * sign_a;
+  inverse[1]   = inv1 * sign_b;
+  inverse[2]   = inv2 * sign_a;
+  inverse[3]   = inv3 * sign_b;
+
+  auto row0 = Vec<4, T>{inverse[0][0], inverse[1][0], inverse[2][0], inverse[3][0]};
+  auto col0 = m[0];
+  auto dot0 = col0 * row0;
+  auto det  = dot0[0] + dot0[1] + dot0[2] + dot0[3];
+
+  if (std::abs(det) < static_cast<T>(0.000001F)) {
+    return std::nullopt;
+  }
+
+  return inverse * (static_cast<T>(1) / det);
 }
 
 namespace internal {
