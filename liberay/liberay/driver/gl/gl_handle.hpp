@@ -39,7 +39,7 @@ class GLObjectHandle {
   }
 
  private:
-  GLuint id_;
+  GLuint id_ = 0;
 };
 
 struct ShaderTag {};

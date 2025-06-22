@@ -5,6 +5,8 @@
 #include <liberay/driver/gl/vertex_array.hpp>
 #include <liberay/util/zstring_view.hpp>
 
+#include "liberay/driver/gl/gl_handle.hpp"
+
 namespace eray::driver::gl {
 
 // -- VertexArray -----------------------------------------------------------------------------------------------------
@@ -56,7 +58,39 @@ VertexArray& VertexArray::operator=(VertexArray&& other) noexcept {
 
 VertexArray::~VertexArray() { ERAY_GL_CALL(glDeleteVertexArrays(1, &m_.id)); }
 
-// -- VertexArrays ----------------------------------------------------------------------------------------------------
+// -- SimpleVertexArray ------------------------------------------------------------------------------------------------
+
+SimpleVertexArray SimpleVertexArray::create(VertexBuffer&& vert_buff) {
+  GLuint id = 0;
+  ERAY_GL_CALL(glCreateVertexArrays(1, &id));
+
+  GLsizei vertex_size = 0;
+  for (const auto& attrib : vert_buff.layout()) {
+    ERAY_GL_CALL(glEnableVertexArrayAttrib(id, attrib.location));
+    ERAY_GL_CALL(glVertexArrayAttribFormat(id,                                     //
+                                           attrib.location,                        //
+                                           static_cast<GLint>(attrib.count),       //
+                                           attrib.type,                            //
+                                           attrib.normalize ? GL_TRUE : GL_FALSE,  //
+                                           vertex_size));                          //
+
+    vertex_size += static_cast<GLint>(sizeof(float) * attrib.count);
+    ERAY_GL_CALL(glVertexArrayAttribBinding(id, attrib.location, 0));
+  }
+
+  ERAY_GL_CALL(glVertexArrayVertexBuffer(id, 0, vert_buff.raw_gl_id(), 0, vertex_size));
+
+  return SimpleVertexArray({
+      .vbo = std::move(vert_buff),
+      .id  = VertexArrayHandle(id),
+  });
+}
+
+void SimpleVertexArray::set_binding_divisor(GLuint divisor) {  // NOLINT
+  ERAY_GL_CALL(glVertexArrayBindingDivisor(m_.id.get(), 0, divisor));
+}
+
+// -- VertexArrays -----------------------------------------------------------------------------------------------------
 
 VertexArrays VertexArrays::create(std::unordered_map<zstring_view, VertexBuffer>&& vert_buffs,
                                   ElementBuffer&& ebo_buff) {

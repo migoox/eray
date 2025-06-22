@@ -2,6 +2,7 @@
 #include <glad/gl.h>
 
 #include <liberay/driver/gl/buffer.hpp>
+#include <liberay/driver/gl/gl_handle.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/util/zstring_view.hpp>
 #include <unordered_map>
@@ -42,6 +43,44 @@ class VertexArray {
     GLuint id;
   };
   explicit VertexArray(Members&& m) : m_(std::move(m)) {}
+
+ private:
+  Members m_;
+};
+
+/**
+ * @brief This vertex array does not require EBO.
+ *
+ */
+class SimpleVertexArray {
+ public:
+  ERAY_DELETE_COPY(SimpleVertexArray)
+  ERAY_DEFAULT_MOVE(SimpleVertexArray)
+
+  static SimpleVertexArray create(VertexBuffer&& vert_buff);
+
+  /**
+   * @brief Binds the VertexArray. It's required only before calling the draw as the
+   * class uses DSA (Direct State Access).
+   *
+   */
+  void bind() const { ERAY_GL_CALL(glBindVertexArray(m_.id.get())); }
+
+  static void unbind() { ERAY_GL_CALL(glBindVertexArray(0)); }
+
+  void set_binding_divisor(GLuint divisor);
+
+  const VertexArrayHandle& handle() const { return m_.id; }
+
+  const VertexBuffer& vbo() const { return m_.vbo; }
+  VertexBuffer& vbo() { return m_.vbo; }
+
+ private:
+  struct Members {
+    VertexBuffer vbo;
+    VertexArrayHandle id;
+  };
+  explicit SimpleVertexArray(Members&& m) : m_(std::move(m)) {}
 
  private:
   Members m_;
