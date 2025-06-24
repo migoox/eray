@@ -15,7 +15,7 @@
   ClassName& operator=(ClassName&&) = delete;
 
 #define ERAY_DEFAULT_MOVE(ClassName)           \
-  ClassName(ClassName&&)            = default; \
+  ClassName(ClassName&&) noexcept   = default; \
   ClassName& operator=(ClassName&&) = default;
 
 #define ERAY_DELETE_MOVE_AND_COPY_ASSIGN(ClassName) \
