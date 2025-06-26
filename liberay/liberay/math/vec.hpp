@@ -383,13 +383,12 @@ constexpr T dot_base(std::index_sequence<Is...>, const T* lhs, const T* rhs) {
 
 template <std::size_t... Is, CPrimitive T>
 constexpr void clamp_base(std::index_sequence<Is...>, T* data, T min, T max) {
-  ((data[Is] = data[Is] < min ? min : (data[Is] > max ? max : data[Is])), ...);  // NOLINT
+  ((data[Is] = std::clamp(data[Is], min, max)), ...);  // C++17 std::clamp
 }
 
 template <std::size_t... Is, CPrimitive T>
 constexpr void clamp_base(std::index_sequence<Is...>, T* data, const T* min_data, const T* max_data) {
-  ((data[Is] = data[Is] < min_data[Is] ? min_data[Is] : (data[Is] > max_data[Is] ? max_data[Is] : data[Is])),  // NOLINT
-   ...);
+  ((data[Is] = std::clamp(data[Is], min_data[Is], max_data[Is])), ...);
 }
 
 template <std::size_t... Is, CPrimitive T>
