@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <liberay/util/enum_mapper.hpp>
-#include <liberay/util/zstring_view.hpp>.hpp>
+#include <liberay/util/zstring_view.hpp>
 
 namespace eray::os {
 

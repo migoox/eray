@@ -8,7 +8,7 @@
 #include <liberay/util/enum_mapper.hpp>
 #include <liberay/util/platform.hpp>
 #include <liberay/util/ruleof.hpp>
-#include <liberay/util/zstring_view.hpp>.hpp>
+#include <liberay/util/zstring_view.hpp>
 #include <optional>
 
 #include "liberay/os/file_dialog.hpp"

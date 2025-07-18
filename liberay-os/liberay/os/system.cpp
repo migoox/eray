@@ -10,7 +10,7 @@
 #include <liberay/util/panic.hpp>
 #include <liberay/util/path_utf8.hpp>
 #include <liberay/util/platform.hpp>
-#include <liberay/util/zstring_view.hpp>.hpp>
+#include <liberay/util/zstring_view.hpp>
 #include <optional>
 
 #ifdef IS_WINDOWS
