@@ -11,7 +11,7 @@ file(GLOB_RECURSE SOURCES
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-target_link_libraries(${PROJECT_NAME} PUBLIC liberay)
+target_link_libraries(${PROJECT_NAME} PUBLIC liberay-math liberay-util liberay-res liberay-os liberay-driver)
 target_include_directories(${PROJECT_NAME}
                            PUBLIC . "${CMAKE_BINARY_DIR}/generated")
 
