@@ -55,7 +55,13 @@ endif()
 
 add_subdirectory(cmake/dependencies)
 add_subdirectory(third_party/stb_image)
-add_subdirectory(liberay)
+
+# eray library 
+add_subdirectory(liberay-util)
+add_subdirectory(liberay-math)
+add_subdirectory(liberay-res)
+add_subdirectory(liberay-os)
+add_subdirectory(liberay-driver)
 if(BUILD_SANDBOX) 
     add_subdirectory(sandbox)
 endif()
