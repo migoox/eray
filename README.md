@@ -8,3 +8,13 @@
 - `res`: resource system based on handles.
 
 The main goal of the library is to serve me as a framework for building computer graphics applications while also providing me an opportunity to learn about engine programming.
+
+## Developer environment
+
+The following dependencies must be installed on the host machine to develop eray:
+
+- git
+- cmake
+- gcc14|clang19|msvc-latest
+- ninja
+- vulkan-sdk ([LunarG](https://vulkan.lunarg.com/))

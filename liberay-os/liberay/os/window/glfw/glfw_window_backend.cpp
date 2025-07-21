@@ -18,13 +18,12 @@ namespace {
 
 bool init_opengl_ctx(GLFWwindow* window_ptr_) {
   glfwMakeContextCurrent(window_ptr_);
-  const int glad_version = gladLoadGL(glfwGetProcAddress);
+  const int glad_version = gladLoadGL();
   if (glad_version == 0) {
     return false;
   }
 
   util::Logger::info("OpenGL info:");
-  util::Logger::info("\tGLAD version: {0}.{1}", GLAD_VERSION_MAJOR(glad_version), GLAD_VERSION_MINOR(glad_version));
   util::Logger::info("\tVendor: {}", reinterpret_cast<const char*>(glGetString(GL_VENDOR)));
   util::Logger::info("\tRenderer: {}", reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
   util::Logger::info("\tVersion: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
