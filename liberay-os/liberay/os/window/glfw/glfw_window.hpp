@@ -42,6 +42,8 @@ class GLFWWindow final : public Window {
   void set_mouse_cursor_mode(CursorMode cursor_mode) final;
   CursorMode get_mouse_cursor_mode() final;
 
+  bool should_close() const final;
+
  private:
   friend GLFWWindowBackend;
   explicit GLFWWindow(void* glfw_window_ptr, WindowProperties props, Driver driver,

@@ -62,6 +62,8 @@ void Application::run() {
       ticks  = 0;
       second = 0ns;
     }
+
+    running_ = running_ && !window_->should_close();
   }
 }
 

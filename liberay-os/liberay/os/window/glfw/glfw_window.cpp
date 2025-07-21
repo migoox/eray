@@ -188,4 +188,6 @@ CursorMode GLFWWindow::get_mouse_cursor_mode() {
   return *mouse_cursor_from_glfw(glfwGetInputMode(glfw::win_native(glfw_window_ptr_), GLFW_CURSOR));
 }
 
+bool GLFWWindow::should_close() const { return glfwWindowShouldClose(glfw::win_native(glfw_window_ptr_)) != 0; }
+
 }  // namespace eray::os

@@ -75,13 +75,18 @@ GLFWWindowBackend::GLFWWindowBackend(Driver driver) : driver_(driver) {}
 
 std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> GLFWWindowBackend::create_window(
     WindowProperties props) {
-  util::Logger::info("Creating a GLFW window...");
+  util::Logger::info("Creating a GLFW window for {} driver...", kDriverName[driver_]);
+
+  if (driver_ == Driver::Vulcan) {
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+  }
+
 #ifdef IS_DEBUG
   glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
   glfwWindowHint(GLFW_SAMPLES, 4);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
 
   // TODO(migoox): Handle fullscreen
   GLFWwindow* window_ptr = glfwCreateWindow(props.size.x, props.size.y, props.title.c_str(), nullptr, nullptr);

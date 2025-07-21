@@ -8,5 +8,6 @@ find_package(Vulkan REQUIRED)
 
 configure_library(
     NAME liberay-vkren
-    LIBS liberay-util liberay-math
+    LIBS liberay-util liberay-math Vulkan::Vulkan
+    INCLUDE_DIRS ${Vulkan_INCLUDE_DIR}
 )

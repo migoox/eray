@@ -58,6 +58,8 @@ class Window {
    */
   virtual void update() = 0;
 
+  virtual bool should_close() const = 0;
+
   virtual bool is_btn_held(KeyCode code)            = 0;
   virtual bool is_mouse_btn_held(MouseBtnCode code) = 0;
 

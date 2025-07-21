@@ -2,7 +2,7 @@ function(configure_library)
     # Parse arguments
     set(options HEADER_ONLY)
     set(oneValueArgs NAME)
-    set(multiValueArgs LIBS COMPILE_DEFINITIONS)
+    set(multiValueArgs LIBS INCLUDE_DIRS COMPILE_DEFINITIONS)
     cmake_parse_arguments(ARGS "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     cmake_minimum_required(VERSION 3.20)
@@ -19,11 +19,13 @@ function(configure_library)
             target_include_directories(${PROJECT_NAME} SYSTEM INTERFACE 
                 ${CMAKE_CURRENT_SOURCE_DIR} 
                 "${CMAKE_BINARY_DIR}/generated"
+                "${ARGS_INCLUDE_DIRS}"
             )
         else()
             target_include_directories(${PROJECT_NAME} INTERFACE 
                 ${CMAKE_CURRENT_SOURCE_DIR} 
                 "${CMAKE_BINARY_DIR}/generated"
+                "${ARGS_INCLUDE_DIRS}"
             )
         endif()
 
@@ -53,11 +55,13 @@ function(configure_library)
             target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC 
                 ${CMAKE_CURRENT_SOURCE_DIR} 
                 "${CMAKE_BINARY_DIR}/generated"
+                "${ARGS_INCLUDE_DIRS}"
             )
         else()
             target_include_directories(${PROJECT_NAME} PUBLIC 
                 ${CMAKE_CURRENT_SOURCE_DIR} 
                 "${CMAKE_BINARY_DIR}/generated"
+                "${ARGS_INCLUDE_DIRS}"
             )
         endif()
 
@@ -67,6 +71,9 @@ function(configure_library)
             list(APPEND LIBS TracyClient)
         endif()
         message(STATUS "Dependencies: ${LIBS}")
+        if (ARGS_INCLUDE_DIRS)
+            message(STATUS "Requested include directories: ${ARGS_INCLUDE_DIRS}")
+        endif()
         target_link_libraries(${PROJECT_NAME} PUBLIC ${LIBS})
 
         # Compile definitions
