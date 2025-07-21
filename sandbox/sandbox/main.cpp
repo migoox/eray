@@ -9,8 +9,6 @@
 #include <liberay/util/panic.hpp>
 #include <print>
 
-#include "liberay/math/vec_fwd.hpp"
-
 struct Test {
   int x = 5;
 };

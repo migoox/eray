@@ -13,6 +13,7 @@ project(
 option(GENERATE_CLANGD_FILE
   "Generate the .clangd file for the host operating system" ON)
 option(BUILD_SANDBOX "Build liberay sandbox executable" OFF)
+option(ENABLE_TRACY "Fetches and uses tracy for frame profiling" OFF)
 
 set(VERSION_SUFFIX "")
 if(IS_STABLE EQUAL 0)
@@ -41,6 +42,11 @@ if(GENERATE_CLANGD_FILE)
 endif()
 
 set(PATCHES_DIR "${CMAKE_CURRENT_LIST_DIR}/patches")
+
+if(TRACY_ENABLE)
+    include("${CMAKE_CURRENT_LIST_DIR}/cmake/deps_fetcher.cmake")
+    fetch_tracy()
+endif()
 
 add_subdirectory(liberay-util)
 add_subdirectory(liberay-math)
