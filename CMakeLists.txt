@@ -6,21 +6,14 @@ find_repo_version(VERSION IS_STABLE)
 
 project(
   eray 
-  DESCRIPTION "Cross-platform rendering library"
+  DESCRIPTION "Cross-platform family of libraries for 3D rendering"
   LANGUAGES CXX C
   VERSION ${VERSION})
 
 option(GENERATE_CLANGD_FILE
   "Generate the .clangd file for the host operating system" ON)
-option(USE_LOCAL_INSTEAD_FETCH "Uses third_party folder to access the dependency repositories instead fetching the dependencies from remote" OFF)
-option(BUILD_SHARED_LIBS "Build using shared libraries" OFF)
-option(BUILD_GLFW "Fetch and build GLFW. When OFF, CMake will look for proper GLFW version on your operating system." ON)
-option(BUILD_ASSIMP "Fetch and build assimp. When OFF, CMake will look for proper assimp version on your operating system." ON)
 option(BUILD_SANDBOX "Build liberay sandbox executable" OFF)
-option(BUILD_TESTS "Fetch GoogleTest and build tests" OFF)
-option(USE_SYSTEM_INCLUDE "Marks liberay includes as system, so they are excluded from the static analysis. Useful when using dori as a dependency." ON)
 
-# Print version
 set(VERSION_SUFFIX "")
 if(IS_STABLE EQUAL 0)
   set(VERSION_SUFFIX "(unstable)")
@@ -36,6 +29,9 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# Use FindXXX.cmake from cmake folder
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+
 # Include CTest in order to generate `DartConfiguration.tcl`
 include(CTest)
 
@@ -44,24 +40,14 @@ if(GENERATE_CLANGD_FILE)
   generate_clangd_file("${PROJ_CXX_FLAGS}")
 endif()
 
-# Prepare dependencies
-if(NOT BUILD_GLFW)
-  find_package(GLFW 3.4)
-endif()
+set(PATCHES_DIR "${CMAKE_CURRENT_LIST_DIR}/patches")
 
-if(NOT BUILD_ASSIMP)
-  find_package(assimp 5.4.3)
-endif()
-
-add_subdirectory(cmake/dependencies)
-add_subdirectory(third_party/stb_image)
-
-# eray library 
 add_subdirectory(liberay-util)
 add_subdirectory(liberay-math)
 add_subdirectory(liberay-res)
 add_subdirectory(liberay-os)
 add_subdirectory(liberay-driver)
+add_subdirectory(liberay-vkren)
 if(BUILD_SANDBOX) 
     add_subdirectory(sandbox)
 endif()

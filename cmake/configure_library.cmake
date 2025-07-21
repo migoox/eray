@@ -82,6 +82,9 @@ function(configure_library)
 
     # Tests configuration
     if(BUILD_TESTS)
+        # Include CTest in order to generate `DartConfiguration.tcl`
+        include(CTest)
+
         message(STATUS "Configuring ${PROJECT_NAME}_tests executable")
         file(GLOB_RECURSE TESTS_SOURCES 
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
