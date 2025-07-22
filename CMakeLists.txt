@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.30)
 
 find_package(Git)
 include(cmake/find_repo_version.cmake)
@@ -9,6 +9,8 @@ project(
   DESCRIPTION "Cross-platform family of libraries for 3D rendering"
   LANGUAGES CXX C
   VERSION ${VERSION})
+
+set(CMAKE_CXX_STANDARD 23)
 
 option(GENERATE_CLANGD_FILE
   "Generate the .clangd file for the host operating system" ON)

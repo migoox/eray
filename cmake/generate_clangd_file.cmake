@@ -1,3 +1,5 @@
+include_guard(GLOBAL)
+
 function(generate_clangd_file COMPILER_FLAGS)
   if(CMAKE_HOST_UNIX)
     set(CLANGD_COMPILER_STANDARD "-std=c++23")

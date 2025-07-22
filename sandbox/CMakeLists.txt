@@ -1,6 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
-
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+cmake_minimum_required(VERSION 3.28)
 
 project(sandbox CXX)
 message(STATUS "Configuring " ${PROJECT_NAME})
@@ -13,7 +11,7 @@ file(GLOB_RECURSE SOURCES
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-target_link_libraries(${PROJECT_NAME} PUBLIC liberay-math liberay-util liberay-res liberay-os liberay-driver)
+target_link_libraries(${PROJECT_NAME} PUBLIC liberay-math liberay-util liberay-res liberay-os liberay-driver liberay-vkren)
 target_include_directories(${PROJECT_NAME}
                            PUBLIC . "${CMAKE_BINARY_DIR}/generated")
 
@@ -27,11 +25,11 @@ endif()
 
 # Copy assets folder to build directory
 if(EXISTS "${PROJECT_SOURCE_DIR}/assets")
-add_custom_target(copy_assets
-  COMMAND ${CMAKE_COMMAND} -DASSETS_SOURCE_DIR=${PROJECT_SOURCE_DIR}/assets
-                           -DASSETS_DEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>
-                           -P ${PROJECT_SOURCE_DIR}/../cmake/copy_assets.cmake
-)
-add_dependencies(${PROJECT_NAME} copy_assets)
+    add_custom_target(copy_assets
+    COMMAND ${CMAKE_COMMAND} -DASSETS_SOURCE_DIR=${PROJECT_SOURCE_DIR}/assets
+                            -DASSETS_DEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>
+                            -P ${PROJECT_SOURCE_DIR}/../cmake/copy_assets.cmake
+    )
+    add_dependencies(${PROJECT_NAME} copy_assets)
 endif()
 

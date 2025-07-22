@@ -1,3 +1,5 @@
+include_guard(GLOBAL)
+
 # This function parses output of `git describe --always` in order to find the
 # latest annotated tag and parse the program version. The tag name must follow
 # the following pattern: `v?[0-9]+.[0-9]+(.[0-9]+)?`. If the branch is ahead of

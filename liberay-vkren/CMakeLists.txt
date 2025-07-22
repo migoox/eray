@@ -1,4 +1,5 @@
-include_guard()
+cmake_minimum_required(VERSION 3.30)
+
 include(../cmake/configure_library.cmake)
 
 option(BUILD_SHARED_LIBS "Build as shared library" OFF)
@@ -8,6 +9,9 @@ find_package(Vulkan REQUIRED)
 
 configure_library(
     NAME liberay-vkren
-    LIBS liberay-util liberay-math Vulkan::Vulkan
-    INCLUDE_DIRS ${Vulkan_INCLUDE_DIR}
+    DEPS_PUBLIC liberay-util liberay-math  
+    COMPILE_DEFINITIONS
+      VULKAN_HPP_NO_EXCEPTIONS
+      VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+      VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
 )

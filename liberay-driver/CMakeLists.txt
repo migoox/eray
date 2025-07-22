@@ -1,4 +1,4 @@
-include_guard()
+cmake_minimum_required(VERSION 3.20)
 include(../cmake/deps_fetcher.cmake)
 include(../cmake/configure_library.cmake)
 
@@ -8,7 +8,7 @@ add_subdirectory(third_party/glad)
 
 configure_library(
     NAME liberay-driver 
-    LIBS glad liberay-util liberay-math
+    DEPS_PUBLIC glad liberay-util liberay-math
 )
 
 

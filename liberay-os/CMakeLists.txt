@@ -1,4 +1,4 @@
-include_guard()
+cmake_minimum_required(VERSION 3.20)
 include(../cmake/deps_fetcher.cmake)
 include(../cmake/configure_library.cmake)
 
@@ -21,9 +21,9 @@ endif()
 
 configure_library(
     NAME liberay-os 
-    LIBS glfw imgui nfd liberay-util liberay-math liberay-driver
+    DEPS_PUBLIC glfw imgui nfd liberay-util liberay-math liberay-driver
     # GLFW_INCLUDE_NONE makes the GLFW header not include any OpenGL or OpenGL ES
     # API header. This is useful in combination with an extension loading library
     # (GLAD in our case).
-    COMPILE_DEFINITIONS GLFW_INCLUDE_NONE
+    COMPILE_DEFINITIONS GLFW_INCLUDE_NONE GLFW_INCLUDE_VULKAN
 )
