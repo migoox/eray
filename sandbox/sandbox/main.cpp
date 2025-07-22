@@ -7,9 +7,11 @@
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
 #include <liberay/util/zstring_view.hpp>
+#include <map>
 #include <variant>
 #include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
@@ -24,11 +26,15 @@ struct VulkanInstanceCreationFailure {
 struct VulkanDebugMessengerCreationFailure {
   vk::Result result;
 };
+struct FailedToEnumeratePhysicalDevices {
+  vk::Result result;
+};
+struct NoSuitablePhysicalDevicesFound {};
 
-using VulkanInitError =
-    std::variant<VulkanExtensionNotSupported, VulkanInstanceCreationFailure,
-                 SomeOfTheRequestedVulkanLayersAreNotSupported, VulkanDebugMessengerCreationFailure>;
-using AppError = std::variant<VulkanInitError>;
+using VulkanInitError = std::variant<VulkanExtensionNotSupported, VulkanInstanceCreationFailure,
+                                     SomeOfTheRequestedVulkanLayersAreNotSupported, VulkanDebugMessengerCreationFailure,
+                                     FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound>;
+using AppError        = std::variant<VulkanInitError>;
 
 class HelloTriangleApplication {
  public:
@@ -46,6 +52,7 @@ class HelloTriangleApplication {
   std::expected<void, VulkanInitError> initVk() {
     TRY(createVkInstance())
     TRY(setup_debug_messenger())
+    TRY(pick_physical_device())
 
     return {};
   }
@@ -86,7 +93,7 @@ class HelloTriangleApplication {
       if (std::ranges::none_of(extension_props, [ext_name = std::string_view(ext)](const auto& prop) {
             return std::string_view(prop.extensionName) == ext_name;
           })) {
-        eray::util::Logger::err("Required GLFW extension not supported: {}", ext);
+        eray::util::Logger::err("Required extension not supported: {}", ext);
         return std::unexpected(VulkanExtensionNotSupported{
             .glfw_extension = std::string(ext)  //
         });
@@ -139,8 +146,7 @@ class HelloTriangleApplication {
     if (!kEnableValidationLayers) {
       return {};
     }
-    auto severity_flags = vk::DebugUtilsMessageSeverityFlagsEXT(vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
-                                                                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+    auto severity_flags = vk::DebugUtilsMessageSeverityFlagsEXT(vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
                                                                 vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
     auto msg_type_flags = vk::DebugUtilsMessageTypeFlagsEXT(vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
                                                             vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
@@ -184,11 +190,87 @@ class HelloTriangleApplication {
   std::vector<const char*> get_required_validation_layers() {
     auto required_layers = std::vector<const char*>();
     if (kEnableValidationLayers) {
-      eray::util::Logger::info("Vulkan validation layers are enabled");
+      eray::util::Logger::info("Vulkan Validation Layers are enabled");
       required_layers.assign(kValidationLayers.begin(), kValidationLayers.end());
     }
 
     return required_layers;
+  }
+
+  std::expected<void, VulkanInitError> pick_physical_device() {
+    auto devices_opt = instance_.enumeratePhysicalDevices();
+    if (!devices_opt) {
+      eray::util::Logger::err("Failed to enumerate physical devices. {}", vk::to_string(devices_opt.error()));
+      return std::unexpected(FailedToEnumeratePhysicalDevices{.result = devices_opt.error()});
+    }
+    auto devices = devices_opt.value();
+
+    if (devices.empty()) {
+      eray::util::Logger::err("Failed to find GPUs with Vulkan support.");
+      return std::unexpected(NoSuitablePhysicalDevicesFound{});
+    }
+
+    // Ordered map for automatic sorting by device score
+    auto candidates = std::multimap<uint32_t, vk::raii::PhysicalDevice>();
+
+    for (const auto& device : devices) {
+      auto props    = device.getProperties();  // name, type, supported Vulkan version
+      auto features = device.getFeatures();    // optional features like texture compression, 64-bit floats, multi-view
+                                               // port rendering (VR)
+      auto queue_families = device.getQueueFamilyProperties();
+      auto extensions     = device.enumerateDeviceExtensionProperties();
+
+      if (!features.geometryShader || !features.tessellationShader) {
+        continue;
+      }
+
+      if (std::ranges::find_if(queue_families, [](const vk::QueueFamilyProperties& qfp) {
+            return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);
+          }) == queue_families.end()) {
+        continue;
+      }
+
+      auto found = true;
+      for (const auto& extension : kPhysicalDeviceExtensions) {
+        found = found && std::ranges::find_if(extensions, [extension](const auto& ext) {
+                           return std::string_view(extension) == std::string_view(ext.extensionName);
+                         }) != extensions.end();
+        if (!found) {
+          break;
+        }
+      }
+      if (!found) {
+        continue;
+      }
+
+      uint32_t score = 0;
+      if (props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
+        score += 10000;
+      }
+      score += props.limits.maxImageDimension2D;
+
+      candidates.emplace(score, device);
+    }
+
+    if (candidates.empty()) {
+      eray::util::Logger::err("Failed to find GPUs that meet the requirements.");
+      return std::unexpected(NoSuitablePhysicalDevicesFound{});
+    }
+
+    auto candidates_str = std::string("Physical Device (GPU) Candidates:");
+    for (const auto& candidate : candidates) {
+      candidates_str += std::format("\nScore: {}, Device Name: {}", candidate.first,
+                                    std::string_view(candidate.second.getProperties().deviceName));
+    }
+    eray::util::Logger::info("{}", candidates_str);
+
+    // Pick the best GPU candidate
+    physical_device_ = candidates.rbegin()->second;
+
+    eray::util::Logger::succ("Successfully picked a physical device with name {}",
+                             std::string_view(physical_device_.getProperties().deviceName));
+
+    return {};
   }
 
   static VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
@@ -196,6 +278,7 @@ class HelloTriangleApplication {
                                                          const vk::DebugUtilsMessengerCallbackDataEXT* p_callback_data,
                                                          void*) {
     switch (severity) {
+      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose:
       case vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo:
         eray::util::Logger::info("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
         return vk::True;
@@ -233,15 +316,21 @@ class HelloTriangleApplication {
   vk::raii::DebugUtilsMessengerEXT debug_messenger_ = nullptr;
 
   /**
-   * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional
-   * operations. Common operations in validation layers are:
-   *  - Checking the values of parameters against the specification to detect misuse
-   *  - Tracking the creation and destruction of objects to find resource leaks
-   *  - Checking thread safety by tracking the threads that calls originate from
-   *  - Logging every call and its parameters to the standard output
-   *  - Tracing Vulkan calls for profiling and replaying
+   * @brief Represents a GPU. Used to query physical GPU details, like features, capabilities, memory size, etc.
    *
    */
+  vk::raii::PhysicalDevice physical_device_ = nullptr;
+
+/**
+ * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional
+ * operations. Common operations in validation layers are:
+ *  - Checking the values of parameters against the specification to detect misuse
+ *  - Tracking the creation and destruction of objects to find resource leaks
+ *  - Checking thread safety by tracking the threads that calls originate from
+ *  - Logging every call and its parameters to the standard output
+ *  - Tracing Vulkan calls for profiling and replaying
+ *
+ */
 #ifdef NDEBUG
   static constexpr bool kEnableValidationLayers = false;
 #else
@@ -249,13 +338,17 @@ class HelloTriangleApplication {
 #endif
 
   static constexpr std::array<const char*, 1> kValidationLayers = {"VK_LAYER_KHRONOS_validation"};
+
+  static constexpr std::array<const char*, 4> kPhysicalDeviceExtensions = {
+      vk::KHRSwapchainExtensionName, vk::KHRSpirv14ExtensionName, vk::KHRSynchronization2ExtensionName,
+      vk::KHRCreateRenderpass2ExtensionName};
 };
 
 int main() {
   eray::util::Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
   eray::util::Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
 
-  HelloTriangleApplication app;
+  auto app = HelloTriangleApplication();
   if (auto result = app.run(); !result) {
     eray::util::panic("Error");
   }
