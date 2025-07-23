@@ -17,6 +17,8 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
+struct GLFWWindowCreationFailure {};
+
 struct VulkanExtensionNotSupported {
   std::string glfw_extension;
 };
@@ -42,19 +44,21 @@ using VulkanInitError = std::variant<VulkanExtensionNotSupported, VulkanInstance
                                      SomeOfTheRequestedVulkanLayersAreNotSupported, VulkanDebugMessengerCreationFailure,
                                      FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound,
                                      VulkanLogicalDeviceCreationFailure, VulkanGraphicsQueueCreationFailure>;
-using AppError        = std::variant<VulkanInitError>;
+using AppError        = std::variant<GLFWWindowCreationFailure, VulkanInitError>;
 
 class HelloTriangleApplication {
  public:
   std::expected<void, AppError> run() {
     TRY(initVk())
-
-    initWindow();
+    TRY(initWindow());
     mainLoop();
     cleanup();
 
     return {};
   }
+
+  static constexpr uint32_t kWinWidth  = 800;
+  static constexpr uint32_t kWinHeight = 600;
 
  private:
   std::expected<void, VulkanInitError> initVk() {
@@ -66,11 +70,34 @@ class HelloTriangleApplication {
     return {};
   }
 
-  void initWindow() {}
+  std::expected<void, GLFWWindowCreationFailure> initWindow() {
+    glfwInit();
 
-  void mainLoop() {}
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-  void cleanup() { eray::util::Logger::succ("Finished cleanup"); }
+    window = glfwCreateWindow(kWinWidth, kWinHeight, "Vulkan", nullptr, nullptr);
+    if (!window) {
+      return std::unexpected(GLFWWindowCreationFailure{});
+    }
+
+    eray::util::Logger::succ("Successfully created a GLFW Window");
+
+    return {};
+  }
+
+  void mainLoop() {
+    while (!glfwWindowShouldClose(window)) {
+      glfwPollEvents();
+    }
+  }
+
+  void cleanup() {
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
+    eray::util::Logger::succ("Finished cleanup");
+  }
 
   std::expected<void, VulkanInitError> createVkInstance() {
     // To create a Vulkan Instance we specify
@@ -195,6 +222,7 @@ class HelloTriangleApplication {
 
     required_extensions.push_back(
         vk::KHRSurfaceExtensionName  // required for KHRSwapchainExtensionName device extension
+        // exposes a vk::SurfaceKHR object that represents an abstract type of surface to present rendered images to
     );
 
     return required_extensions;
@@ -409,6 +437,12 @@ class HelloTriangleApplication {
    *
    */
   vk::raii::Queue graphics_queue_ = nullptr;
+
+  /**
+   * @brief GLFW window pointer.
+   *
+   */
+  GLFWwindow* window = nullptr;
 
 /**
  * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional
