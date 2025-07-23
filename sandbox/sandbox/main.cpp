@@ -9,6 +9,7 @@
 #include <liberay/util/zstring_view.hpp>
 #include <map>
 #include <variant>
+#include <vector>
 #include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
@@ -30,10 +31,17 @@ struct FailedToEnumeratePhysicalDevices {
   vk::Result result;
 };
 struct NoSuitablePhysicalDevicesFound {};
+struct VulkanLogicalDeviceCreationFailure {
+  vk::Result result;
+};
+struct VulkanGraphicsQueueCreationFailure {
+  vk::Result result;
+};
 
 using VulkanInitError = std::variant<VulkanExtensionNotSupported, VulkanInstanceCreationFailure,
                                      SomeOfTheRequestedVulkanLayersAreNotSupported, VulkanDebugMessengerCreationFailure,
-                                     FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound>;
+                                     FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound,
+                                     VulkanLogicalDeviceCreationFailure, VulkanGraphicsQueueCreationFailure>;
 using AppError        = std::variant<VulkanInitError>;
 
 class HelloTriangleApplication {
@@ -53,6 +61,7 @@ class HelloTriangleApplication {
     TRY(createVkInstance())
     TRY(setup_debug_messenger())
     TRY(pick_physical_device())
+    TRY(create_logical_device())
 
     return {};
   }
@@ -88,7 +97,7 @@ class HelloTriangleApplication {
     auto extension_props = context_.enumerateInstanceExtensionProperties();
 
     // Check if the required GLFW extensions are supported by the Vulkan implementation.
-    auto required_extensions = get_required_extensions();
+    auto required_extensions = get_instance_extensions();
     for (const auto& ext : required_extensions) {
       if (std::ranges::none_of(extension_props, [ext_name = std::string_view(ext)](const auto& prop) {
             return std::string_view(prop.extensionName) == ext_name;
@@ -102,7 +111,7 @@ class HelloTriangleApplication {
 
     // == 3. Validation Layers =========================================================================================
 
-    auto required_layers = get_required_validation_layers();
+    auto required_layers = get_instance_validation_layers();
     auto layer_props     = context_.enumerateInstanceLayerProperties();
     if (std::ranges::any_of(required_layers, [&layer_props](const auto& required_layer) {
           return std::ranges::none_of(layer_props, [required_layer](auto const& layer_prop) {
@@ -137,7 +146,7 @@ class HelloTriangleApplication {
       return std::unexpected(VulkanInstanceCreationFailure{.result = instance_opt.error()});
     }
 
-    eray::util::Logger::succ("Vulkan Instance has been created");
+    eray::util::Logger::succ("Successfully created a Vulkan Instance");
 
     return {};
   }
@@ -171,7 +180,7 @@ class HelloTriangleApplication {
     return {};
   }
 
-  std::vector<const char*> get_required_extensions() {
+  std::vector<const char*> get_instance_extensions() {
     // GLFW has a function that returns Vulkan extension(s) that are needed to integrate GLFW with Vulkan
     uint32_t glfw_extensions_count = 0;
     auto* glfw_extensions          = glfwGetRequiredInstanceExtensions(&glfw_extensions_count);
@@ -184,10 +193,14 @@ class HelloTriangleApplication {
       );
     }
 
+    required_extensions.push_back(
+        vk::KHRSurfaceExtensionName  // required for KHRSwapchainExtensionName device extension
+    );
+
     return required_extensions;
   }
 
-  std::vector<const char*> get_required_validation_layers() {
+  std::vector<const char*> get_instance_validation_layers() {
     auto required_layers = std::vector<const char*>();
     if (kEnableValidationLayers) {
       eray::util::Logger::info("Vulkan Validation Layers are enabled");
@@ -231,7 +244,7 @@ class HelloTriangleApplication {
       }
 
       auto found = true;
-      for (const auto& extension : kPhysicalDeviceExtensions) {
+      for (const auto& extension : kDeviceExtensions) {
         found = found && std::ranges::find_if(extensions, [extension](const auto& ext) {
                            return std::string_view(extension) == std::string_view(ext.extensionName);
                          }) != extensions.end();
@@ -269,6 +282,70 @@ class HelloTriangleApplication {
 
     eray::util::Logger::succ("Successfully picked a physical device with name {}",
                              std::string_view(physical_device_.getProperties().deviceName));
+
+    return {};
+  }
+
+  std::expected<void, VulkanInitError> create_logical_device() {
+    // == 1. Setup the features ========================================================================================
+
+    // Most of the Vulkan structures contain pNext that allows for chaining the structures into a linked list
+    // The C++ API provides a strongly typed structure chain which is safer as the types of structure in the chain
+    // are known at compile time. The StructureChain inherits from std::tuple, the pNext is set for compatibility
+    // with the C API.
+    auto feature_chain = vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
+                                            vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>{
+        {},                                 // vk::PhysicalDeviceFeatures2
+        {.dynamicRendering = vk::True},     // Enable dynamic rendering from Vulkan 1.3
+        {.extendedDynamicState = vk::True}  // Enable extended dynamic state from the extension
+    };
+
+    // == 2. Setup Graphics Queue ======================================================================================
+
+    auto queue_family_props = physical_device_.getQueueFamilyProperties();
+
+    auto graphics_queue_family_prop_it = std::ranges::find_if(queue_family_props, [](const auto& prop) {
+      return (prop.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);
+    });
+
+    auto graphics_index =
+        static_cast<uint32_t>(std::distance(queue_family_props.begin(), graphics_queue_family_prop_it));
+
+    float queue_priority          = 0.F;
+    auto device_queue_create_info = vk::DeviceQueueCreateInfo{
+        .queueFamilyIndex = graphics_index,
+        .queueCount       = 1,
+        .pQueuePriorities = &queue_priority,  //
+    };
+
+    // == 3. Logical Device Creation ===================================================================================
+
+    auto device_create_info = vk::DeviceCreateInfo{
+        .pNext                   = &feature_chain.get<vk::PhysicalDeviceFeatures2, 0>(),  // connect the feature chain
+        .queueCreateInfoCount    = 1,                                                     //
+        .pQueueCreateInfos       = &device_queue_create_info,                             //
+        .enabledExtensionCount   = static_cast<uint32_t>(kDeviceExtensions.size()),
+        .ppEnabledExtensionNames = kDeviceExtensions.data(),
+    };
+
+    if (auto result = physical_device_.createDevice(device_create_info)) {
+      device_ = std::move(*result);
+    } else {
+      eray::util::Logger::err("Failed to create a logical device. {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanLogicalDeviceCreationFailure{.result = result.error()});
+    }
+
+    // == 4. Graphics Queue Creation ===================================================================================
+
+    // Because we’re only creating a single queue from this family, we’ll simply use index 0
+    if (auto result = device_.getQueue(graphics_index, 0)) {
+      graphics_queue_ = std::move(*result);
+    } else {
+      eray::util::Logger::err("Failed to create a graphics queue. {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanGraphicsQueueCreationFailure{.result = result.error()});
+    }
+
+    eray::util::Logger::succ("Successfully created a logical device and a graphics queue.");
 
     return {};
   }
@@ -321,6 +398,18 @@ class HelloTriangleApplication {
    */
   vk::raii::PhysicalDevice physical_device_ = nullptr;
 
+  /**
+   * @brief The “logical” GPU context that you actually execute things on. It allows for interaction with the GPU.
+   *
+   */
+  vk::raii::Device device_ = nullptr;
+
+  /**
+   * @brief Any graphics command might be submitted to this queue.
+   *
+   */
+  vk::raii::Queue graphics_queue_ = nullptr;
+
 /**
  * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional
  * operations. Common operations in validation layers are:
@@ -339,9 +428,17 @@ class HelloTriangleApplication {
 
   static constexpr std::array<const char*, 1> kValidationLayers = {"VK_LAYER_KHRONOS_validation"};
 
-  static constexpr std::array<const char*, 4> kPhysicalDeviceExtensions = {
-      vk::KHRSwapchainExtensionName, vk::KHRSpirv14ExtensionName, vk::KHRSynchronization2ExtensionName,
-      vk::KHRCreateRenderpass2ExtensionName};
+  /**
+   * @brief We provide the extensions to the logical device. The physical device might be queried if these extensions
+   * are supported.
+   *
+   */
+  static constexpr std::array<const char*, 4> kDeviceExtensions = {
+      vk::KHRSwapchainExtensionName,         // requires Surface Instance Extension
+      vk::KHRSpirv14ExtensionName,           //
+      vk::KHRSynchronization2ExtensionName,  //
+      vk::KHRCreateRenderpass2ExtensionName  //
+  };
 };
 
 int main() {
