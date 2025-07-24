@@ -81,12 +81,14 @@ std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> GLFW
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   }
 
+  if (driver_ == Driver::OpenGL) {
 #ifdef IS_DEBUG
-  glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
-  glfwWindowHint(GLFW_SAMPLES, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+    glfwWindowHint(GLFW_SAMPLES, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+  }
 
   // TODO(migoox): Handle fullscreen
   GLFWwindow* window_ptr = glfwCreateWindow(props.size.x, props.size.y, props.title.c_str(), nullptr, nullptr);

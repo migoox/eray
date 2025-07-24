@@ -49,8 +49,8 @@ using AppError        = std::variant<GLFWWindowCreationFailure, VulkanInitError>
 class HelloTriangleApplication {
  public:
   std::expected<void, AppError> run() {
-    TRY(initVk())
     TRY(initWindow());
+    TRY(initVk())
     mainLoop();
     cleanup();
 
@@ -76,8 +76,12 @@ class HelloTriangleApplication {
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-    window = glfwCreateWindow(kWinWidth, kWinHeight, "Vulkan", nullptr, nullptr);
-    if (!window) {
+    glfwSetErrorCallback([](int error_code, const char* description) {
+      eray::util::Logger::err("GLFW Error #{0}: {1}", error_code, description);
+    });
+
+    window_ = glfwCreateWindow(kWinWidth, kWinHeight, "Vulkan", nullptr, nullptr);
+    if (!window_) {
       return std::unexpected(GLFWWindowCreationFailure{});
     }
 
@@ -87,13 +91,13 @@ class HelloTriangleApplication {
   }
 
   void mainLoop() {
-    while (!glfwWindowShouldClose(window)) {
+    while (!glfwWindowShouldClose(window_)) {
       glfwPollEvents();
     }
   }
 
   void cleanup() {
-    glfwDestroyWindow(window);
+    glfwDestroyWindow(window_);
     glfwTerminate();
 
     eray::util::Logger::succ("Finished cleanup");
@@ -220,10 +224,7 @@ class HelloTriangleApplication {
       );
     }
 
-    required_extensions.push_back(
-        vk::KHRSurfaceExtensionName  // required for KHRSwapchainExtensionName device extension
-        // exposes a vk::SurfaceKHR object that represents an abstract type of surface to present rendered images to
-    );
+    eray::util::Logger::info("Instance Extensions: {}", required_extensions);
 
     return required_extensions;
   }
@@ -442,7 +443,7 @@ class HelloTriangleApplication {
    * @brief GLFW window pointer.
    *
    */
-  GLFWwindow* window = nullptr;
+  GLFWwindow* window_ = nullptr;
 
 /**
  * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional
