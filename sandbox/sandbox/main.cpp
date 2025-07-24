@@ -2,12 +2,14 @@
 #include <vulkan/vulkan_core.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <expected>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
 #include <liberay/util/zstring_view.hpp>
 #include <map>
+#include <ranges>
 #include <variant>
 #include <vector>
 #include <version/version.hpp>
@@ -33,18 +35,24 @@ struct FailedToEnumeratePhysicalDevices {
   vk::Result result;
 };
 struct NoSuitablePhysicalDevicesFound {};
+struct VulkanUnsupportedQueueFamily {
+  std::string queue_family_name;
+};
 struct VulkanLogicalDeviceCreationFailure {
   vk::Result result;
 };
-struct VulkanGraphicsQueueCreationFailure {
+struct VulkanQueueCreationFailure {
   vk::Result result;
 };
 
-using VulkanInitError = std::variant<VulkanExtensionNotSupported, VulkanInstanceCreationFailure,
-                                     SomeOfTheRequestedVulkanLayersAreNotSupported, VulkanDebugMessengerCreationFailure,
-                                     FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound,
-                                     VulkanLogicalDeviceCreationFailure, VulkanGraphicsQueueCreationFailure>;
-using AppError        = std::variant<GLFWWindowCreationFailure, VulkanInitError>;
+struct VulkanSurfaceCreationFailure {};
+
+using VulkanInitError =
+    std::variant<VulkanExtensionNotSupported, VulkanInstanceCreationFailure,
+                 SomeOfTheRequestedVulkanLayersAreNotSupported, VulkanDebugMessengerCreationFailure,
+                 FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound, VulkanLogicalDeviceCreationFailure,
+                 VulkanQueueCreationFailure, VulkanSurfaceCreationFailure, VulkanUnsupportedQueueFamily>;
+using AppError = std::variant<GLFWWindowCreationFailure, VulkanInitError>;
 
 class HelloTriangleApplication {
  public:
@@ -64,6 +72,7 @@ class HelloTriangleApplication {
   std::expected<void, VulkanInitError> initVk() {
     TRY(createVkInstance())
     TRY(setup_debug_messenger())
+    TRY(create_surface())
     TRY(pick_physical_device())
     TRY(create_logical_device())
 
@@ -329,16 +338,55 @@ class HelloTriangleApplication {
         {.extendedDynamicState = vk::True}  // Enable extended dynamic state from the extension
     };
 
-    // == 2. Setup Graphics Queue ======================================================================================
+    // == 2. Find Required Queue Families ==============================================================================
 
-    auto queue_family_props = physical_device_.getQueueFamilyProperties();
+    uint32_t graphics_index{};
+    uint32_t present_index{};
+    {
+      auto queue_family_props         = physical_device_.getQueueFamilyProperties();
+      auto indexed_queue_family_props = std::views::enumerate(queue_family_props);
 
-    auto graphics_queue_family_prop_it = std::ranges::find_if(queue_family_props, [](const auto& prop) {
-      return (prop.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);
-    });
+      // Try to find a queue family that supports both presentation and graphics families.
+      auto queue_family_prop_it =
+          std::ranges::find_if(indexed_queue_family_props, [&pd = physical_device_, &surf = surface_](auto&& pair) {
+            auto&& [index, prop] = pair;
+            return ((prop.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0)) &&
+                   pd.getSurfaceSupportKHR(static_cast<uint32_t>(index), surf);
+          });
 
-    auto graphics_index =
-        static_cast<uint32_t>(std::distance(queue_family_props.begin(), graphics_queue_family_prop_it));
+      if (queue_family_prop_it == indexed_queue_family_props.end()) {
+        // There is no a queue that supports both graphics and presentation queue families. We need separate queue
+        // family.
+        auto graphics_queue_family_prop_it = std::ranges::find_if(queue_family_props, [](const auto& prop) {
+          return (prop.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);
+        });
+
+        if (graphics_queue_family_prop_it == queue_family_props.end()) {
+          eray::util::Logger::err("Could not find a graphics queue family on the physical device");
+          std::unexpected(VulkanUnsupportedQueueFamily{.queue_family_name = "Graphics"});
+        }
+
+        graphics_index =
+            static_cast<uint32_t>(std::distance(queue_family_props.begin(), graphics_queue_family_prop_it));
+
+        auto surface_queue_family_prop_it =
+            std::ranges::find_if(indexed_queue_family_props, [&pd = physical_device_, &surf = surface_](auto&& pair) {
+              auto&& [index, prop] = pair;
+              return pd.getSurfaceSupportKHR(static_cast<uint32_t>(index), surf);
+            });
+
+        if (surface_queue_family_prop_it == indexed_queue_family_props.end()) {
+          eray::util::Logger::err("Could not find a presentation queue family on the physical device");
+          std::unexpected(VulkanUnsupportedQueueFamily{.queue_family_name = "Presentation"});
+        }
+
+        present_index =
+            static_cast<uint32_t>(std::distance(indexed_queue_family_props.begin(), surface_queue_family_prop_it));
+      } else {
+        graphics_index = present_index =
+            static_cast<uint32_t>(std::distance(indexed_queue_family_props.begin(), queue_family_prop_it));
+      }
+    }
 
     float queue_priority          = 0.F;
     auto device_queue_create_info = vk::DeviceQueueCreateInfo{
@@ -364,17 +412,33 @@ class HelloTriangleApplication {
       return std::unexpected(VulkanLogicalDeviceCreationFailure{.result = result.error()});
     }
 
-    // == 4. Graphics Queue Creation ===================================================================================
+    // == 4. Queues Creation ===========================================================================================
 
-    // Because we’re only creating a single queue from this family, we’ll simply use index 0
     if (auto result = device_.getQueue(graphics_index, 0)) {
       graphics_queue_ = std::move(*result);
     } else {
       eray::util::Logger::err("Failed to create a graphics queue. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanGraphicsQueueCreationFailure{.result = result.error()});
+      return std::unexpected(VulkanQueueCreationFailure{.result = result.error()});
     }
 
-    eray::util::Logger::succ("Successfully created a logical device and a graphics queue.");
+    if (auto result = device_.getQueue(present_index, 0)) {
+      present_queue_ = std::move(*result);
+    } else {
+      eray::util::Logger::err("Failed to create a presentation queue. {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanQueueCreationFailure{.result = result.error()});
+    }
+
+    eray::util::Logger::succ("Successfully created a logical device and queues.");
+
+    return {};
+  }
+
+  std::expected<void, VulkanInitError> create_surface() {
+    VkSurfaceKHR surface{};
+    if (glfwCreateWindowSurface(*instance_, window_, nullptr, &surface)) {
+      return std::unexpected(VulkanSurfaceCreationFailure{});
+    }
+    surface_ = vk::raii::SurfaceKHR(instance_, surface);
 
     return {};
   }
@@ -438,6 +502,25 @@ class HelloTriangleApplication {
    *
    */
   vk::raii::Queue graphics_queue_ = nullptr;
+
+  /**
+   * @brief Any presentation command might be submitted to this queue.
+   *
+   */
+  vk::raii::Queue present_queue_ = nullptr;
+
+  /**
+   * @brief Vulkan allows for off-screen rendering, as well as rendering to a surface that is being displayed in
+   * any Windowing API. This concept applies to mobile too. The SurfaceKHR usage is platform-agnostic, however it's
+   * creation is not.
+   * - On Linux with Wayland you need "VK_KHR_wayland_surface" and on windows you would need
+   * "VK_KHR_win32_surface" instance extension. Luckily the GLFW's `glfwGetRequiredInstanceExtensions` properly
+   * returns the platform specific Vulkan extensions.
+   * - Each extension provides different platform-specific createInfo structures, e.g. `VkWin32SurfaceCreateInfoKHR`.
+   * - GLFW provides `glfwCreateWindowSurface` handle platform-specific surface creation for us.
+   *
+   */
+  vk::raii::SurfaceKHR surface_ = nullptr;
 
   /**
    * @brief GLFW window pointer.
