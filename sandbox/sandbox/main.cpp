@@ -53,12 +53,17 @@ struct VulkanSurfaceCreationFailure {};
 
 struct VulkanSwapChainSupportIsNotSufficient {};
 
+struct VulkanSwapChainImageViewCreationFailure {
+  vk::Result result;
+};
+
 using VulkanInitError =
     std::variant<VulkanExtensionNotSupported, VulkanInstanceCreationFailure,
                  SomeOfTheRequestedVulkanLayersAreNotSupported, VulkanDebugMessengerCreationFailure,
                  FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound, VulkanLogicalDeviceCreationFailure,
                  VulkanQueueCreationFailure, VulkanSurfaceCreationFailure, VulkanUnsupportedQueueFamily,
-                 VulkanSwapChainSupportIsNotSufficient, VulkanSwapChainCreationFailure>;
+                 VulkanSwapChainSupportIsNotSufficient, VulkanSwapChainCreationFailure,
+                 VulkanSwapChainImageViewCreationFailure>;
 using AppError = std::variant<GLFWWindowCreationFailure, VulkanInitError>;
 
 class HelloTriangleApplication {
@@ -83,6 +88,7 @@ class HelloTriangleApplication {
     TRY(pick_physical_device())
     TRY(create_logical_device())
     TRY(create_swap_chain())
+    TRY(create_image_views())
 
     return {};
   }
@@ -575,7 +581,7 @@ class HelloTriangleApplication {
     if (auto result = device_.createSwapchainKHR(swap_chain_info)) {
       swap_chain_ = std::move(*result);
     } else {
-      eray::util::Logger::err("Failed to create a presentation queue: {}", vk::to_string(result.error()));
+      eray::util::Logger::err("Failed to create a swap chain: {}", vk::to_string(result.error()));
       return std::unexpected(VulkanSwapChainCreationFailure{.result = result.error()});
     }
     swap_chain_images_ = swap_chain_.getImages();
@@ -583,6 +589,46 @@ class HelloTriangleApplication {
     swap_chain_extent_ = swap_extent;
 
     eray::util::Logger::succ("Successfully created a Vulkan Swap chain.");
+
+    return {};
+  }
+
+  std::expected<void, VulkanInitError> create_image_views() {
+    auto image_view_info =
+        vk::ImageViewCreateInfo{.viewType = vk::ImageViewType::e2D,
+                                .format   = swap_chain_format_,
+
+                                // You can map some channels onto the others. We stick to defaults here.
+                                .components =
+                                    {
+                                        .r = vk::ComponentSwizzle::eIdentity,
+                                        .g = vk::ComponentSwizzle::eIdentity,
+                                        .b = vk::ComponentSwizzle::eIdentity,
+                                        .a = vk::ComponentSwizzle::eIdentity,
+                                    },
+
+                                // Describes what the image's purpose is and which part of the image should be accessed.
+                                // The images here will be used as color targets with no mipmapping levels and
+                                // without any multiple layers
+                                .subresourceRange = {
+                                    .aspectMask     = vk::ImageAspectFlagBits::eColor,
+                                    .baseMipLevel   = 0,
+                                    .levelCount     = 1,
+                                    .baseArrayLayer = 0,
+                                    .layerCount     = 1  //
+                                }};
+
+    for (auto image : swap_chain_images_) {
+      image_view_info.image = image;
+      if (auto result = device_.createImageView(image_view_info)) {
+        swap_chain_image_views_.emplace_back(std::move(*result));
+      } else {
+        eray::util::Logger::err("Failed to create a swap chain image view: {}", vk::to_string(result.error()));
+        return std::unexpected(VulkanSwapChainImageViewCreationFailure{.result = result.error()});
+      }
+    }
+
+    eray::util::Logger::succ("Successfully created Vulkan Swap chain image views.");
 
     return {};
   }
@@ -734,6 +780,13 @@ class HelloTriangleApplication {
 
   vk::Format swap_chain_format_ = vk::Format::eUndefined;
   vk::Extent2D swap_chain_extent_{};
+
+  /**
+   * @brief An image view DESCRIBES HOW TO ACCESS THE IMAGE and which part of the image to access, for example, if it
+   * should be treated as a 2D texture depth texture without any mipmapping levels.
+   *
+   */
+  std::vector<vk::raii::ImageView> swap_chain_image_views_;
 
   /**
    * @brief GLFW window pointer.
