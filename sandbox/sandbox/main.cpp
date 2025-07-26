@@ -89,6 +89,7 @@ class HelloTriangleApplication {
     TRY(create_logical_device())
     TRY(create_swap_chain())
     TRY(create_image_views())
+    TRY(create_graphics_pipeline())
 
     return {};
   }
@@ -632,6 +633,8 @@ class HelloTriangleApplication {
 
     return {};
   }
+
+  std::expected<void, VulkanInitError> create_graphics_pipeline() { return {}; }
 
   vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
     for (const auto& surf_format : available_formats) {

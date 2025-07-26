@@ -13,3 +13,5 @@ cmake-build-*/
 # Ignore log directories
 logs/
 log/
+
+*.spv

@@ -17,5 +17,7 @@ The following dependencies must be installed on the host machine to develop eray
 - cmake
 - `gcc14`|`clang19`|`msvc-latest`
 - ninja
-- vulkan-sdk ([LunarG](https://vulkan.lunarg.com/)), you must use (`setup-env.sh`|`setup-env.bat`) script for sourcing the `VULKAN_SDK` environmental variable.
+- vulkan-sdk ([LunarG](https://vulkan.lunarg.com/)), 
+    - you must use (`setup-env.sh`|`setup-env.bat`) script for sourcing the `VULKAN_SDK` environmental variable.
+
 

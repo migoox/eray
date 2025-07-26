@@ -1,3 +1,5 @@
+include(../cmake/add_slang_shader_target.cmake)
+
 cmake_minimum_required(VERSION 3.28)
 
 project(sandbox CXX)
@@ -23,6 +25,9 @@ if(BUILD_SHARED_LIBS)
     target_link_options(${PROJECT_NAME} PRIVATE ${PROJ_EXE_LINKER_FLAGS})
 endif()
 
+add_slang_shader_target(main_sh SOURCES "sandbox/main.slang" ENTRY_POINTS mainVert mainFrag)
+add_dependencies(${PROJECT_NAME} main_sh)
+
 # Copy assets folder to build directory
 if(EXISTS "${PROJECT_SOURCE_DIR}/assets")
     add_custom_target(copy_assets
@@ -31,5 +36,14 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/assets")
                             -P ${PROJECT_SOURCE_DIR}/../cmake/copy_assets.cmake
     )
     add_dependencies(${PROJECT_NAME} copy_assets)
+endif()
+
+if(EXISTS "${PROJECT_SOURCE_DIR}/shaders")
+    add_custom_target(copy_shaders
+        COMMAND ${CMAKE_COMMAND} -DASSETS_SOURCE_DIR=${PROJECT_SOURCE_DIR}/shaders
+                            -DASSETS_DEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>
+                            -P ${PROJECT_SOURCE_DIR}/../cmake/copy_assets.cmake
+    )
+    add_dependencies(${PROJECT_NAME} copy_shaders)
 endif()
 

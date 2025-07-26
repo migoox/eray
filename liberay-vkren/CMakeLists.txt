@@ -4,8 +4,15 @@ include(../cmake/configure_library.cmake)
 
 option(BUILD_SHARED_LIBS "Build as shared library" OFF)
 
-find_package(Slang CONFIG HINTS "$ENV{VULKAN_SDK}/lib/cmake")
+if (NOT SLANGC_EXECUTABLE)
+    find_program(SLANGC_EXECUTABLE "slangc")
+endif()
 find_package(Vulkan REQUIRED)
+
+if (NOT Vulkan_FOUND) 
+    message(FATAL_ERROR "Vulkan could not be found")
+endif()
+message(STATUS "Vulkan Directory: ${Vulkan_INCLUDE_DIR}")
 
 configure_library(
     NAME liberay-vkren
