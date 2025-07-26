@@ -8,6 +8,7 @@
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
 #include <liberay/util/zstring_view.hpp>
+#include <limits>
 #include <map>
 #include <ranges>
 #include <variant>
@@ -44,14 +45,20 @@ struct VulkanLogicalDeviceCreationFailure {
 struct VulkanQueueCreationFailure {
   vk::Result result;
 };
+struct VulkanSwapChainCreationFailure {
+  vk::Result result;
+};
 
 struct VulkanSurfaceCreationFailure {};
+
+struct VulkanSwapChainSupportIsNotSufficient {};
 
 using VulkanInitError =
     std::variant<VulkanExtensionNotSupported, VulkanInstanceCreationFailure,
                  SomeOfTheRequestedVulkanLayersAreNotSupported, VulkanDebugMessengerCreationFailure,
                  FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound, VulkanLogicalDeviceCreationFailure,
-                 VulkanQueueCreationFailure, VulkanSurfaceCreationFailure, VulkanUnsupportedQueueFamily>;
+                 VulkanQueueCreationFailure, VulkanSurfaceCreationFailure, VulkanUnsupportedQueueFamily,
+                 VulkanSwapChainSupportIsNotSufficient, VulkanSwapChainCreationFailure>;
 using AppError = std::variant<GLFWWindowCreationFailure, VulkanInitError>;
 
 class HelloTriangleApplication {
@@ -75,6 +82,7 @@ class HelloTriangleApplication {
     TRY(create_surface())
     TRY(pick_physical_device())
     TRY(create_logical_device())
+    TRY(create_swap_chain())
 
     return {};
   }
@@ -340,8 +348,6 @@ class HelloTriangleApplication {
 
     // == 2. Find Required Queue Families ==============================================================================
 
-    uint32_t graphics_index{};
-    uint32_t present_index{};
     {
       auto queue_family_props         = physical_device_.getQueueFamilyProperties();
       auto indexed_queue_family_props = std::views::enumerate(queue_family_props);
@@ -366,7 +372,7 @@ class HelloTriangleApplication {
           std::unexpected(VulkanUnsupportedQueueFamily{.queue_family_name = "Graphics"});
         }
 
-        graphics_index =
+        graphics_queue_family_index_ =
             static_cast<uint32_t>(std::distance(queue_family_props.begin(), graphics_queue_family_prop_it));
 
         auto surface_queue_family_prop_it =
@@ -380,17 +386,17 @@ class HelloTriangleApplication {
           std::unexpected(VulkanUnsupportedQueueFamily{.queue_family_name = "Presentation"});
         }
 
-        present_index =
+        present_queue_family_index_ =
             static_cast<uint32_t>(std::distance(indexed_queue_family_props.begin(), surface_queue_family_prop_it));
       } else {
-        graphics_index = present_index =
+        graphics_queue_family_index_ = present_queue_family_index_ =
             static_cast<uint32_t>(std::distance(indexed_queue_family_props.begin(), queue_family_prop_it));
       }
     }
 
     float queue_priority          = 0.F;
     auto device_queue_create_info = vk::DeviceQueueCreateInfo{
-        .queueFamilyIndex = graphics_index,
+        .queueFamilyIndex = graphics_queue_family_index_,
         .queueCount       = 1,
         .pQueuePriorities = &queue_priority,  //
     };
@@ -414,14 +420,14 @@ class HelloTriangleApplication {
 
     // == 4. Queues Creation ===========================================================================================
 
-    if (auto result = device_.getQueue(graphics_index, 0)) {
+    if (auto result = device_.getQueue(graphics_queue_family_index_, 0)) {
       graphics_queue_ = std::move(*result);
     } else {
       eray::util::Logger::err("Failed to create a graphics queue. {}", vk::to_string(result.error()));
       return std::unexpected(VulkanQueueCreationFailure{.result = result.error()});
     }
 
-    if (auto result = device_.getQueue(present_index, 0)) {
+    if (auto result = device_.getQueue(present_queue_family_index_, 0)) {
       present_queue_ = std::move(*result);
     } else {
       eray::util::Logger::err("Failed to create a presentation queue. {}", vk::to_string(result.error()));
@@ -441,6 +447,192 @@ class HelloTriangleApplication {
     surface_ = vk::raii::SurfaceKHR(instance_, surface);
 
     return {};
+  }
+
+  std::expected<void, VulkanInitError> create_swap_chain() {
+    // Surface formats (pixel format, e.g. B8G8R8A8, color space e.g. SRGB)
+    auto available_formats       = physical_device_.getSurfaceFormatsKHR(surface_);
+    auto available_present_modes = physical_device_.getSurfacePresentModesKHR(surface_);
+
+    if (available_formats.empty() || available_present_modes.empty()) {
+      eray::util::Logger::info(
+          "The physical device's swap chain support is not sufficient. Required at least one available format and at "
+          "least one presentation mode.");
+      return std::unexpected(VulkanSwapChainSupportIsNotSufficient{});
+    }
+
+    auto swap_surface_format = choose_swap_surface_format(available_formats);
+
+    // Presentation mode represents the actual conditions for showing imgaes to the screen:
+    //
+    //  - VK_PRESENT_MODE_IMMEDIATE_KHR:    images are transferred to the screen right away -- tearing
+    //
+    //  - VK_PRESENT_MODE_FIFO_KHR:         swap chain uses FIFO queue, if the queue is full the program waits -- VSync
+    //
+    //  - VK_PRESENT_MODE_FIFO_RELAXED_KHR: similar to the previous one, if the app is late and the queue was empty, the
+    //                                      image is send right away
+    //
+    //  - VK_PRESENT_MODE_MAILBOX_KHR:      another variant of the second mode., if the queue is full, instead of
+    //                                      blocking, the images that are already queued are replaced with the new ones
+    //                                      fewer latency, avoids tearing issues -- triple buffering
+    //
+    // Note: Only the VK_PRESENT_MODE_MAILBOX_KHR is guaranteed to be available
+
+    auto swap_present_mode = choose_swap_presentMode(available_present_modes);
+
+    // Basic Surface capabilities (min/max number of images in the swap chain, min/max width and height of images)
+    auto surface_capabilities = physical_device_.getSurfaceCapabilitiesKHR(surface_);
+
+    // Swap extend is the resolution of the swap chain images, and it's almost always exactly equal to the resolution
+    // of the window that we're drawing to in pixels.
+    auto swap_extent = choose_swap_extent(surface_capabilities);
+
+    // It is recommended to request at least one more image than the minimum
+    auto min_img_count = std::max(3U, surface_capabilities.minImageCount + 1);
+    if (surface_capabilities.maxImageCount > 0 && min_img_count > surface_capabilities.maxImageCount) {
+      // 0 is a special value that means that there is no maximum
+
+      min_img_count = surface_capabilities.maxImageCount;
+    }
+
+    auto swap_chain_info = vk::SwapchainCreateInfoKHR{
+        // Almost always left as default
+        .flags = vk::SwapchainCreateFlagsKHR(),
+
+        // Window surface on which the swap chain will present images
+        .surface = surface_,  //
+
+        // Minimum number of images (image buffers). More images reduce the risk of waiting for the GPU to finish
+        // rendering, which improves performance
+        .minImageCount = min_img_count,  //
+
+        .imageFormat     = swap_surface_format.format,      //
+        .imageColorSpace = swap_surface_format.colorSpace,  //
+        .imageExtent     = swap_extent,                     //
+
+        // Number of layers each image consists of (unless stereoscopic 3D app is developed it should be 1)
+        .imageArrayLayers = 1,  //
+
+        // Kind of images used in the swap chain (it's a bitfield, you can e.g. attach depth and stencil buffers)
+        // Also you can render images to a separate image and perform post-processing
+        // (VK_IMAGE_USAGE_TRANSFER_DST_BIT).
+        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,  //
+
+        // We can specify that a certain transform should be applied to images in the swap chain if it is supported,
+        // for example 90-degree clockwise rotation or horizontal flip. We specify no transform by using
+        // surface_capabilities.currentTransform.
+        .preTransform = surface_capabilities.currentTransform,  //
+
+        // Value indicating the alpha compositing mode to use when this surface is composited together with other
+        // surfaces on certain window systems
+        .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,  //
+
+        .presentMode = swap_present_mode,  //
+
+        // Applications should set this value to VK_TRUE if they do not expect to read back the content of
+        // presentable images before presenting them or after reacquiring them, and if their fragment shaders do not
+        // have any side effects that require them to run for all pixels in the presentable image.
+        //
+        // If the clipped is VK_TRUE, then that means that we don't care about the color of pixels that are
+        // obscured, for example, because another window is in front of them => better performance.
+        .clipped = vk::True,  //
+
+        // In Vulkan, it's possible that your swap chain becomes invalid or unoptimized while your app is running,
+        // e.g. when window gets resized. In that case the swap chain actually needs to be recreated from scratch.
+        // IN SUCH A CASE THE SWAP CHAIN NEEDS TO BE RECREATED FROM SCRATCH, and a reference to the old one must be
+        // specified here.
+        .oldSwapchain = VK_NULL_HANDLE,
+    };
+
+    // We need to specify how to handle swap chain images that will be used across multiple queue families. That will be
+    // the case if graphics and present queue families are different.
+    uint32_t indices[] = {graphics_queue_family_index_, present_queue_family_index_};
+
+    // There are 2 ways to handle image ownership for queues:
+    //  - VK_SHARING_MODE_EXCLUSIVE: Images can be used across multiple queue families without explicit ownership
+    //  transfers.
+    //  - VK_SHARING_MODE_CONCURRENT: The image is owned by one queue family at a time, and ownership must be explicitly
+    //  transferred before
+    // using it in another queue family. The best performance.
+
+    if (graphics_queue_family_index_ != present_queue_family_index_) {
+      // Multiple queues -> VK_SHARING_MODE_CONCURRENT to avoid ownership transfers and simplify the code. We are paying
+      // a performance cost here.
+      swap_chain_info.imageSharingMode = vk::SharingMode::eConcurrent;
+
+      // Specify queues that will share the image ownership
+      swap_chain_info.queueFamilyIndexCount = 2;
+      swap_chain_info.pQueueFamilyIndices   = indices;
+    } else {
+      // One queue -> VK_SHARING_MODE_EXCLUSIVE
+      swap_chain_info.imageSharingMode = vk::SharingMode::eExclusive;
+
+      // No need to specify which queues share the image ownership
+      swap_chain_info.queueFamilyIndexCount = 0;
+      swap_chain_info.pQueueFamilyIndices   = nullptr;
+    }
+
+    if (auto result = device_.createSwapchainKHR(swap_chain_info)) {
+      swap_chain_ = std::move(*result);
+    } else {
+      eray::util::Logger::err("Failed to create a presentation queue: {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanSwapChainCreationFailure{.result = result.error()});
+    }
+    swap_chain_images_ = swap_chain_.getImages();
+    swap_chain_format_ = swap_surface_format.format;
+    swap_chain_extent_ = swap_extent;
+
+    eray::util::Logger::succ("Successfully created a Vulkan Swap chain.");
+
+    return {};
+  }
+
+  vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
+    for (const auto& surf_format : available_formats) {
+      if (surf_format.format == vk::Format::eB8G8R8A8Srgb &&
+          surf_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+        return surf_format;
+      }
+    }
+
+    eray::util::Logger::warn(
+        "A format B8G8R8A8Srgb with color space SrgbNonlinear is not supported by the Surface. A random format will be "
+        "used.");
+
+    return available_formats[0];
+  }
+
+  vk::PresentModeKHR choose_swap_presentMode(const std::vector<vk::PresentModeKHR>& available_present_modes) {
+    auto mode_it = std::ranges::find_if(available_present_modes, [](const auto& mode) {
+      return mode ==
+             vk::PresentModeKHR::eMailbox;  // Note: good if energy usage is not a concern, avoid for mobile devices
+    });
+
+    if (mode_it != available_present_modes.end()) {
+      return *mode_it;
+    }
+
+    return vk::PresentModeKHR::eFifo;
+  }
+
+  vk::Extent2D choose_swap_extent(const vk::SurfaceCapabilitiesKHR& capabilities) {
+    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+      return capabilities.currentExtent;
+    }
+
+    // Unfortunately, if you are using a high DPI display (like Apple’s Retina display), screen coordinates don’t
+    // correspond to pixels. For that reason we use glfwGetFrameBufferSize to get size in pixels. (Note:
+    // glfwGetWindowSize returns size in screen coordinates).
+    int width{};
+    int height{};
+    glfwGetFramebufferSize(window_, &width, &height);
+
+    return {
+        .width  = std::clamp(static_cast<uint32_t>(width), capabilities.minImageExtent.width,
+                             capabilities.maxImageExtent.width),
+        .height = std::clamp(static_cast<uint32_t>(height), capabilities.minImageExtent.height,
+                             capabilities.maxImageExtent.height),
+    };
   }
 
   static VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
@@ -502,18 +694,20 @@ class HelloTriangleApplication {
    *
    */
   vk::raii::Queue graphics_queue_ = nullptr;
+  uint32_t graphics_queue_family_index_{};
 
   /**
    * @brief Any presentation command might be submitted to this queue.
    *
    */
   vk::raii::Queue present_queue_ = nullptr;
+  uint32_t present_queue_family_index_{};
 
   /**
    * @brief Vulkan allows for off-screen rendering, as well as rendering to a surface that is being displayed in
    * any Windowing API. This concept applies to mobile too. The SurfaceKHR usage is platform-agnostic, however it's
    * creation is not.
-   * - On Linux with Wayland you need "VK_KHR_wayland_surface" and on windows you would need
+   * - On Linux with Wayland you need "VK_KHR_wayland_surface" and on windows you need
    * "VK_KHR_win32_surface" instance extension. Luckily the GLFW's `glfwGetRequiredInstanceExtensions` properly
    * returns the platform specific Vulkan extensions.
    * - Each extension provides different platform-specific createInfo structures, e.g. `VkWin32SurfaceCreateInfoKHR`.
@@ -521,6 +715,25 @@ class HelloTriangleApplication {
    *
    */
   vk::raii::SurfaceKHR surface_ = nullptr;
+
+  /**
+   * @brief Vulkan does not provide a "default framebuffuer". Hence it requires an infrastructure that will own the
+   * buffers we will render to before we visualize them on the screen. This infrastructure is known as the swap chain.
+   *
+   * The swap is a queue of images that are waiting to be presented to the screen. The general purpose of the swap chain
+   * is to synchronize the presentation of images with the refresh rate of teh screen.
+   *
+   */
+  vk::raii::SwapchainKHR swap_chain_ = nullptr;
+
+  /**
+   * @brief Stores handles to the Swap chain images.
+   *
+   */
+  std::vector<vk::Image> swap_chain_images_;
+
+  vk::Format swap_chain_format_ = vk::Format::eUndefined;
+  vk::Extent2D swap_chain_extent_{};
 
   /**
    * @brief GLFW window pointer.
