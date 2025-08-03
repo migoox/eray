@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
+#include <liberay/os/system.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
@@ -26,12 +28,6 @@ struct VulkanExtensionNotSupported {
   std::string glfw_extension;
 };
 struct SomeOfTheRequestedVulkanLayersAreNotSupported {};
-struct VulkanInstanceCreationFailure {
-  vk::Result result;
-};
-struct VulkanDebugMessengerCreationFailure {
-  vk::Result result;
-};
 struct FailedToEnumeratePhysicalDevices {
   vk::Result result;
 };
@@ -39,31 +35,39 @@ struct NoSuitablePhysicalDevicesFound {};
 struct VulkanUnsupportedQueueFamily {
   std::string queue_family_name;
 };
-struct VulkanLogicalDeviceCreationFailure {
-  vk::Result result;
-};
-struct VulkanQueueCreationFailure {
-  vk::Result result;
-};
-struct VulkanSwapChainCreationFailure {
-  vk::Result result;
-};
 
-struct VulkanSurfaceCreationFailure {};
+struct VulkanObjectCreationError {
+  std::optional<vk::Result> result;
+
+  enum class Kind : std::uint8_t {
+    Instance,
+    LogicalDevice,
+    Queue,
+    Swapchain,
+    Surface,
+    ImageView,
+    DebugMessenger,
+    ShaderModule,
+  };
+
+  Kind kind;
+};
 
 struct VulkanSwapChainSupportIsNotSufficient {};
 
-struct VulkanSwapChainImageViewCreationFailure {
-  vk::Result result;
+struct FileDoesNotExistError {};
+
+struct FileStreamOpenFailure {};
+
+struct FileError {
+  std::variant<FileDoesNotExistError, FileStreamOpenFailure> kind;
+  std::filesystem::path path;
 };
 
 using VulkanInitError =
-    std::variant<VulkanExtensionNotSupported, VulkanInstanceCreationFailure,
-                 SomeOfTheRequestedVulkanLayersAreNotSupported, VulkanDebugMessengerCreationFailure,
-                 FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound, VulkanLogicalDeviceCreationFailure,
-                 VulkanQueueCreationFailure, VulkanSurfaceCreationFailure, VulkanUnsupportedQueueFamily,
-                 VulkanSwapChainSupportIsNotSufficient, VulkanSwapChainCreationFailure,
-                 VulkanSwapChainImageViewCreationFailure>;
+    std::variant<VulkanExtensionNotSupported, SomeOfTheRequestedVulkanLayersAreNotSupported,
+                 FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound, VulkanUnsupportedQueueFamily,
+                 VulkanSwapChainSupportIsNotSufficient, FileError, VulkanObjectCreationError>;
 using AppError = std::variant<GLFWWindowCreationFailure, VulkanInitError>;
 
 class HelloTriangleApplication {
@@ -198,7 +202,10 @@ class HelloTriangleApplication {
     } else {
       auto err = vk::to_string(instance_opt.error());
       eray::util::Logger::err("Failed to create a vulkan instance. Error type: {}", err);
-      return std::unexpected(VulkanInstanceCreationFailure{.result = instance_opt.error()});
+      return std::unexpected(VulkanObjectCreationError{
+          .result = instance_opt.error(),                       //
+          .kind   = VulkanObjectCreationError::Kind::Instance,  //
+      });
     }
 
     eray::util::Logger::succ("Successfully created a Vulkan Instance");
@@ -206,7 +213,7 @@ class HelloTriangleApplication {
     return {};
   }
 
-  std::expected<void, VulkanDebugMessengerCreationFailure> setup_debug_messenger() {
+  std::expected<void, VulkanObjectCreationError> setup_debug_messenger() {
     if (!kEnableValidationLayers) {
       return {};
     }
@@ -227,8 +234,9 @@ class HelloTriangleApplication {
     } else {
       auto err = vk::to_string(debug_messenger_opt.error());
       eray::util::Logger::err("Failed to create a vulkan debug messenger. Error type: {}", err);
-      return std::unexpected(VulkanDebugMessengerCreationFailure{
-          .result = debug_messenger_opt.error()  //
+      return std::unexpected(VulkanObjectCreationError{
+          .result = debug_messenger_opt.error(),                      //
+          .kind   = VulkanObjectCreationError::Kind::DebugMessenger,  //
       });
     }
 
@@ -422,7 +430,10 @@ class HelloTriangleApplication {
       device_ = std::move(*result);
     } else {
       eray::util::Logger::err("Failed to create a logical device. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanLogicalDeviceCreationFailure{.result = result.error()});
+      return std::unexpected(VulkanObjectCreationError{
+          .result = result.error(),
+          .kind   = VulkanObjectCreationError::Kind::LogicalDevice,
+      });
     }
 
     // == 4. Queues Creation ===========================================================================================
@@ -431,14 +442,20 @@ class HelloTriangleApplication {
       graphics_queue_ = std::move(*result);
     } else {
       eray::util::Logger::err("Failed to create a graphics queue. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanQueueCreationFailure{.result = result.error()});
+      return std::unexpected(VulkanObjectCreationError{
+          .result = result.error(),
+          .kind   = VulkanObjectCreationError::Kind::Queue,
+      });
     }
 
     if (auto result = device_.getQueue(present_queue_family_index_, 0)) {
       present_queue_ = std::move(*result);
     } else {
       eray::util::Logger::err("Failed to create a presentation queue. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanQueueCreationFailure{.result = result.error()});
+      return std::unexpected(VulkanObjectCreationError{
+          .result = result.error(),
+          .kind   = VulkanObjectCreationError::Kind::Queue,
+      });
     }
 
     eray::util::Logger::succ("Successfully created a logical device and queues.");
@@ -449,7 +466,10 @@ class HelloTriangleApplication {
   std::expected<void, VulkanInitError> create_surface() {
     VkSurfaceKHR surface{};
     if (glfwCreateWindowSurface(*instance_, window_, nullptr, &surface)) {
-      return std::unexpected(VulkanSurfaceCreationFailure{});
+      return std::unexpected(VulkanObjectCreationError{
+          .result = std::nullopt,
+          .kind   = VulkanObjectCreationError::Kind::Surface,
+      });
     }
     surface_ = vk::raii::SurfaceKHR(instance_, surface);
 
@@ -583,7 +603,10 @@ class HelloTriangleApplication {
       swap_chain_ = std::move(*result);
     } else {
       eray::util::Logger::err("Failed to create a swap chain: {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanSwapChainCreationFailure{.result = result.error()});
+      return std::unexpected(VulkanObjectCreationError{
+          .result = result.error(),
+          .kind   = VulkanObjectCreationError::Kind::Swapchain,
+      });
     }
     swap_chain_images_ = swap_chain_.getImages();
     swap_chain_format_ = swap_surface_format.format;
@@ -625,7 +648,10 @@ class HelloTriangleApplication {
         swap_chain_image_views_.emplace_back(std::move(*result));
       } else {
         eray::util::Logger::err("Failed to create a swap chain image view: {}", vk::to_string(result.error()));
-        return std::unexpected(VulkanSwapChainImageViewCreationFailure{.result = result.error()});
+        return std::unexpected(VulkanObjectCreationError{
+            .result = result.error(),
+            .kind   = VulkanObjectCreationError::Kind::ImageView,
+        });
       }
     }
 
@@ -634,7 +660,79 @@ class HelloTriangleApplication {
     return {};
   }
 
-  std::expected<void, VulkanInitError> create_graphics_pipeline() { return {}; }
+  std::expected<void, VulkanInitError> create_graphics_pipeline() {
+    auto common_err = [](auto&& err) -> VulkanInitError { return std::forward<decltype(err)>(err); };
+
+    // == 1. Shader stage ==============================================================================================
+
+    auto shader_module_opt = read_binary(eray::os::System::executable_dir() / "shaders" / "main_sh.spv")
+                                 .transform_error(common_err)
+                                 .and_then([this, common_err](const auto& bytecode) {
+                                   return create_shader_module(bytecode).transform_error(common_err);
+                                 });
+
+    if (!shader_module_opt) {
+      return std::unexpected(std::move(shader_module_opt.error()));
+    }
+    auto shader_module = std::move(*shader_module_opt);
+
+    auto vert_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
+        .stage  = vk::ShaderStageFlagBits::eVertex,  //
+        .module = shader_module,                     //
+        .pName  = kVertexShaderEntryPoint.c_str(),   // entry point name
+
+        // Optional: pSpecializationInfo allows to specify values for shader constants. This allows for compiler
+        // optimizations like eliminating if statements that depend on the const values.
+    };
+
+    auto frag_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
+        .stage  = vk::ShaderStageFlagBits::eFragment,
+        .module = shader_module,
+        .pName  = kFragmentShaderEntryPoint.c_str(),
+    };
+
+    auto shader_stages = std::array<vk::PipelineShaderStageCreateInfo, 2>{vert_shader_stage_pipeline_info,
+                                                                          frag_shader_stage_pipeline_info};
+
+    // == 2. Dynamic state =============================================================================================
+
+    // Most of the pipeline state needs to be baked into the pipeline state. For example changing the size of a
+    // viewport, line width and blend constants can be changed dynamically without the full pipeline recreation.
+    //
+    // Note: This will cause the configuration of these values to be ignored, and you will be able (and required)
+    // to specify the data at drawing time.
+    auto dynamic_states = std::vector{
+        vk::DynamicState::eViewport,  //
+        vk::DynamicState::eScissor    //
+    };
+
+    auto dynamic_state = vk::PipelineDynamicStateCreateInfo{
+        .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),  //
+        .pDynamicStates    = dynamic_states.data(),                         //
+    };
+
+    // == 3. Input assembly ============================================================================================
+
+    // Describes the format of the vertex data that will be passed to the vertex shader:
+    // - Bindings: spacing between data and whether the data is per-vertex or per-instance,
+    // - Attribute descriptions: type of the attributes passed to the vertex shader, which binding to load them from and
+    // at which offset
+    auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
+        // There is no input passed yet
+    };
+
+    // Describes:
+    // - what kind of geometry will be drawn
+    //   VK_PRIMITIVE_TOPOLOGY_(POINT_LIST|LINE_LIST|LINE_STRIP|TRIANGLE_LIST|TRIANGLE_STRIP)
+    // - whether primitive restart should be enabled, when set to VK_TRUE, it's possible to break up lines and triangles
+    //   in the _STRIP topology modes by using a special index of 0xFFFF or 0xFFFFFFFF
+    auto input_assembly = vk::PipelineInputAssemblyStateCreateInfo{
+        .topology               = vk::PrimitiveTopology::eTriangleList,  //
+        .primitiveRestartEnable = vk::False,                             //
+    };
+
+    return {};
+  }
 
   vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
     for (const auto& surf_format : available_formats) {
@@ -702,6 +800,53 @@ class HelloTriangleApplication {
       default:
         return vk::False;
     };
+  }
+
+  static std::expected<std::vector<char>, FileError> read_binary(const std::filesystem::path& path) {
+    if (!std::filesystem::exists(path)) {
+      eray::util::Logger::err("File {} does not exist", path.string());
+      return std::unexpected(FileError{.kind = FileDoesNotExistError{}, .path = path});
+    }
+    auto file = std::ifstream(path, std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+      eray::util::Logger::err("Unable to open a stream for file {}", path.string());
+      return std::unexpected(FileError{.kind = FileStreamOpenFailure{}, .path = path});
+    }
+
+    auto bytes  = static_cast<size_t>(file.tellg());
+    auto buffer = std::vector<char>(bytes, 0);
+    file.seekg(0, std::ios::beg);
+    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    file.close();
+    if (file.bad()) {
+      eray::util::Logger::warn("File {} was not closed properly", path.string());
+    }
+
+    eray::util::Logger::info("Read {} bytes from {}", bytes, path.string());
+
+    return buffer;
+  }
+
+  [[nodiscard]] std::expected<vk::raii::ShaderModule, VulkanObjectCreationError> create_shader_module(
+      const std::vector<char>& bytecode) {
+    // The size of the bytecode is specified in bytes, but the bytecode pointer is a `uint32_t` pointer. The data is
+    // stored in an `std::vector` where the default allocator already ensures that the data satisfies the worst case
+    // alignment requirements, so the data will satisfy the `uint32_t` alignment requirements.
+    auto module_info = vk::ShaderModuleCreateInfo{
+        .codeSize = bytecode.size() * sizeof(char),                     //
+        .pCode    = reinterpret_cast<const uint32_t*>(bytecode.data())  //
+    };
+
+    // Shader modules are a thin wrapper around the shader bytecode.
+    auto result = device_.createShaderModule(module_info);
+    if (result) {
+      return std::move(*result);
+    }
+    eray::util::Logger::err("Failed to create a shader module");
+    return std::unexpected(VulkanObjectCreationError{
+        .result = result.error(),
+        .kind   = VulkanObjectCreationError::Kind::ShaderModule,
+    });
   }
 
  private:
@@ -820,12 +965,16 @@ class HelloTriangleApplication {
    * are supported.
    *
    */
-  static constexpr std::array<const char*, 4> kDeviceExtensions = {
-      vk::KHRSwapchainExtensionName,         // requires Surface Instance Extension
-      vk::KHRSpirv14ExtensionName,           //
-      vk::KHRSynchronization2ExtensionName,  //
-      vk::KHRCreateRenderpass2ExtensionName  //
+  static constexpr std::array<const char*, 5> kDeviceExtensions = {
+      vk::KHRSwapchainExtensionName,             // requires Surface Instance Extension
+      vk::KHRSpirv14ExtensionName,               //
+      vk::KHRShaderDrawParametersExtensionName,  // BaseInstance, BaseVertex, DrawIndex
+      vk::KHRSynchronization2ExtensionName,      //
+      vk::KHRCreateRenderpass2ExtensionName      //
   };
+
+  static constexpr eray::util::zstring_view kVertexShaderEntryPoint   = "vertMain";
+  static constexpr eray::util::zstring_view kFragmentShaderEntryPoint = "fragMain";
 };
 
 int main() {

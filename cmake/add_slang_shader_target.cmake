@@ -42,13 +42,13 @@ function(add_slang_shader_target TARGET)
 
     add_custom_command (
           OUTPUT  "${SHADERS_DIR}/${TARGET}.spv"
-          COMMAND ${SLANGC_EXECUTABLE} ${SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS_SLANGC_ARGS} -o slang.spv
+          COMMAND ${SLANGC_EXECUTABLE} ${SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS_SLANGC_ARGS} -o ${TARGET}.spv
           WORKING_DIRECTORY ${SHADERS_DIR}
           DEPENDS ${SHADERS_DIR} ${SOURCES}
           COMMENT "Compiling Slang Shaders"
           VERBATIM
     )
- 
+
     add_custom_target(${TARGET} DEPENDS "${SHADERS_DIR}/${TARGET}.spv")
     
     message(STATUS "Shader with name ${TARGET} and entry points ${ARGS_ENTRY_POINTS} added")
