@@ -48,6 +48,8 @@ struct VulkanObjectCreationError {
     ImageView,
     DebugMessenger,
     ShaderModule,
+    PipelineLayout,
+    GraphicsPipeline,
   };
 
   Kind kind;
@@ -706,10 +708,28 @@ class HelloTriangleApplication {
         vk::DynamicState::eScissor    //
     };
 
+    // Describes the region of framebuffer that the output will be rendered to
+    auto vieport = vk::Viewport{
+        .x      = 0.0F,
+        .y      = 0.0F,
+        .width  = static_cast<float>(swap_chain_extent_.width),
+        .height = static_cast<float>(swap_chain_extent_.height),
+        // Note: min and max depth must be between [0.0F, 1.0F] and min might be higher than max.
+        .minDepth = 0.0F,
+        .maxDepth = 1.0F  //
+    };
+
+    // Scissor rectangle defines in which region pixels will actually be stored. The rasterizer will discard any pixels
+    // outside the scissored rectangle. We want to draw to entire framebuffer.
+    auto scissor_rect = vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_extent_};
+
     auto dynamic_state = vk::PipelineDynamicStateCreateInfo{
         .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),  //
         .pDynamicStates    = dynamic_states.data(),                         //
     };
+
+    // With dynamic state only the count is necessary.
+    auto viewport_state_info = vk::PipelineViewportStateCreateInfo{.viewportCount = 1, .scissorCount = 1};
 
     // == 3. Input assembly ============================================================================================
 
@@ -730,6 +750,118 @@ class HelloTriangleApplication {
         .topology               = vk::PrimitiveTopology::eTriangleList,  //
         .primitiveRestartEnable = vk::False,                             //
     };
+
+    // == 4. Rasterizer ================================================================================================
+
+    // The Rasterizer takes as it's input geometry and turns it into fragments to be colored by the fragment shader.
+    // It also performs face culling, depth testing and the scissor test. It also allows for wireframe rendering.
+
+    auto rasterization_state_info = vk::PipelineRasterizationStateCreateInfo{
+        .depthClampEnable =
+            vk::False,  // whether fragment depths should be clamped to [minDepth, maxDepth] (to near and far planes)
+        .polygonMode = vk::PolygonMode::eFill,  // you can use eLine for wireframes
+        .cullMode    = vk::CullModeFlagBits::eBack,
+        .frontFace   = vk::FrontFace::eClockwise,
+
+        // Polygons that are coplanar in 3D space can be made to appear as if they are not coplanar by adding a z-bias
+        // (or depth bias) to each one. This is a technique commonly used to ensure that shadows in a scene are
+        // displayed properly. For instance, a shadow on a wall will likely have the same depth value as the wall. If an
+        // application renders a wall first and then a shadow, the shadow might not be visible, or depth artifacts might
+        // be visible.
+        .depthBiasEnable      = vk::False,
+        .depthBiasSlopeFactor = 1.0F,
+
+        // NOTE: The maximum line width that is supported dependson the hardware and any lin thicker
+        // than 1.0F requires to enable the wideLines GPU feature.
+        .lineWidth = 1.0F,
+    };
+
+    // == 5. Multisampling =============================================================================================
+
+    auto multisampling_state_info = vk::PipelineMultisampleStateCreateInfo{
+        .rasterizationSamples = vk::SampleCountFlagBits::e1,
+        .sampleShadingEnable  = vk::False,
+    };
+
+    // == 6. Depth and Stencil Testing =================================================================================
+
+    // TODO(migoox): Add
+
+    // == 7. Color blending ============================================================================================
+
+    auto color_blend_attachment = vk::PipelineColorBlendAttachmentState{
+        .blendEnable = vk::True,
+
+        .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
+        .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+        .colorBlendOp        = vk::BlendOp::eAdd,  //
+
+        .srcAlphaBlendFactor = vk::BlendFactor::eOne,
+        .dstAlphaBlendFactor = vk::BlendFactor::eZero,
+        .alphaBlendOp        = vk::BlendOp::eAdd,
+
+        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,  //
+    };
+
+    auto color_blending_info = vk::PipelineColorBlendStateCreateInfo{
+        .logicOpEnable   = vk::False,
+        .logicOp         = vk::LogicOp::eCopy,
+        .attachmentCount = 1,
+        .pAttachments    = &color_blend_attachment,  //
+    };
+
+    // == 8. Pipeline Layout creation ==================================================================================
+
+    // You can use uniform values in shaders, which are globals that can be changed at drawing time after the behavior
+    // of your shaders without having to recreate. The uniform variables must be specified during the pipeline creation.
+    auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
+        .setLayoutCount         = 0,
+        .pushConstantRangeCount = 0  //
+    };
+
+    if (auto result = device_.createPipelineLayout(pipeline_layout_info)) {
+      pipeline_layout_ = std::move(*result);
+    } else {
+      eray::util::Logger::info("Could not create a pipeline layout. {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanObjectCreationError{
+          .result = result.error(),
+          .kind   = VulkanObjectCreationError::Kind::PipelineLayout,
+      });
+    }
+
+    // We use the dynamic rendering feature (Vulkan 1.3), the structure below specifies color attachment data, and
+    // the format.
+    vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
+        .colorAttachmentCount    = 1,
+        .pColorAttachmentFormats = &swap_chain_format_,
+    };
+
+    auto pipeline_info = vk::GraphicsPipelineCreateInfo{
+        .pNext = &pipeline_rendering_create_info,  //
+
+        .stageCount = shader_stages.size(),  //
+        .pStages    = shader_stages.data(),  //
+
+        .pVertexInputState   = &vertex_input_state,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState      = &viewport_state_info,
+        .pRasterizationState = &rasterization_state_info,
+        .pMultisampleState   = &multisampling_state_info,
+        .pColorBlendState    = &color_blending_info,
+        .pDynamicState       = &dynamic_state,
+        .layout              = pipeline_layout_,
+
+        .renderPass = nullptr,  // we are using dynamic rendering
+    };
+
+    if (auto result = device_.createGraphicsPipeline(nullptr, pipeline_info)) {
+      graphics_pipeline_ = std::move(*result);
+    } else {
+      eray::util::Logger::err("Could not create a graphics pipeline. {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanObjectCreationError{.result = result.error(),
+                                                       .kind   = VulkanObjectCreationError::Kind::GraphicsPipeline});
+    }
 
     return {};
   }
@@ -937,6 +1069,18 @@ class HelloTriangleApplication {
   std::vector<vk::raii::ImageView> swap_chain_image_views_;
 
   /**
+   * @brief Describes the uniform buffers used in shaders.
+   *
+   */
+  vk::raii::PipelineLayout pipeline_layout_ = nullptr;
+
+  /**
+   * @brief Describes the graphics pipeline, including shaders tages, input assembly, rasterization and more.
+   *
+   */
+  vk::raii::Pipeline graphics_pipeline_ = nullptr;
+
+  /**
    * @brief GLFW window pointer.
    *
    */
@@ -973,8 +1117,8 @@ class HelloTriangleApplication {
       vk::KHRCreateRenderpass2ExtensionName      //
   };
 
-  static constexpr eray::util::zstring_view kVertexShaderEntryPoint   = "vertMain";
-  static constexpr eray::util::zstring_view kFragmentShaderEntryPoint = "fragMain";
+  static constexpr eray::util::zstring_view kVertexShaderEntryPoint   = "mainVert";
+  static constexpr eray::util::zstring_view kFragmentShaderEntryPoint = "mainFrag";
 };
 
 int main() {
