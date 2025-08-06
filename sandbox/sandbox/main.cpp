@@ -18,6 +18,7 @@
 #include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
@@ -38,21 +39,12 @@ struct VulkanUnsupportedQueueFamily {
 
 struct VulkanObjectCreationError {
   std::optional<vk::Result> result;
-
-  enum class Kind : std::uint8_t {
-    Instance,
-    LogicalDevice,
-    Queue,
-    Swapchain,
-    Surface,
-    ImageView,
-    DebugMessenger,
-    ShaderModule,
-    PipelineLayout,
-    GraphicsPipeline,
-  };
-
-  Kind kind;
+  std::string what() {
+    if (result) {
+      return std::format("Creation error: {}", vk::to_string(*result));
+    }
+    return "Uknown creation error";
+  }
 };
 
 struct VulkanSwapChainSupportIsNotSufficient {};
@@ -96,6 +88,9 @@ class HelloTriangleApplication {
     TRY(create_swap_chain())
     TRY(create_image_views())
     TRY(create_graphics_pipeline())
+    TRY(create_command_pool())
+    TRY(create_command_buffer())
+    TRY(create_sync_objs())
 
     return {};
   }
@@ -123,10 +118,73 @@ class HelloTriangleApplication {
   void mainLoop() {
     while (!glfwWindowShouldClose(window_)) {
       glfwPollEvents();
+      draw_frame();
     }
+
+    // Since draw frame operations are async, when the main loop ends the drawing operations may still be going on.
+    // This call is allows for the async operations to finish before cleaning the resources.
+    device_.waitIdle();
+  }
+
+  void draw_frame() {
+    // A binary (there is also a timeline semaphore) semaphore is used to add order between queue operations (work
+    // submitted to the queue). Semaphores are used for both -- to order work inside the same queue and between
+    // different queues. The waiting happens on GPU only, the host (CPU) is not blocked.
+    //
+    // A fence is used on CPU. Unlike the semaphores the vkWaitForFence is blocking the host.
+
+    // First we wait for the queue to become idle. It's equivalent to having submitted a valid fence to every
+    // previously executed queue submission command and invoking vkWaitForFences.
+    graphics_queue_.waitIdle();
+
+    // Get the image from the swap chain. When the image will be ready the present semaphore will be signaled.
+    auto [result, image_index] = swap_chain_.acquireNextImage(UINT64_MAX, *present_complete_semaphore_, nullptr);
+
+    record_command_buffer(image_index);
+
+    // Sets the state of the draw fence to unsignaled
+    device_.resetFences(*draw_fence_);
+
+    auto wait_dst_stage_mask = vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+    const auto submit_info   = vk::SubmitInfo{
+          .waitSemaphoreCount   = 1,
+          .pWaitSemaphores      = &*present_complete_semaphore_,
+          .pWaitDstStageMask    = &wait_dst_stage_mask,
+          .commandBufferCount   = 1,
+          .pCommandBuffers      = &*command_buffer_,
+          .signalSemaphoreCount = 1,
+          .pSignalSemaphores    = &*render_finished_semaphore_,  //
+    };
+
+    // Submits the provided commands to the queue. The vkWaitForFences blocks the execution until all
+    // of the commands will be submitted. The submitting will begin after the present semaphore
+    // receives the signal from acquire next image.
+    //
+    // When the rendering finishes, the finished render finished semaphore is signaled.
+    //
+    graphics_queue_.submit(submit_info, *draw_fence_);
+    while (vk::Result::eTimeout == device_.waitForFences(*draw_fence_, vk::True, UINT64_MAX)) {
+      ;
+    }
+
+    // The image will not be presented until the render finished semaphore is signaled by the submit call.
+    const auto present_info = vk::PresentInfoKHR{
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores    = &*render_finished_semaphore_,
+        .swapchainCount     = 1,
+        .pSwapchains        = &*swap_chain_,
+        .pImageIndices      = &image_index,
+        .pResults           = nullptr,
+    };
+
+    result = present_queue_.presentKHR(present_info);
   }
 
   void cleanup() {
+    // Swap chain must be destroyed before destroying the GLFW window, getDispatcher()->vkDestroySwapchainKHR throws
+    // otherwise
+    swap_chain_.clear();
+
     glfwDestroyWindow(window_);
     glfwTerminate();
 
@@ -205,8 +263,7 @@ class HelloTriangleApplication {
       auto err = vk::to_string(instance_opt.error());
       eray::util::Logger::err("Failed to create a vulkan instance. Error type: {}", err);
       return std::unexpected(VulkanObjectCreationError{
-          .result = instance_opt.error(),                       //
-          .kind   = VulkanObjectCreationError::Kind::Instance,  //
+          .result = instance_opt.error(),  //
       });
     }
 
@@ -237,8 +294,7 @@ class HelloTriangleApplication {
       auto err = vk::to_string(debug_messenger_opt.error());
       eray::util::Logger::err("Failed to create a vulkan debug messenger. Error type: {}", err);
       return std::unexpected(VulkanObjectCreationError{
-          .result = debug_messenger_opt.error(),                      //
-          .kind   = VulkanObjectCreationError::Kind::DebugMessenger,  //
+          .result = debug_messenger_opt.error(),  //
       });
     }
 
@@ -358,8 +414,8 @@ class HelloTriangleApplication {
     // with the C API.
     auto feature_chain = vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
                                             vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>{
-        {},                                 // vk::PhysicalDeviceFeatures2
-        {.dynamicRendering = vk::True},     // Enable dynamic rendering from Vulkan 1.3
+        {},                                                            // vk::PhysicalDeviceFeatures2
+        {.synchronization2 = vk::True, .dynamicRendering = vk::True},  // Enable dynamic rendering from Vulkan 1.3
         {.extendedDynamicState = vk::True}  // Enable extended dynamic state from the extension
     };
 
@@ -434,7 +490,6 @@ class HelloTriangleApplication {
       eray::util::Logger::err("Failed to create a logical device. {}", vk::to_string(result.error()));
       return std::unexpected(VulkanObjectCreationError{
           .result = result.error(),
-          .kind   = VulkanObjectCreationError::Kind::LogicalDevice,
       });
     }
 
@@ -446,7 +501,6 @@ class HelloTriangleApplication {
       eray::util::Logger::err("Failed to create a graphics queue. {}", vk::to_string(result.error()));
       return std::unexpected(VulkanObjectCreationError{
           .result = result.error(),
-          .kind   = VulkanObjectCreationError::Kind::Queue,
       });
     }
 
@@ -456,7 +510,6 @@ class HelloTriangleApplication {
       eray::util::Logger::err("Failed to create a presentation queue. {}", vk::to_string(result.error()));
       return std::unexpected(VulkanObjectCreationError{
           .result = result.error(),
-          .kind   = VulkanObjectCreationError::Kind::Queue,
       });
     }
 
@@ -470,7 +523,6 @@ class HelloTriangleApplication {
     if (glfwCreateWindowSurface(*instance_, window_, nullptr, &surface)) {
       return std::unexpected(VulkanObjectCreationError{
           .result = std::nullopt,
-          .kind   = VulkanObjectCreationError::Kind::Surface,
       });
     }
     surface_ = vk::raii::SurfaceKHR(instance_, surface);
@@ -607,7 +659,6 @@ class HelloTriangleApplication {
       eray::util::Logger::err("Failed to create a swap chain: {}", vk::to_string(result.error()));
       return std::unexpected(VulkanObjectCreationError{
           .result = result.error(),
-          .kind   = VulkanObjectCreationError::Kind::Swapchain,
       });
     }
     swap_chain_images_ = swap_chain_.getImages();
@@ -636,7 +687,7 @@ class HelloTriangleApplication {
                                 // Describes what the image's purpose is and which part of the image should be accessed.
                                 // The images here will be used as color targets with no mipmapping levels and
                                 // without any multiple layers
-                                .subresourceRange = {
+                                .subresourceRange = vk::ImageSubresourceRange{
                                     .aspectMask     = vk::ImageAspectFlagBits::eColor,
                                     .baseMipLevel   = 0,
                                     .levelCount     = 1,
@@ -652,7 +703,6 @@ class HelloTriangleApplication {
         eray::util::Logger::err("Failed to create a swap chain image view: {}", vk::to_string(result.error()));
         return std::unexpected(VulkanObjectCreationError{
             .result = result.error(),
-            .kind   = VulkanObjectCreationError::Kind::ImageView,
         });
       }
     }
@@ -707,21 +757,6 @@ class HelloTriangleApplication {
         vk::DynamicState::eViewport,  //
         vk::DynamicState::eScissor    //
     };
-
-    // Describes the region of framebuffer that the output will be rendered to
-    auto vieport = vk::Viewport{
-        .x      = 0.0F,
-        .y      = 0.0F,
-        .width  = static_cast<float>(swap_chain_extent_.width),
-        .height = static_cast<float>(swap_chain_extent_.height),
-        // Note: min and max depth must be between [0.0F, 1.0F] and min might be higher than max.
-        .minDepth = 0.0F,
-        .maxDepth = 1.0F  //
-    };
-
-    // Scissor rectangle defines in which region pixels will actually be stored. The rasterizer will discard any pixels
-    // outside the scissored rectangle. We want to draw to entire framebuffer.
-    auto scissor_rect = vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_extent_};
 
     auto dynamic_state = vk::PipelineDynamicStateCreateInfo{
         .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),  //
@@ -826,12 +861,14 @@ class HelloTriangleApplication {
       eray::util::Logger::info("Could not create a pipeline layout. {}", vk::to_string(result.error()));
       return std::unexpected(VulkanObjectCreationError{
           .result = result.error(),
-          .kind   = VulkanObjectCreationError::Kind::PipelineLayout,
       });
     }
 
+    // == 9. Graphics Pipeline  ========================================================================================
+
     // We use the dynamic rendering feature (Vulkan 1.3), the structure below specifies color attachment data, and
-    // the format.
+    // the format. In previous versions of Vulkan, we would need to create framebuffers to bind our image views to
+    // a render pass, so the dynamic rendering eliminates the need for render pass and framebuffer.
     vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
         .colorAttachmentCount    = 1,
         .pColorAttachmentFormats = &swap_chain_format_,
@@ -853,17 +890,254 @@ class HelloTriangleApplication {
         .layout              = pipeline_layout_,
 
         .renderPass = nullptr,  // we are using dynamic rendering
+
+        // Vulkan allows you to create a new graphics pipeline by deriving from an existing pipeline
+        .basePipelineHandle = VK_NULL_HANDLE,
+        .basePipelineIndex  = -1,
     };
 
+    // Pipeline cache (set to nullptr) can be used to store and reuse data relevant to pipeline creation across
+    // multiple calls to vk::CreateGraphicsPipelines and even across program executions if the cache is stored to a
+    // file.
     if (auto result = device_.createGraphicsPipeline(nullptr, pipeline_info)) {
       graphics_pipeline_ = std::move(*result);
     } else {
       eray::util::Logger::err("Could not create a graphics pipeline. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanObjectCreationError{.result = result.error(),
-                                                       .kind   = VulkanObjectCreationError::Kind::GraphicsPipeline});
+      return std::unexpected(VulkanObjectCreationError{
+          .result = result.error(),
+      });
     }
 
     return {};
+  }
+
+  std::expected<void, VulkanInitError> create_command_pool() {
+    auto command_pool_info = vk::CommandPoolCreateInfo{
+        // There are two possible flags for command pools:
+        // - VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: Hint that command buffers are rerecorded with new commands very often
+        //   (may change memory allocation behavior).
+        // - VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT: Allow command buffers to be rerecorded individually,
+        //   without this flag they all have to be reset together. (Reset and rerecord over it in every frame)
+
+        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+
+        // Each command pool can only allocate command buffers that are submitted on a single type of queue.
+        // We setup commands for drawing, and thus we've chosen the graphics queue family.
+        .queueFamilyIndex = graphics_queue_family_index_,
+    };
+
+    if (auto result = device_.createCommandPool(command_pool_info)) {
+      command_pool_ = std::move(*result);
+    } else {
+      eray::util::Logger::err("Could not create a command pool. {}", vk::to_string(result.error()));
+
+      return std::unexpected(VulkanObjectCreationError{
+          .result = result.error(),
+      });
+    }
+
+    return {};
+  }
+
+  std::expected<void, VulkanInitError> create_command_buffer() {
+    auto alloc_info = vk::CommandBufferAllocateInfo{
+        .commandPool = command_pool_,  //
+
+        // Specifies if the allocated command buffers are primary or secondary command buffers:
+        // - VK_COMMAND_BUFFER_LEVEL_PRIMARY: Can be submitted to a queue for execution, but cannot be called from
+        // other
+        //   command buffers.
+        // - VK_COMMAND_BUFFER_LEVEL_SECONDARY: Cannot be submitted directly, but can be called from primary command
+        //   buffers.
+        .level              = vk::CommandBufferLevel::ePrimary,  //
+        .commandBufferCount = 1,                                 //
+    };
+
+    if (auto result = device_.allocateCommandBuffers(alloc_info)) {
+      command_buffer_ = std::move(result->front());
+    } else {
+      eray::util::Logger::err("Command buffer allocation failure. {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanObjectCreationError{
+          .result = result.error(),
+      });
+    }
+
+    return {};
+  }
+
+  std::expected<void, VulkanInitError> create_sync_objs() {
+    if (auto result = device_.createSemaphore(vk::SemaphoreCreateInfo{})) {
+      present_complete_semaphore_ = std::move(*result);
+    } else {
+      eray::util::Logger::err("Failed to create a  sempahore. {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+    }
+
+    if (auto result = device_.createSemaphore(vk::SemaphoreCreateInfo{})) {
+      render_finished_semaphore_ = std::move(*result);
+    } else {
+      eray::util::Logger::err("Failed to create a sempahore. {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+    }
+
+    if (auto result = device_.createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled})) {
+      draw_fence_ = std::move(*result);
+    } else {
+      eray::util::Logger::err("Failed to create a fence. {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+    }
+
+    return {};
+  }
+
+  struct TransitionImageLayoutInfo {
+    uint32_t image_index;
+    vk::ImageLayout old_layout;
+    vk::ImageLayout new_layout;
+    vk::AccessFlags2 src_access_mask;
+    vk::AccessFlags2 dst_access_mask;
+    vk::PipelineStageFlags2 src_stage_mask;
+    vk::PipelineStageFlags2 dst_stage_mask;
+  };
+
+  /**
+   * @brief In Vulkan, images can be in different layouts that are optimized for different operations. For example, an
+   * image can be in a layout that is optimal for presenting to the screen, or in a layout that is optimal for being
+   * used as a color attachment.
+   *
+   * This function is used to transition the image layout before and after rendering.
+   *
+   * @param image_index
+   * @param old_layout
+   * @param new_layout
+   * @param src_access_mask
+   * @param dst_access_mask
+   * @param src_stage_mask
+   * @param dst_stage_mask
+   */
+  void transition_image_layout(TransitionImageLayoutInfo info) {
+    auto barrier = vk::ImageMemoryBarrier2{
+        .srcStageMask        = info.src_stage_mask,
+        .srcAccessMask       = info.src_access_mask,
+        .dstStageMask        = info.dst_stage_mask,
+        .dstAccessMask       = info.dst_access_mask,
+        .oldLayout           = info.old_layout,
+        .newLayout           = info.new_layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image               = swap_chain_images_[info.image_index],  //
+        .subresourceRange =
+            vk::ImageSubresourceRange{
+                .aspectMask     = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel   = 0,
+                .levelCount     = 1,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+    };
+
+    auto dependency_info = vk::DependencyInfo{
+        .dependencyFlags         = {},
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers    = &barrier,
+    };
+
+    command_buffer_.pipelineBarrier2(dependency_info);
+  }
+
+  /**
+   * @brief Writes the commands we what to execute into a command buffer
+   *
+   * @param image_index
+   */
+  void record_command_buffer(uint32_t image_index) {
+    command_buffer_.begin(vk::CommandBufferBeginInfo{
+        // The `flags` parameter specifies how we're going to use the command buffer:
+        // - VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT: The command buffer will be rerecorded right after executing it
+        //   once.
+        // - VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT: This is a secondary command buffer that will be entirely
+        //   within a single render pass.
+        // - WK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT: The command buffer can be resubmitted while it is also
+        //   already pending execution.
+    });
+
+    // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
+    transition_image_layout(TransitionImageLayoutInfo{
+        .image_index     = image_index,
+        .old_layout      = vk::ImageLayout::eUndefined,
+        .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
+        .src_access_mask = {},
+        .dst_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite,
+        .src_stage_mask  = vk::PipelineStageFlagBits2::eTopOfPipe,
+        .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+    });
+
+    // Set up the color attachment
+    vk::ClearValue clear_color = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F);
+    auto attachment_info       = vk::RenderingAttachmentInfo{
+
+        // Specifies which image to render to
+        .imageView = swap_chain_image_views_[image_index],
+
+        // Specifies the layout the image will be in during rendering
+        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+
+        // Specifies what to do with the image before rendering
+        .loadOp = vk::AttachmentLoadOp::eClear,
+
+        // Specifies what to do with the image after rendering
+        .storeOp = vk::AttachmentStoreOp::eStore,
+
+        .clearValue = clear_color,
+    };
+
+    auto rendering_info = vk::RenderingInfo{
+        // Defines the size of the render area
+        .renderArea =
+            vk::Rect2D{
+                .offset = {.x = 0, .y = 0}, .extent = swap_chain_extent_  //
+            },
+        .layerCount           = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments    = &attachment_info,
+    };
+    command_buffer_.beginRendering(rendering_info);
+
+    // We can specify type of the pipeline
+    command_buffer_.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
+    // Describes the region of framebuffer that the output will be rendered to
+    command_buffer_.setViewport(
+        0, vk::Viewport{
+               .x      = 0.0F,
+               .y      = 0.0F,
+               .width  = static_cast<float>(swap_chain_extent_.width),
+               .height = static_cast<float>(swap_chain_extent_.height),
+               // Note: min and max depth must be between [0.0F, 1.0F] and min might be higher than max.
+               .minDepth = 0.0F,
+               .maxDepth = 1.0F  //
+           });
+
+    // Scissor rectangle defines in which region pixels will actually be stored. The rasterizer will discard any pixels
+    // outside the scissored rectangle. We want to draw to entire framebuffer.
+    command_buffer_.setScissor(0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_extent_});
+
+    // Draw 3 vertices
+    command_buffer_.draw(3, 1, 0, 0);
+
+    command_buffer_.endRendering();
+
+    // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
+    transition_image_layout(TransitionImageLayoutInfo{
+        .image_index     = image_index,
+        .old_layout      = vk::ImageLayout::eColorAttachmentOptimal,
+        .new_layout      = vk::ImageLayout::ePresentSrcKHR,
+        .src_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite,
+        .dst_access_mask = {},
+        .src_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        .dst_stage_mask  = vk::PipelineStageFlagBits2::eBottomOfPipe,
+    });
+
+    command_buffer_.end();
   }
 
   vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
@@ -977,7 +1251,6 @@ class HelloTriangleApplication {
     eray::util::Logger::err("Failed to create a shader module");
     return std::unexpected(VulkanObjectCreationError{
         .result = result.error(),
-        .kind   = VulkanObjectCreationError::Kind::ShaderModule,
     });
   }
 
@@ -1058,7 +1331,16 @@ class HelloTriangleApplication {
    */
   std::vector<vk::Image> swap_chain_images_;
 
+  /**
+   * @brief Describes the format e.g. RGBA.
+   *
+   */
   vk::Format swap_chain_format_ = vk::Format::eUndefined;
+
+  /**
+   * @brief Describes the dimensions of the swap chain.
+   *
+   */
   vk::Extent2D swap_chain_extent_{};
 
   /**
@@ -1079,6 +1361,23 @@ class HelloTriangleApplication {
    *
    */
   vk::raii::Pipeline graphics_pipeline_ = nullptr;
+
+  /**
+   * @brief Command pools manage the memory that is used to store the buffers and command buffers are allocated from
+   * them.
+   *
+   */
+  vk::raii::CommandPool command_pool_ = nullptr;
+
+  /**
+   * @brief Drawing operations are recorded in comand buffer objects.
+   *
+   */
+  vk::raii::CommandBuffer command_buffer_ = nullptr;
+
+  vk::raii::Semaphore present_complete_semaphore_ = nullptr;
+  vk::raii::Semaphore render_finished_semaphore_  = nullptr;
+  vk::raii::Fence draw_fence_                     = nullptr;
 
   /**
    * @brief GLFW window pointer.
