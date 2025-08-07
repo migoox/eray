@@ -80,7 +80,7 @@ class HelloTriangleApplication {
 
  private:
   std::expected<void, VulkanInitError> initVk() {
-    TRY(createVkInstance())
+    TRY(create_vk_instance())
     TRY(setup_debug_messenger())
     TRY(create_surface())
     TRY(pick_physical_device())
@@ -89,7 +89,7 @@ class HelloTriangleApplication {
     TRY(create_image_views())
     TRY(create_graphics_pipeline())
     TRY(create_command_pool())
-    TRY(create_command_buffer())
+    TRY(create_command_buffers())
     TRY(create_sync_objs())
 
     return {};
@@ -133,27 +133,27 @@ class HelloTriangleApplication {
     //
     // A fence is used on CPU. Unlike the semaphores the vkWaitForFence is blocking the host.
 
-    // First we wait for the queue to become idle. It's equivalent to having submitted a valid fence to every
-    // previously executed queue submission command and invoking vkWaitForFences.
-    graphics_queue_.waitIdle();
+    while (vk::Result::eTimeout == device_.waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
+      ;
+    }
 
     // Get the image from the swap chain. When the image will be ready the present semaphore will be signaled.
-    auto [result, image_index] = swap_chain_.acquireNextImage(UINT64_MAX, *present_complete_semaphore_, nullptr);
+    auto [result, image_index] =
+        swap_chain_.acquireNextImage(UINT64_MAX, *present_complete_semaphores_[current_semaphore_], nullptr);
 
-    record_command_buffer(image_index);
-
-    // Sets the state of the draw fence to unsignaled
-    device_.resetFences(*draw_fence_);
+    device_.resetFences(*in_flight_fences_[current_frame_]);
+    command_buffers_[current_frame_].reset();
+    record_command_buffer(current_frame_, image_index);
 
     auto wait_dst_stage_mask = vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput);
     const auto submit_info   = vk::SubmitInfo{
           .waitSemaphoreCount   = 1,
-          .pWaitSemaphores      = &*present_complete_semaphore_,
+          .pWaitSemaphores      = &*present_complete_semaphores_[current_semaphore_],
           .pWaitDstStageMask    = &wait_dst_stage_mask,
           .commandBufferCount   = 1,
-          .pCommandBuffers      = &*command_buffer_,
+          .pCommandBuffers      = &*command_buffers_[current_frame_],
           .signalSemaphoreCount = 1,
-          .pSignalSemaphores    = &*render_finished_semaphore_,  //
+          .pSignalSemaphores    = &*render_finished_semaphores_[image_index],  //
     };
 
     // Submits the provided commands to the queue. The vkWaitForFences blocks the execution until all
@@ -162,15 +162,12 @@ class HelloTriangleApplication {
     //
     // When the rendering finishes, the finished render finished semaphore is signaled.
     //
-    graphics_queue_.submit(submit_info, *draw_fence_);
-    while (vk::Result::eTimeout == device_.waitForFences(*draw_fence_, vk::True, UINT64_MAX)) {
-      ;
-    }
+    graphics_queue_.submit(submit_info, *in_flight_fences_[current_frame_]);
 
     // The image will not be presented until the render finished semaphore is signaled by the submit call.
     const auto present_info = vk::PresentInfoKHR{
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores    = &*render_finished_semaphore_,
+        .pWaitSemaphores    = &*render_finished_semaphores_[image_index],
         .swapchainCount     = 1,
         .pSwapchains        = &*swap_chain_,
         .pImageIndices      = &image_index,
@@ -178,6 +175,9 @@ class HelloTriangleApplication {
     };
 
     result = present_queue_.presentKHR(present_info);
+
+    current_semaphore_ = (current_semaphore_ + 1) % present_complete_semaphores_.size();
+    current_frame_     = (current_frame_ + 1) % kMaxFramesInFlight;
   }
 
   void cleanup() {
@@ -191,7 +191,7 @@ class HelloTriangleApplication {
     eray::util::Logger::succ("Finished cleanup");
   }
 
-  std::expected<void, VulkanInitError> createVkInstance() {
+  std::expected<void, VulkanInitError> create_vk_instance() {
     // To create a Vulkan Instance we specify
     //  1. app info
     //  2. global extensions (e.g. those needed by GLFW)
@@ -939,7 +939,7 @@ class HelloTriangleApplication {
     return {};
   }
 
-  std::expected<void, VulkanInitError> create_command_buffer() {
+  std::expected<void, VulkanInitError> create_command_buffers() {
     auto alloc_info = vk::CommandBufferAllocateInfo{
         .commandPool = command_pool_,  //
 
@@ -950,11 +950,11 @@ class HelloTriangleApplication {
         // - VK_COMMAND_BUFFER_LEVEL_SECONDARY: Cannot be submitted directly, but can be called from primary command
         //   buffers.
         .level              = vk::CommandBufferLevel::ePrimary,  //
-        .commandBufferCount = 1,                                 //
+        .commandBufferCount = kMaxFramesInFlight,                //
     };
 
     if (auto result = device_.allocateCommandBuffers(alloc_info)) {
-      command_buffer_ = std::move(result->front());
+      std::ranges::move(*result | std::views::take(kMaxFramesInFlight), command_buffers_.begin());
     } else {
       eray::util::Logger::err("Command buffer allocation failure. {}", vk::to_string(result.error()));
       return std::unexpected(VulkanObjectCreationError{
@@ -966,25 +966,34 @@ class HelloTriangleApplication {
   }
 
   std::expected<void, VulkanInitError> create_sync_objs() {
-    if (auto result = device_.createSemaphore(vk::SemaphoreCreateInfo{})) {
-      present_complete_semaphore_ = std::move(*result);
-    } else {
-      eray::util::Logger::err("Failed to create a  sempahore. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+    present_complete_semaphores_.clear();
+    render_finished_semaphores_.clear();
+
+    for (size_t i = 0; i < swap_chain_images_.size(); ++i) {
+      if (auto result = device_.createSemaphore(vk::SemaphoreCreateInfo{})) {
+        present_complete_semaphores_.emplace_back(std::move(*result));
+      } else {
+        eray::util::Logger::err("Failed to create a  sempahore. {}", vk::to_string(result.error()));
+        return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+      }
     }
 
-    if (auto result = device_.createSemaphore(vk::SemaphoreCreateInfo{})) {
-      render_finished_semaphore_ = std::move(*result);
-    } else {
-      eray::util::Logger::err("Failed to create a sempahore. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+    for (size_t i = 0; i < swap_chain_images_.size(); ++i) {
+      if (auto result = device_.createSemaphore(vk::SemaphoreCreateInfo{})) {
+        render_finished_semaphores_.emplace_back(std::move(*result));
+      } else {
+        eray::util::Logger::err("Failed to create a sempahore. {}", vk::to_string(result.error()));
+        return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+      }
     }
 
-    if (auto result = device_.createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled})) {
-      draw_fence_ = std::move(*result);
-    } else {
-      eray::util::Logger::err("Failed to create a fence. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
+      if (auto result = device_.createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled})) {
+        in_flight_fences_[i] = std::move(*result);
+      } else {
+        eray::util::Logger::err("Failed to create a fence. {}", vk::to_string(result.error()));
+        return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+      }
     }
 
     return {};
@@ -992,6 +1001,7 @@ class HelloTriangleApplication {
 
   struct TransitionImageLayoutInfo {
     uint32_t image_index;
+    size_t frame_index;
     vk::ImageLayout old_layout;
     vk::ImageLayout new_layout;
     vk::AccessFlags2 src_access_mask;
@@ -1042,7 +1052,7 @@ class HelloTriangleApplication {
         .pImageMemoryBarriers    = &barrier,
     };
 
-    command_buffer_.pipelineBarrier2(dependency_info);
+    command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
   }
 
   /**
@@ -1050,12 +1060,14 @@ class HelloTriangleApplication {
    *
    * @param image_index
    */
-  void record_command_buffer(uint32_t image_index) {
-    command_buffer_.begin(vk::CommandBufferBeginInfo{
+  void record_command_buffer(size_t frame_index, uint32_t image_index) {
+    command_buffers_[frame_index].begin(vk::CommandBufferBeginInfo{
         // The `flags` parameter specifies how we're going to use the command buffer:
-        // - VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT: The command buffer will be rerecorded right after executing it
+        // - VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT: The command buffer will be rerecorded right after executing
+        // it
         //   once.
-        // - VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT: This is a secondary command buffer that will be entirely
+        // - VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT: This is a secondary command buffer that will be
+        // entirely
         //   within a single render pass.
         // - WK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT: The command buffer can be resubmitted while it is also
         //   already pending execution.
@@ -1064,6 +1076,7 @@ class HelloTriangleApplication {
     // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
     transition_image_layout(TransitionImageLayoutInfo{
         .image_index     = image_index,
+        .frame_index     = frame_index,
         .old_layout      = vk::ImageLayout::eUndefined,
         .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
         .src_access_mask = {},
@@ -1101,12 +1114,12 @@ class HelloTriangleApplication {
         .colorAttachmentCount = 1,
         .pColorAttachments    = &attachment_info,
     };
-    command_buffer_.beginRendering(rendering_info);
+    command_buffers_[frame_index].beginRendering(rendering_info);
 
     // We can specify type of the pipeline
-    command_buffer_.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
+    command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
     // Describes the region of framebuffer that the output will be rendered to
-    command_buffer_.setViewport(
+    command_buffers_[frame_index].setViewport(
         0, vk::Viewport{
                .x      = 0.0F,
                .y      = 0.0F,
@@ -1117,18 +1130,20 @@ class HelloTriangleApplication {
                .maxDepth = 1.0F  //
            });
 
-    // Scissor rectangle defines in which region pixels will actually be stored. The rasterizer will discard any pixels
-    // outside the scissored rectangle. We want to draw to entire framebuffer.
-    command_buffer_.setScissor(0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_extent_});
+    // Scissor rectangle defines in which region pixels will actually be stored. The rasterizer will discard any
+    // pixels outside the scissored rectangle. We want to draw to entire framebuffer.
+    command_buffers_[frame_index].setScissor(
+        0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_extent_});
 
     // Draw 3 vertices
-    command_buffer_.draw(3, 1, 0, 0);
+    command_buffers_[frame_index].draw(3, 1, 0, 0);
 
-    command_buffer_.endRendering();
+    command_buffers_[frame_index].endRendering();
 
     // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
     transition_image_layout(TransitionImageLayoutInfo{
         .image_index     = image_index,
+        .frame_index     = frame_index,
         .old_layout      = vk::ImageLayout::eColorAttachmentOptimal,
         .new_layout      = vk::ImageLayout::ePresentSrcKHR,
         .src_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -1137,7 +1152,7 @@ class HelloTriangleApplication {
         .dst_stage_mask  = vk::PipelineStageFlagBits2::eBottomOfPipe,
     });
 
-    command_buffer_.end();
+    command_buffers_[frame_index].end();
   }
 
   vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
@@ -1149,7 +1164,8 @@ class HelloTriangleApplication {
     }
 
     eray::util::Logger::warn(
-        "A format B8G8R8A8Srgb with color space SrgbNonlinear is not supported by the Surface. A random format will be "
+        "A format B8G8R8A8Srgb with color space SrgbNonlinear is not supported by the Surface. A random format will "
+        "be "
         "used.");
 
     return available_formats[0];
@@ -1319,8 +1335,8 @@ class HelloTriangleApplication {
    * @brief Vulkan does not provide a "default framebuffuer". Hence it requires an infrastructure that will own the
    * buffers we will render to before we visualize them on the screen. This infrastructure is known as the swap chain.
    *
-   * The swap is a queue of images that are waiting to be presented to the screen. The general purpose of the swap chain
-   * is to synchronize the presentation of images with the refresh rate of teh screen.
+   * The swap is a queue of images that are waiting to be presented to the screen. The general purpose of the swap
+   * chain is to synchronize the presentation of images with the refresh rate of teh screen.
    *
    */
   vk::raii::SwapchainKHR swap_chain_ = nullptr;
@@ -1369,15 +1385,31 @@ class HelloTriangleApplication {
    */
   vk::raii::CommandPool command_pool_ = nullptr;
 
+  uint32_t current_semaphore_ = 0;
+  uint32_t current_frame_     = 0;
+
+  // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
+  // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
+  static constexpr int kMaxFramesInFlight = 2;
+
   /**
    * @brief Drawing operations are recorded in comand buffer objects.
    *
    */
-  vk::raii::CommandBuffer command_buffer_ = nullptr;
+  std::array<vk::raii::CommandBuffer, kMaxFramesInFlight> command_buffers_ = {nullptr, nullptr};
 
-  vk::raii::Semaphore present_complete_semaphore_ = nullptr;
-  vk::raii::Semaphore render_finished_semaphore_  = nullptr;
-  vk::raii::Fence draw_fence_                     = nullptr;
+  /**
+   * @brief Semaphores are used to assert on GPU that a process e.g. rendering is finished.
+   *
+   */
+  std::vector<vk::raii::Semaphore> present_complete_semaphores_;
+  std::vector<vk::raii::Semaphore> render_finished_semaphores_;
+
+  /**
+   * @brief Fences are used to block GPU until the frame is presented.
+   *
+   */
+  std::array<vk::raii::Fence, kMaxFramesInFlight> in_flight_fences_ = {nullptr, nullptr};
 
   /**
    * @brief GLFW window pointer.

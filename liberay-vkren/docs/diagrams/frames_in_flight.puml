@@ -1,0 +1,47 @@
+@startuml
+actor Application
+participant CPU
+participant Vulkan
+participant GPU 
+participant Swapchain 
+
+Application -> CPU: drawFrame()
+
+CPU -> Vulkan: acquireNextImage()
+activate Vulkan
+activate Vulkan
+CPU <-- Vulkan: imageIndex
+deactivate Vulkan
+Vulkan -> Swapchain : acquireNextImage()
+activate Swapchain
+
+CPU -> Vulkan: resetFences(currentFrame)
+CPU -> CPU: resetCommandBuffer(currentFrame)
+CPU -> CPU: recordCommandBuffer(imageIndex)
+
+CPU -> Vulkan: <color #00ea90>queue.submit(submitInfo, inFlightFence(currentFrame))</color>
+CPU -> Vulkan: <color #ea0059>queue.presentKHR(presentInfo)</color>
+CPU -> CPU: Update semaphoreIndex & currentFrame
+
+CPU --> Application: ready
+Application -> CPU: drawFrame() 
+CPU -> Vulkan: waitForFences(currentFrame)
+
+Vulkan <-- Swapchain : presentCompleteSemaphore(currentFrame) = signaled
+deactivate Vulkan
+deactivate Swapchain
+Vulkan -> GPU : <color #00ea90>executeRecordedCommands and render</color>
+activate GPU
+GPU --> Vulkan : ok 
+deactivate GPU
+CPU <-- Vulkan: inFlightFence(currentFrame) ready
+
+Vulkan -> GPU : render to the acquired image 
+activate GPU
+GPU --> Vulkan : renderFinishedSemaphore(imageIndex) = signaled 
+deactivate GPU
+
+Vulkan --> Application : <color #ea0059>present frame</color>
+
+
+@enduml
