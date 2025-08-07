@@ -13,6 +13,7 @@
 #include <limits>
 #include <map>
 #include <ranges>
+#include <sandbox/vertex.hpp>
 #include <variant>
 #include <vector>
 #include <version/version.hpp>
@@ -46,7 +47,7 @@ struct VulkanObjectCreationError {
     return "Uknown creation error";
   }
 };
-
+struct NoSuitableMemoryType {};
 struct VulkanSwapChainSupportIsNotSufficient {};
 
 struct FileDoesNotExistError {};
@@ -61,7 +62,7 @@ struct FileError {
 using VulkanInitError =
     std::variant<VulkanExtensionNotSupported, SomeOfTheRequestedVulkanLayersAreNotSupported,
                  FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound, VulkanUnsupportedQueueFamily,
-                 VulkanSwapChainSupportIsNotSufficient, FileError, VulkanObjectCreationError>;
+                 VulkanSwapChainSupportIsNotSufficient, FileError, VulkanObjectCreationError, NoSuitableMemoryType>;
 using AppError = std::variant<GLFWWindowCreationFailure, VulkanInitError>;
 
 struct SwapchainRecreationFailure {};
@@ -99,13 +100,10 @@ class HelloTriangleApplication {
     TRY(create_swap_chain())
     eray::util::Logger::succ("Successfully created a Vulkan Swap chain.");
     TRY(create_image_views())
-    eray::util::Logger::succ("Successfully created Vulkan Swap chain image views.");
     TRY(create_graphics_pipeline())
-    eray::util::Logger::succ("Successfully created Vulkan Graphics Pipeline.");
     TRY(create_command_pool())
-    eray::util::Logger::succ("Successfully created Vulkan Command Pool.");
+    TRY(create_vertex_buffer())
     TRY(create_command_buffers())
-    eray::util::Logger::succ("Successfully created Vulkan Command Buffers.");
     TRY(create_sync_objs())
 
     return {};
@@ -839,8 +837,13 @@ class HelloTriangleApplication {
     // - Bindings: spacing between data and whether the data is per-vertex or per-instance,
     // - Attribute descriptions: type of the attributes passed to the vertex shader, which binding to load them from and
     // at which offset
+    auto binding_desc       = Vertex::get_binding_desc();
+    auto attribs_desc       = Vertex::get_attribs_desc();
     auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
-        // There is no input passed yet
+        .vertexBindingDescriptionCount   = 1,
+        .pVertexBindingDescriptions      = &binding_desc,  //
+        .vertexAttributeDescriptionCount = attribs_desc.size(),
+        .pVertexAttributeDescriptions    = attribs_desc.data(),  //
     };
 
     // Describes:
@@ -1002,6 +1005,78 @@ class HelloTriangleApplication {
           .result = result.error(),
       });
     }
+
+    return {};
+  }
+
+  std::expected<void, VulkanInitError> create_vertex_buffer() {
+    // == 1. Create Buffer Object ======================================================================================
+
+    auto vb = VertexBuffer::create_triangle();
+    if (auto result = device_.createBuffer(vb.get_create_info(vk::SharingMode::eExclusive))) {
+      vertex_buffer_ = std::move(*result);
+    } else {
+      eray::util::Logger::err("Could not create a vertex buffer. {}", vk::to_string(result.error()));
+      return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+    }
+
+    // == 2. Allocate Device Memory ====================================================================================
+
+    // The first step of allocating memory for the buffer is to query its memory requirements
+    // - size: describes the size required memory in bytes may differ from buffer_info.size
+    // - alignment: the offset in bytes where the buffer begins in the allocated region of memory, depends on usage and
+    //              flags
+    // - memoryTypeBits: Bit field of the memory types that are suitable for the buffer
+    auto mem_requirements = vertex_buffer_.getMemoryRequirements();
+
+    auto vertex_buffer_mem_opt =
+        find_mem_type(mem_requirements.memoryTypeBits,
+                      // eHostVisible: the memory can be mapped for host access using vkMapMemory
+                      // eHostCoherent: host cache management commands (flush mapped memory and invalidate
+                      // mapped memory) are not needed to manage availability and visibility on the host
+                      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+            .transform_error([](auto&& err) -> VulkanInitError {
+              eray::util::Logger::err("No suitable memory type");
+              return err;
+            })
+            .and_then([&mem_requirements](auto&& type) -> std::expected<vk::MemoryAllocateInfo, VulkanInitError> {
+              return vk::MemoryAllocateInfo{
+                  .allocationSize  = mem_requirements.size,
+                  .memoryTypeIndex = type,
+              };
+            })
+            .and_then([this](auto&& mem_alloc_info) -> std::expected<vk::raii::DeviceMemory, VulkanInitError> {
+              auto result = device_.allocateMemory(mem_alloc_info);
+              if (result) {
+                return std::move(*result);
+              }
+              eray::util::Logger::err("Could not create device memory");
+              return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+            });
+
+    if (!vertex_buffer_mem_opt) {
+      eray::util::Logger::err("Failed to allocate memory for vertex buffer");
+      return std::unexpected(vertex_buffer_mem_opt.error());
+    }
+    vertex_buffer_mem_ = std::move(*vertex_buffer_mem_opt);
+
+    vertex_buffer_.bindMemory(vertex_buffer_mem_, 0);
+
+    // == 3. Fill Vertex Buffer ========================================================================================
+
+    void* data = vertex_buffer_mem_.mapMemory(0, vb.size_in_bytes());
+    memcpy(data, vb.vertices.data(), vb.size_in_bytes());
+    vertex_buffer_mem_.unmapMemory();
+
+    // Unfortunately, the driver may not immediately copy the data into the buffer memory, for example, because of
+    // caching. It is also possible that writes to the buffer are not visible in the mapped memory yet. That's why
+    // we used VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, otherwise we would have to call flush after writing and call
+    // invalidate before reading.
+    //
+    // Note: Explicit flushing might increase performance in some cases.
+
+    // The transfer of data to the GPU is an operation that happens in the background, and the specification simply
+    // tells us that it is guaranteed to be complete as of the next call to vkQueueSubmit
 
     return {};
   }
@@ -1185,6 +1260,8 @@ class HelloTriangleApplication {
 
     // We can specify type of the pipeline
     command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
+    command_buffers_[frame_index].bindVertexBuffers(0, *vertex_buffer_, {0});
+
     // Describes the region of framebuffer that the output will be rendered to
     command_buffers_[frame_index].setViewport(
         0, vk::Viewport{
@@ -1271,7 +1348,25 @@ class HelloTriangleApplication {
     };
   }
 
-  static void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
+  std::expected<uint32_t, NoSuitableMemoryType> find_mem_type(uint32_t type_filter, vk::MemoryPropertyFlags props) {
+    // Graphics cards can offer different types of memory to allocate from. each type of memory varies in terms of
+    // allowed operations and performance characteristics. We need to combine the requirements of the buffer and
+    // our own app requirements to find the right type of memory to use.
+
+    // memoryHeaps: distinct memory resources like dedicated VRAM and swap space in RAM for when VRAM runs out.
+    // Different types of memory exist within these heaps.
+    auto mem_props = physical_device_.getMemoryProperties();
+
+    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+      if ((((type_filter) & (1 << i)) != 0U) && (mem_props.memoryTypes[i].propertyFlags & props) == props) {
+        return i;
+      }
+    }
+
+    return std::unexpected(NoSuitableMemoryType{});
+  }
+
+  static void framebuffer_resize_callback(GLFWwindow* window, int /*width*/, int /*height*/) {
     auto* app                 = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
     app->framebuffer_resized_ = true;
   }
@@ -1482,6 +1577,9 @@ class HelloTriangleApplication {
    *
    */
   std::array<vk::raii::Fence, kMaxFramesInFlight> in_flight_fences_ = {nullptr, nullptr};
+
+  vk::raii::Buffer vertex_buffer_           = nullptr;
+  vk::raii::DeviceMemory vertex_buffer_mem_ = nullptr;
 
   /**
    * @brief GLFW window pointer.
