@@ -64,6 +64,11 @@ using VulkanInitError =
                  VulkanSwapChainSupportIsNotSufficient, FileError, VulkanObjectCreationError>;
 using AppError = std::variant<GLFWWindowCreationFailure, VulkanInitError>;
 
+struct SwapchainRecreationFailure {};
+struct SwapChainImageAcquireFailure {};
+
+using DrawFrameError = std::variant<SwapchainRecreationFailure, SwapChainImageAcquireFailure>;
+
 class HelloTriangleApplication {
  public:
   std::expected<void, AppError> run() {
@@ -81,15 +86,26 @@ class HelloTriangleApplication {
  private:
   std::expected<void, VulkanInitError> initVk() {
     TRY(create_vk_instance())
+    eray::util::Logger::succ("Successfully created a Vulkan Instance.");
     TRY(setup_debug_messenger())
+    eray::util::Logger::succ("Successfully created a Vulkan Debug Messenger.");
     TRY(create_surface())
+    eray::util::Logger::succ("Successfully created a Vulkan Surface.");
     TRY(pick_physical_device())
+    eray::util::Logger::succ("Successfully picked a physical device with name {}",
+                             std::string_view(physical_device_.getProperties().deviceName));
     TRY(create_logical_device())
+    eray::util::Logger::succ("Successfully created a Vulkan Logical Device and Queues.");
     TRY(create_swap_chain())
+    eray::util::Logger::succ("Successfully created a Vulkan Swap chain.");
     TRY(create_image_views())
+    eray::util::Logger::succ("Successfully created Vulkan Swap chain image views.");
     TRY(create_graphics_pipeline())
+    eray::util::Logger::succ("Successfully created Vulkan Graphics Pipeline.");
     TRY(create_command_pool())
+    eray::util::Logger::succ("Successfully created Vulkan Command Pool.");
     TRY(create_command_buffers())
+    eray::util::Logger::succ("Successfully created Vulkan Command Buffers.");
     TRY(create_sync_objs())
 
     return {};
@@ -99,7 +115,7 @@ class HelloTriangleApplication {
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     glfwSetErrorCallback([](int error_code, const char* description) {
       eray::util::Logger::err("GLFW Error #{0}: {1}", error_code, description);
@@ -110,6 +126,9 @@ class HelloTriangleApplication {
       return std::unexpected(GLFWWindowCreationFailure{});
     }
 
+    glfwSetWindowUserPointer(window_, this);
+    glfwSetFramebufferSizeCallback(window_, framebuffer_resize_callback);
+
     eray::util::Logger::succ("Successfully created a GLFW Window");
 
     return {};
@@ -118,7 +137,10 @@ class HelloTriangleApplication {
   void mainLoop() {
     while (!glfwWindowShouldClose(window_)) {
       glfwPollEvents();
-      draw_frame();
+      if (!draw_frame()) {
+        eray::util::Logger::err("Closing window: Failed to draw a frame");
+        break;
+      }
     }
 
     // Since draw frame operations are async, when the main loop ends the drawing operations may still be going on.
@@ -126,7 +148,7 @@ class HelloTriangleApplication {
     device_.waitIdle();
   }
 
-  void draw_frame() {
+  std::expected<void, DrawFrameError> draw_frame() {
     // A binary (there is also a timeline semaphore) semaphore is used to add order between queue operations (work
     // submitted to the queue). Semaphores are used for both -- to order work inside the same queue and between
     // different queues. The waiting happens on GPU only, the host (CPU) is not blocked.
@@ -140,6 +162,20 @@ class HelloTriangleApplication {
     // Get the image from the swap chain. When the image will be ready the present semaphore will be signaled.
     auto [result, image_index] =
         swap_chain_.acquireNextImage(UINT64_MAX, *present_complete_semaphores_[current_semaphore_], nullptr);
+
+    if (result == vk::Result::eErrorOutOfDateKHR) {
+      // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
+      // happens after window resize.
+      TRY(recreate_swap_chain());
+      return {};
+    }
+
+    if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
+      // The swap chain cannot be used even if we accept that the surface properties are no longer matched exactly
+      // (eSuboptimalKHR).
+      eray::util::Logger::err("Failed to present swap chain image");
+      return std::unexpected(SwapChainImageAcquireFailure{});
+    }
 
     device_.resetFences(*in_flight_fences_[current_frame_]);
     command_buffers_[current_frame_].reset();
@@ -175,15 +211,29 @@ class HelloTriangleApplication {
     };
 
     result = present_queue_.presentKHR(present_info);
+    if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebuffer_resized_) {
+      framebuffer_resized_ = false;
+      TRY(recreate_swap_chain());
+    } else if (result != vk::Result::eSuccess) {
+      eray::util::Logger::err("Failed to present swap chain image");
+      return std::unexpected(SwapChainImageAcquireFailure{});
+    }
 
     current_semaphore_ = (current_semaphore_ + 1) % present_complete_semaphores_.size();
     current_frame_     = (current_frame_ + 1) % kMaxFramesInFlight;
+
+    return {};
+  }
+
+  void cleanup_swapchain() {
+    // Swap chain must be destroyed before destroying the GLFW window, getDispatcher()->vkDestroySwapchainKHR throws
+    // otherwise
+    swap_chain_image_views_.clear();
+    swap_chain_ = nullptr;
   }
 
   void cleanup() {
-    // Swap chain must be destroyed before destroying the GLFW window, getDispatcher()->vkDestroySwapchainKHR throws
-    // otherwise
-    swap_chain_.clear();
+    cleanup_swapchain();
 
     glfwDestroyWindow(window_);
     glfwTerminate();
@@ -399,9 +449,6 @@ class HelloTriangleApplication {
     // Pick the best GPU candidate
     physical_device_ = candidates.rbegin()->second;
 
-    eray::util::Logger::succ("Successfully picked a physical device with name {}",
-                             std::string_view(physical_device_.getProperties().deviceName));
-
     return {};
   }
 
@@ -513,8 +560,6 @@ class HelloTriangleApplication {
       });
     }
 
-    eray::util::Logger::succ("Successfully created a logical device and queues.");
-
     return {};
   }
 
@@ -619,9 +664,8 @@ class HelloTriangleApplication {
         .clipped = vk::True,  //
 
         // In Vulkan, it's possible that your swap chain becomes invalid or unoptimized while your app is running,
-        // e.g. when window gets resized. In that case the swap chain actually needs to be recreated from scratch.
-        // IN SUCH A CASE THE SWAP CHAIN NEEDS TO BE RECREATED FROM SCRATCH, and a reference to the old one must be
-        // specified here.
+        // e.g. when window gets resized. IN SUCH A CASE THE SWAP CHAIN NEEDS TO BE RECREATED FROM SCRATCH, and a
+        // reference to the old one must be specified here.
         .oldSwapchain = VK_NULL_HANDLE,
     };
 
@@ -665,7 +709,32 @@ class HelloTriangleApplication {
     swap_chain_format_ = swap_surface_format.format;
     swap_chain_extent_ = swap_extent;
 
-    eray::util::Logger::succ("Successfully created a Vulkan Swap chain.");
+    return {};
+  }
+
+  std::expected<void, SwapchainRecreationFailure> recreate_swap_chain() {
+    int width  = 0;
+    int height = 0;
+    glfwGetFramebufferSize(window_, &width, &height);
+    while (width == 0 || height == 0) {
+      glfwGetFramebufferSize(window_, &width, &height);
+      glfwWaitEvents();
+    }
+
+    device_.waitIdle();
+
+    cleanup_swapchain();
+    if (!create_swap_chain()) {
+      eray::util::Logger::err("Could not recreate a swap chain: Swap chain creation failed.");
+
+      return std::unexpected(SwapchainRecreationFailure{});
+    }
+
+    if (!create_image_views()) {
+      eray::util::Logger::err("Could not recreate a swap chain: Image views creation failed.");
+
+      return std::unexpected(SwapchainRecreationFailure{});
+    }
 
     return {};
   }
@@ -706,8 +775,6 @@ class HelloTriangleApplication {
         });
       }
     }
-
-    eray::util::Logger::succ("Successfully created Vulkan Swap chain image views.");
 
     return {};
   }
@@ -1204,6 +1271,11 @@ class HelloTriangleApplication {
     };
   }
 
+  static void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
+    auto* app                 = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    app->framebuffer_resized_ = true;
+  }
+
   static VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
                                                          vk::DebugUtilsMessageTypeFlagsEXT type,
                                                          const vk::DebugUtilsMessengerCallbackDataEXT* p_callback_data,
@@ -1416,6 +1488,13 @@ class HelloTriangleApplication {
    *
    */
   GLFWwindow* window_ = nullptr;
+
+  /**
+   * @brief Although many drivers and platforms trigger VK_ERROR_OUT_OF_DATE_KHR automatically after a window resize, it
+   * is not guaranteed to happen. That's why there is an extra code to handle resizes explicitly.
+   *
+   */
+  bool framebuffer_resized_ = false;
 
 /**
  * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional
