@@ -24,6 +24,8 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
+#include "liberay/vkren/swap_chain.hpp"
+
 struct GLFWWindowCreationFailure {};
 
 namespace vkren = eray::vkren;
@@ -90,8 +92,6 @@ class HelloTriangleApplication {
   std::expected<void, VulkanInitError> init_vk() {
     TRY(create_device())
     TRY(create_swap_chain())
-    eray::util::Logger::succ("Successfully created a Vulkan Swap chain.");
-    TRY(create_image_views())
     TRY(create_graphics_pipeline())
     TRY(create_command_pool())
     TRY(create_vertex_buffer())
@@ -186,7 +186,7 @@ class HelloTriangleApplication {
 
     // Get the image from the swap chain. When the image will be ready the present semaphore will be signaled.
     auto [result, image_index] =
-        swap_chain_.acquireNextImage(UINT64_MAX, *present_complete_semaphores_[current_semaphore_], nullptr);
+        swap_chain_->acquireNextImage(UINT64_MAX, *present_complete_semaphores_[current_semaphore_], nullptr);
 
     if (result == vk::Result::eErrorOutOfDateKHR) {
       // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
@@ -230,7 +230,7 @@ class HelloTriangleApplication {
         .waitSemaphoreCount = 1,
         .pWaitSemaphores    = &*render_finished_semaphores_[image_index],
         .swapchainCount     = 1,
-        .pSwapchains        = &*swap_chain_,
+        .pSwapchains        = &**swap_chain_,
         .pImageIndices      = &image_index,
         .pResults           = nullptr,
     };
@@ -250,15 +250,8 @@ class HelloTriangleApplication {
     return {};
   }
 
-  void cleanup_swapchain() {
-    // Swap chain must be destroyed before destroying the GLFW window, getDispatcher()->vkDestroySwapchainKHR throws
-    // otherwise
-    swap_chain_image_views_.clear();
-    swap_chain_ = nullptr;
-  }
-
   void cleanup() {
-    cleanup_swapchain();
+    swap_chain_.cleanup();
 
     glfwDestroyWindow(window_);
     glfwTerminate();
@@ -267,138 +260,12 @@ class HelloTriangleApplication {
   }
 
   std::expected<void, VulkanInitError> create_swap_chain() {
-    // Surface formats (pixel format, e.g. B8G8R8A8, color space e.g. SRGB)
-    auto available_formats       = device_.physical_device().getSurfaceFormatsKHR(device_.surface());
-    auto available_present_modes = device_.physical_device().getSurfacePresentModesKHR(device_.surface());
-
-    if (available_formats.empty() || available_present_modes.empty()) {
-      eray::util::Logger::info(
-          "The physical device's swap chain support is not sufficient. Required at least one available format and at "
-          "least one presentation mode.");
-      return std::unexpected(VulkanSwapChainSupportIsNotSufficient{});
-    }
-
-    auto swap_surface_format = choose_swap_surface_format(available_formats);
-
-    // Presentation mode represents the actual conditions for showing imgaes to the screen:
-    //
-    //  - VK_PRESENT_MODE_IMMEDIATE_KHR:    images are transferred to the screen right away -- tearing
-    //
-    //  - VK_PRESENT_MODE_FIFO_KHR:         swap chain uses FIFO queue, if the queue is full the program waits -- VSync
-    //
-    //  - VK_PRESENT_MODE_FIFO_RELAXED_KHR: similar to the previous one, if the app is late and the queue was empty, the
-    //                                      image is send right away
-    //
-    //  - VK_PRESENT_MODE_MAILBOX_KHR:      another variant of the second mode., if the queue is full, instead of
-    //                                      blocking, the images that are already queued are replaced with the new ones
-    //                                      fewer latency, avoids tearing issues -- triple buffering
-    //
-    // Note: Only the VK_PRESENT_MODE_MAILBOX_KHR is guaranteed to be available
-
-    auto swap_present_mode = choose_swap_presentMode(available_present_modes);
-
-    // Basic Surface capabilities (min/max number of images in the swap chain, min/max width and height of images)
-    auto surface_capabilities = device_.physical_device().getSurfaceCapabilitiesKHR(device_.surface());
-
-    // Swap extend is the resolution of the swap chain images, and it's almost always exactly equal to the resolution
-    // of the window that we're drawing to in pixels.
-    auto swap_extent = choose_swap_extent(surface_capabilities);
-
-    // It is recommended to request at least one more image than the minimum
-    auto min_img_count = std::max(3U, surface_capabilities.minImageCount + 1);
-    if (surface_capabilities.maxImageCount > 0 && min_img_count > surface_capabilities.maxImageCount) {
-      // 0 is a special value that means that there is no maximum
-
-      min_img_count = surface_capabilities.maxImageCount;
-    }
-
-    auto swap_chain_info = vk::SwapchainCreateInfoKHR{
-        // Almost always left as default
-        .flags = vk::SwapchainCreateFlagsKHR(),
-
-        // Window surface on which the swap chain will present images
-        .surface = device_.surface(),  //
-
-        // Minimum number of images (image buffers). More images reduce the risk of waiting for the GPU to finish
-        // rendering, which improves performance
-        .minImageCount = min_img_count,  //
-
-        .imageFormat     = swap_surface_format.format,      //
-        .imageColorSpace = swap_surface_format.colorSpace,  //
-        .imageExtent     = swap_extent,                     //
-
-        // Number of layers each image consists of (unless stereoscopic 3D app is developed it should be 1)
-        .imageArrayLayers = 1,  //
-
-        // Kind of images used in the swap chain (it's a bitfield, you can e.g. attach depth and stencil buffers)
-        // Also you can render images to a separate image and perform post-processing
-        // (VK_IMAGE_USAGE_TRANSFER_DST_BIT).
-        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,  //
-
-        // We can specify that a certain transform should be applied to images in the swap chain if it is supported,
-        // for example 90-degree clockwise rotation or horizontal flip. We specify no transform by using
-        // surface_capabilities.currentTransform.
-        .preTransform = surface_capabilities.currentTransform,  //
-
-        // Value indicating the alpha compositing mode to use when this surface is composited together with other
-        // surfaces on certain window systems
-        .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,  //
-
-        .presentMode = swap_present_mode,  //
-
-        // Applications should set this value to VK_TRUE if they do not expect to read back the content of
-        // presentable images before presenting them or after reacquiring them, and if their fragment shaders do not
-        // have any side effects that require them to run for all pixels in the presentable image.
-        //
-        // If the clipped is VK_TRUE, then that means that we don't care about the color of pixels that are
-        // obscured, for example, because another window is in front of them => better performance.
-        .clipped = vk::True,  //
-
-        // In Vulkan, it's possible that your swap chain becomes invalid or unoptimized while your app is running,
-        // e.g. when window gets resized. IN SUCH A CASE THE SWAP CHAIN NEEDS TO BE RECREATED FROM SCRATCH, and a
-        // reference to the old one must be specified here.
-        .oldSwapchain = VK_NULL_HANDLE,
-    };
-
-    // We need to specify how to handle swap chain images that will be used across multiple queue families. That will be
-    // the case if graphics and present queue families are different.
-    uint32_t indices[] = {device_.graphics_queue_family_index(), device_.presentation_queue_family_index()};
-
-    // There are 2 ways to handle image ownership for queues:
-    //  - VK_SHARING_MODE_EXCLUSIVE: Images can be used across multiple queue families without explicit ownership
-    //  transfers.
-    //  - VK_SHARING_MODE_CONCURRENT: The image is owned by one queue family at a time, and ownership must be explicitly
-    //  transferred before
-    // using it in another queue family. The best performance.
-
-    if (device_.graphics_queue_family_index() != device_.presentation_queue_family_index()) {
-      // Multiple queues -> VK_SHARING_MODE_CONCURRENT to avoid ownership transfers and simplify the code. We are paying
-      // a performance cost here.
-      swap_chain_info.imageSharingMode = vk::SharingMode::eConcurrent;
-
-      // Specify queues that will share the image ownership
-      swap_chain_info.queueFamilyIndexCount = 2;
-      swap_chain_info.pQueueFamilyIndices   = indices;
-    } else {
-      // One queue -> VK_SHARING_MODE_EXCLUSIVE
-      swap_chain_info.imageSharingMode = vk::SharingMode::eExclusive;
-
-      // No need to specify which queues share the image ownership
-      swap_chain_info.queueFamilyIndexCount = 0;
-      swap_chain_info.pQueueFamilyIndices   = nullptr;
-    }
-
-    if (auto result = device_->createSwapchainKHR(swap_chain_info)) {
+    if (auto result = vkren::SwapChain::create(device_, [this](const auto& c) { return choose_swap_extent(c); })) {
       swap_chain_ = std::move(*result);
     } else {
-      eray::util::Logger::err("Failed to create a swap chain: {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanObjectCreationError{
-          .result = result.error(),
-      });
+      eray::util::Logger::err("Could not create a swap chain");
+      return std::unexpected(VulkanObjectCreationError{});
     }
-    swap_chain_images_ = swap_chain_.getImages();
-    swap_chain_format_ = swap_surface_format.format;
-    swap_chain_extent_ = swap_extent;
 
     return {};
   }
@@ -412,59 +279,8 @@ class HelloTriangleApplication {
       glfwWaitEvents();
     }
 
-    device_->waitIdle();
-
-    cleanup_swapchain();
-    if (!create_swap_chain()) {
-      eray::util::Logger::err("Could not recreate a swap chain: Swap chain creation failed.");
-
+    if (!swap_chain_.recreate(device_, [this](const auto& c) { return choose_swap_extent(c); })) {
       return std::unexpected(SwapchainRecreationFailure{});
-    }
-
-    if (!create_image_views()) {
-      eray::util::Logger::err("Could not recreate a swap chain: Image views creation failed.");
-
-      return std::unexpected(SwapchainRecreationFailure{});
-    }
-
-    return {};
-  }
-
-  std::expected<void, VulkanInitError> create_image_views() {
-    auto image_view_info =
-        vk::ImageViewCreateInfo{.viewType = vk::ImageViewType::e2D,
-                                .format   = swap_chain_format_,
-
-                                // You can map some channels onto the others. We stick to defaults here.
-                                .components =
-                                    {
-                                        .r = vk::ComponentSwizzle::eIdentity,
-                                        .g = vk::ComponentSwizzle::eIdentity,
-                                        .b = vk::ComponentSwizzle::eIdentity,
-                                        .a = vk::ComponentSwizzle::eIdentity,
-                                    },
-
-                                // Describes what the image's purpose is and which part of the image should be accessed.
-                                // The images here will be used as color targets with no mipmapping levels and
-                                // without any multiple layers
-                                .subresourceRange = vk::ImageSubresourceRange{
-                                    .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                                    .baseMipLevel   = 0,
-                                    .levelCount     = 1,
-                                    .baseArrayLayer = 0,
-                                    .layerCount     = 1  //
-                                }};
-
-    for (auto image : swap_chain_images_) {
-      image_view_info.image = image;
-      if (auto result = device_->createImageView(image_view_info)) {
-        swap_chain_image_views_.emplace_back(std::move(*result));
-      } else {
-        eray::util::Logger::err("Failed to create a swap chain image view: {}", vk::to_string(result.error()));
-        return std::unexpected(VulkanObjectCreationError{
-            .result = result.error(),
-        });
-      }
     }
 
     return {};
@@ -632,9 +448,10 @@ class HelloTriangleApplication {
     // We use the dynamic rendering feature (Vulkan 1.3), the structure below specifies color attachment data, and
     // the format. In previous versions of Vulkan, we would need to create framebuffers to bind our image views to
     // a render pass, so the dynamic rendering eliminates the need for render pass and framebuffer.
+    auto format = swap_chain_.format();
     vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
         .colorAttachmentCount    = 1,
-        .pColorAttachmentFormats = &swap_chain_format_,
+        .pColorAttachmentFormats = &format,
     };
 
     auto pipeline_info = vk::GraphicsPipelineCreateInfo{
@@ -804,7 +621,7 @@ class HelloTriangleApplication {
     present_complete_semaphores_.clear();
     render_finished_semaphores_.clear();
 
-    for (size_t i = 0; i < swap_chain_images_.size(); ++i) {
+    for (size_t i = 0; i < swap_chain_.images().size(); ++i) {
       if (auto result = device_->createSemaphore(vk::SemaphoreCreateInfo{})) {
         present_complete_semaphores_.emplace_back(std::move(*result));
       } else {
@@ -813,7 +630,7 @@ class HelloTriangleApplication {
       }
     }
 
-    for (size_t i = 0; i < swap_chain_images_.size(); ++i) {
+    for (size_t i = 0; i < swap_chain_.images().size(); ++i) {
       if (auto result = device_->createSemaphore(vk::SemaphoreCreateInfo{})) {
         render_finished_semaphores_.emplace_back(std::move(*result));
       } else {
@@ -870,7 +687,7 @@ class HelloTriangleApplication {
         .newLayout           = info.new_layout,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_images_[info.image_index],  //
+        .image               = swap_chain_.images()[info.image_index],  //
         .subresourceRange =
             vk::ImageSubresourceRange{
                 .aspectMask     = vk::ImageAspectFlagBits::eColor,
@@ -925,7 +742,7 @@ class HelloTriangleApplication {
     auto attachment_info       = vk::RenderingAttachmentInfo{
 
         // Specifies which image to render to
-        .imageView = swap_chain_image_views_[image_index],
+        .imageView = swap_chain_.image_views()[image_index],
 
         // Specifies the layout the image will be in during rendering
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
@@ -943,7 +760,7 @@ class HelloTriangleApplication {
         // Defines the size of the render area
         .renderArea =
             vk::Rect2D{
-                .offset = {.x = 0, .y = 0}, .extent = swap_chain_extent_  //
+                .offset = {.x = 0, .y = 0}, .extent = swap_chain_.extent()  //
             },
         .layerCount           = 1,
         .colorAttachmentCount = 1,
@@ -960,8 +777,8 @@ class HelloTriangleApplication {
         0, vk::Viewport{
                .x      = 0.0F,
                .y      = 0.0F,
-               .width  = static_cast<float>(swap_chain_extent_.width),
-               .height = static_cast<float>(swap_chain_extent_.height),
+               .width  = static_cast<float>(swap_chain_.extent().width),
+               .height = static_cast<float>(swap_chain_.extent().height),
                // Note: min and max depth must be between [0.0F, 1.0F] and min might be higher than max.
                .minDepth = 0.0F,
                .maxDepth = 1.0F  //
@@ -970,7 +787,7 @@ class HelloTriangleApplication {
     // Scissor rectangle defines in which region pixels will actually be stored. The rasterizer will discard any
     // pixels outside the scissored rectangle. We want to draw to entire framebuffer.
     command_buffers_[frame_index].setScissor(
-        0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_extent_});
+        0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_.extent()});
 
     // Draw 3 vertices
     command_buffers_[frame_index].draw(3, 1, 0, 0);
@@ -1139,46 +956,8 @@ class HelloTriangleApplication {
    */
   vk::raii::Context context_;
 
-  /**
-   * @brief Device abstraction
-   *
-   */
-  vkren::Device device_ = vkren::Device(nullptr);
-
-  /**
-   * @brief Vulkan does not provide a "default framebuffuer". Hence it requires an infrastructure that will own the
-   * buffers we will render to before we visualize them on the screen. This infrastructure is known as the swap chain.
-   *
-   * The swap is a queue of images that are waiting to be presented to the screen. The general purpose of the swap
-   * chain is to synchronize the presentation of images with the refresh rate of teh screen.
-   *
-   */
-  vk::raii::SwapchainKHR swap_chain_ = vk::raii::SwapchainKHR(nullptr);
-
-  /**
-   * @brief Stores handles to the Swap chain images.
-   *
-   */
-  std::vector<vk::Image> swap_chain_images_;
-
-  /**
-   * @brief Describes the format e.g. RGBA.
-   *
-   */
-  vk::Format swap_chain_format_ = vk::Format::eUndefined;
-
-  /**
-   * @brief Describes the dimensions of the swap chain.
-   *
-   */
-  vk::Extent2D swap_chain_extent_{};
-
-  /**
-   * @brief An image view DESCRIBES HOW TO ACCESS THE IMAGE and which part of the image to access, for example, if it
-   * should be treated as a 2D texture depth texture without any mipmapping levels.
-   *
-   */
-  std::vector<vk::raii::ImageView> swap_chain_image_views_;
+  vkren::Device device_        = vkren::Device(nullptr);
+  vkren::SwapChain swap_chain_ = vkren::SwapChain(nullptr);
 
   /**
    * @brief Describes the uniform buffers used in shaders.

@@ -121,9 +121,6 @@ class Device {
   vk::raii::PhysicalDevice& physical_device() noexcept { return physical_device_; }
   const vk::raii::PhysicalDevice& physical_device() const noexcept { return physical_device_; }
 
-  vk::raii::Device& logical_device() noexcept { return device_; }
-  const vk::raii::Device& logical_device() const noexcept { return device_; }
-
   vk::raii::Device* operator->() noexcept { return &device_; }
   const vk::raii::Device* operator->() const noexcept { return &device_; }
 
