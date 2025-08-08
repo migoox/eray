@@ -1,0 +1,45 @@
+include(../../cmake/add_slang_shader_target.cmake)
+
+cmake_minimum_required(VERSION 3.28)
+
+project(sandbox CXX)
+message(STATUS "Configuring " ${PROJECT_NAME})
+
+set(CMAKE_CXX_STANDARD 23)
+
+# Executable target configuration
+file(GLOB_RECURSE SOURCES 
+    "${CMAKE_CURRENT_SOURCE_DIR}/sandbox/*.cpp"
+)
+add_executable(${PROJECT_NAME} ${SOURCES})
+target_link_libraries(${PROJECT_NAME} PUBLIC liberay-math liberay-util liberay-res liberay-os liberay-driver liberay-vkren)
+target_include_directories(${PROJECT_NAME}
+                           PUBLIC . "${CMAKE_BINARY_DIR}/generated")
+target_compile_options(${PROJECT_NAME} PRIVATE ${PROJ_CXX_FLAGS})
+if(BUILD_SHARED_LIBS)
+    target_link_options(${PROJECT_NAME} PRIVATE ${PROJ_EXE_LINKER_FLAGS})
+endif()
+
+# Shader targets configuration
+add_slang_shader_target(main_sh SOURCES "sandbox/main.slang" ENTRY_POINTS mainVert mainFrag)
+add_dependencies(${PROJECT_NAME} main_sh)
+
+# Copy assets folder to build directory
+if(EXISTS "${PROJECT_SOURCE_DIR}/assets")
+    add_custom_target(copy_assets
+    COMMAND ${CMAKE_COMMAND} -DASSETS_SOURCE_DIR=${PROJECT_SOURCE_DIR}/assets
+                            -DASSETS_DEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>
+                            -P ${PROJECT_SOURCE_DIR}/../cmake/copy_assets.cmake
+    )
+    add_dependencies(${PROJECT_NAME} copy_assets)
+endif()
+
+if(EXISTS "${PROJECT_SOURCE_DIR}/shaders")
+    add_custom_target(copy_shaders
+        COMMAND ${CMAKE_COMMAND} -DASSETS_SOURCE_DIR=${PROJECT_SOURCE_DIR}/shaders
+                            -DASSETS_DEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>
+                            -P ${PROJECT_SOURCE_DIR}/../cmake/copy_assets.cmake
+    )
+    add_dependencies(${PROJECT_NAME} copy_shaders)
+endif()
+
