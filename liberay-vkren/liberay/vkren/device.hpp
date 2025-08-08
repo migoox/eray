@@ -1,9 +1,9 @@
 #pragma once
 
+#include <functional>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/util/zstring_view.hpp>
-#include <liberay/vkren/surface.hpp>
 #include <variant>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
@@ -12,10 +12,21 @@ namespace eray::vkren {
 
 /**
  * @brief Simplifies logical device creation and provides additional functions not available in `vk::raii:Device`.
+ * One can access the vk::raii::Device via -> and * operators.
  *
  */
 class Device {
  public:
+  /**
+   * @brief Creates uninitialized empty Device. Useful for postponed creation, usually when the Device is a class
+   * member.
+   *
+   * @warning This constructor is unsafe. It's programmer responsibility to overwrite the empty device with proper
+   * initialized one.
+   *
+   */
+  explicit Device(std::nullptr_t) {}
+
   ERAY_DELETE_COPY(Device)
   ERAY_DEFAULT_MOVE(Device)
 
@@ -26,7 +37,10 @@ class Device {
   struct LogicalDeviceCreationError {};
 
   using CreationError = std::variant<InstanceCreationError, PhysicalDevicePickingError, LogicalDeviceCreationError,
-                                     ISurfaceCreator::SurfaceCreationError, DebugMessengerCreationError>;
+                                     SurfaceCreationError, DebugMessengerCreationError>;
+
+  using SurfaceCreator =
+      std::function<std::expected<vk::raii::SurfaceKHR, SurfaceCreationError>(vk::raii::Instance& instance)>;
 
   struct CreateInfo {
     /**
@@ -34,27 +48,28 @@ class Device {
      * will be automatically requested (no matter if specified in global_extensions explicitly).
      *
      */
-    std::span<const char*> validation_layers;
+    std::span<const char* const> validation_layers;
 
     /**
      * @note If validation layers are not empty, "VK_EXT_debug_utils" is inserted automatically.
      *
      */
-    std::span<const char*> global_extensions;
+    std::span<const char* const> global_extensions;
 
-    std::span<const char*> device_extensions;
+    std::span<const char* const> device_extensions;
 
     /**
-     * @brief Implementation of ISurfaceCreator, e.g. for GLFW the creator would call glfwCreateWindowSurface.
+     * @brief Lambda that creates a surface, e.g. when using GLFW the creator lambda would call glfwCreateWindowSurface.
+     * If the surface creation fails the lambda should return the SurfaceCreationError.
      *
      */
-    std::unique_ptr<ISurfaceCreator> surface_creator;
+    SurfaceCreator surface_creator;
 
     /**
      * @brief If null, a default feature chain that enables dynamic rendering will be used.
      *
      */
-    const void* feature_chain = nullptr;
+    const void* feature_chain;
 
     /**
      * @brief Severity flags used for debug messenger.
@@ -62,21 +77,43 @@ class Device {
      * @note If validation layers are empty, no debug messenger will be set up.
      *
      */
-    vk::DebugUtilsMessageSeverityFlagsEXT severity_flags =
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
+    vk::DebugUtilsMessageSeverityFlagsEXT severity_flags;
 
-    vk::ApplicationInfo app_info = vk::ApplicationInfo{
-        .pApplicationName   = "Vulkan Application",
-        .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-        .pEngineName        = "No Engine",
-        .engineVersion      = VK_MAKE_VERSION(1, 0, 0),
-        .apiVersion         = vk::ApiVersion14  //
+    vk::ApplicationInfo app_info;
+
+    /**
+     * @brief `DesktopTemplate` provides default device configuration for desktop platforms.
+     *
+     */
+    struct DesktopTemplate {
+      /**
+       * @brief Returns `Device::CreateInfo` basing dedicated for generic desktop platforms.
+       *
+       * @param surface_creator creates a SurfaceKHR, e.g. when using GLFW, this lambda would call
+       * `glfwCreateWindowSurface`
+       * @param required_instance_extensions allows to provide instance extensions that are needed by platform, e.g.
+       * when using GLFW you can acquire these instance extensions with `glfwGetRequiredInstanceExtensions`
+       *
+       * @warning `DesktopTemplate` must outlive the `CreateInfo` because it is a owner of the allocated data.
+       *
+       * @return CreateInfo
+       */
+      [[nodiscard]] CreateInfo get(const SurfaceCreator& surface_creator_func,
+                                   std::span<const char* const> required_global_extensions) noexcept;
+
+     private:
+      std::vector<const char*> validation_layers_;
+      std::vector<const char*> global_extensions_;
+      std::vector<const char*> device_extensions_;
+
+      SurfaceCreator surface_creator_;
+      vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
+                         vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
+          feature_chain_;
     };
   };
-  static std::expected<Device, CreationError> create(const CreateInfo& info) noexcept;
 
-  vk::raii::Context& ctx() noexcept { return context_; }
-  const vk::raii::Context& ctx() const noexcept { return context_; }
+  static std::expected<Device, CreationError> create(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
 
   vk::raii::Instance& instance() noexcept { return instance_; }
   const vk::raii::Instance& instance() const noexcept { return instance_; }
@@ -87,11 +124,14 @@ class Device {
   vk::raii::Device& logical_device() noexcept { return device_; }
   const vk::raii::Device& logical_device() const noexcept { return device_; }
 
-  vk::raii::Device& operator->() noexcept { return device_; }
-  const vk::raii::Device& operator->() const noexcept { return device_; }
+  vk::raii::Device* operator->() noexcept { return &device_; }
+  const vk::raii::Device* operator->() const noexcept { return &device_; }
 
   vk::raii::Device& operator*() noexcept { return device_; }
   const vk::raii::Device& operator*() const noexcept { return device_; }
+
+  vk::raii::SurfaceKHR& surface() noexcept { return surface_; }
+  const vk::raii::SurfaceKHR& surface() const noexcept { return surface_; }
 
   uint32_t graphics_queue_family_index() const { return graphics_queue_family_index_; }
   vk::raii::Queue& graphics_queue() noexcept { return graphics_queue_; }
@@ -102,9 +142,9 @@ class Device {
   const vk::raii::Queue& presentation_queue() const noexcept { return presentation_queue_; }
 
  private:
-  Device();
+  Device() = default;
 
-  std::expected<void, InstanceCreationError> create_instance(const CreateInfo& info) noexcept;
+  std::expected<void, InstanceCreationError> create_instance(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
   std::expected<void, DebugMessengerCreationError> create_debug_messenger(const CreateInfo& info) noexcept;
   std::expected<void, PhysicalDevicePickingError> pick_physical_device(const CreateInfo& info) noexcept;
   std::expected<void, LogicalDeviceCreationError> create_logical_device(const CreateInfo& info) noexcept;
@@ -126,14 +166,6 @@ class Device {
   }
 
  private:
-  /**
-   * @brief Responsible for dynamic loading of the Vulkan library, it's a starting point.
-   * It's a starting point for creating other RAII-based Vulkan objects like vk::raii::Instance or vk::raii::Device.
-   * e.g. context_.createInstance(...) wraps C-style vkCreateInstance.
-   *
-   */
-  vk::raii::Context context_;
-
   /**
    * @brief The Vulkan context, used to access drivers.
    *
@@ -172,6 +204,7 @@ class Device {
    */
   vk::raii::Device device_ = nullptr;
 
+  // TODO(migoox): allow for creation of multiple queues
   vk::raii::Queue graphics_queue_ = nullptr;
   uint32_t graphics_queue_family_index_{};
   vk::raii::Queue presentation_queue_ = nullptr;

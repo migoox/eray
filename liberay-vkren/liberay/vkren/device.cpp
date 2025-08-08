@@ -10,12 +10,65 @@
 
 namespace eray::vkren {
 
-std::expected<Device, Device::CreationError> Device::create(const CreateInfo& info) noexcept {
+Device::CreateInfo Device::CreateInfo::DesktopTemplate::get(
+    const SurfaceCreator& surface_creator_func, std::span<const char* const> required_global_extensions) noexcept {
+  // == Validation Layers ============================================================================================
+  validation_layers_.clear();
+#ifndef NDEBUG
+  validation_layers_.emplace_back("VK_LAYER_KHRONOS_validation");
+#endif
+
+  // == Global Extensions ============================================================================================
+  global_extensions_.clear();
+  global_extensions_.resize(required_global_extensions.size());
+  std::ranges::copy(required_global_extensions.begin(), required_global_extensions.end(), global_extensions_.begin());
+  // vk::EXTDebugUtilsExtensionName is added automatically if validation layers are not empty
+
+  // == Device Extensions ============================================================================================
+  device_extensions_.clear();
+  device_extensions_ = {
+      vk::KHRSwapchainExtensionName,             // requires Surface Instance Extension
+      vk::KHRSpirv14ExtensionName,               //
+      vk::KHRShaderDrawParametersExtensionName,  // BaseInstance, BaseVertex, DrawIndex
+      vk::KHRSynchronization2ExtensionName,      //
+      vk::KHRCreateRenderpass2ExtensionName      //
+  };
+
+  // == Feature Chain ================================================================================================
+  feature_chain_ = vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
+                                      vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>{
+      {},                                                            // vk::PhysicalDeviceFeatures2
+      {.synchronization2 = vk::True, .dynamicRendering = vk::True},  // Enable dynamic rendering from Vulkan 1.3
+      {.extendedDynamicState = vk::True}                             // Enable extended dynamic state from the extension
+  };
+
+  // == App info =====================================================================================================
+  auto app_create_info = vk::ApplicationInfo{
+      .pApplicationName   = "Vulkan Application",
+      .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+      .pEngineName        = "No Engine",
+      .engineVersion      = VK_MAKE_VERSION(1, 0, 0),
+      .apiVersion         = vk::ApiVersion14  //
+  };
+
+  return CreateInfo{
+      .validation_layers = validation_layers_,
+      .global_extensions = global_extensions_,
+      .device_extensions = device_extensions_,
+      .surface_creator   = surface_creator_func,
+      .feature_chain     = feature_chain_.get<vk::PhysicalDeviceFeatures2, 0>(),
+      .severity_flags =
+          vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+      .app_info = std::move(app_create_info),
+  };
+}
+
+std::expected<Device, Device::CreationError> Device::create(vk::raii::Context& ctx, const CreateInfo& info) noexcept {
   auto device = Device();
-  TRY(device.create_instance(info));
+  TRY(device.create_instance(ctx, info));
   TRY(device.create_debug_messenger(info));
-  if (auto result = info.surface_creator->create(device.instance())) {
-    device.surface_ = vk::raii::SurfaceKHR(device.instance(), *result);
+  if (auto result = info.surface_creator(device.instance())) {
+    device.surface_ = std::move(*result);
   } else {
     util::Logger::err("Failed to create a surface with the injected surface creator.");
     return std::unexpected(result.error());
@@ -26,8 +79,9 @@ std::expected<Device, Device::CreationError> Device::create(const CreateInfo& in
   return device;
 }
 
-std::expected<void, Device::InstanceCreationError> Device::create_instance(const CreateInfo& info) noexcept {
-  auto extensions_props = context_.enumerateInstanceExtensionProperties();
+std::expected<void, Device::InstanceCreationError> Device::create_instance(vk::raii::Context& ctx,
+                                                                           const CreateInfo& info) noexcept {
+  auto extensions_props = ctx.enumerateInstanceExtensionProperties();
 
   // Check if the requested extensions are supported by the Vulkan implementation.
   auto global_extensions = get_global_extensions(info);
@@ -41,7 +95,7 @@ std::expected<void, Device::InstanceCreationError> Device::create_instance(const
   }
 
   // Check if the requested validation layers are supported by the Vulkan implementation.
-  auto layer_props = context_.enumerateInstanceLayerProperties();
+  auto layer_props = ctx.enumerateInstanceLayerProperties();
   if (std::ranges::any_of(info.validation_layers, [&layer_props](const auto& required_layer) {
         return std::ranges::none_of(layer_props, [required_layer](auto const& layer_prop) {
           return required_layer == std::string_view(layer_prop.layerName);
@@ -58,14 +112,14 @@ std::expected<void, Device::InstanceCreationError> Device::create_instance(const
       .enabledLayerCount   = static_cast<uint32_t>(info.validation_layers.size()),
       .ppEnabledLayerNames = info.validation_layers.data(),
       // global extensions
-      .enabledExtensionCount   = static_cast<uint32_t>(info.global_extensions.size()),
-      .ppEnabledExtensionNames = info.global_extensions.data(),  //
+      .enabledExtensionCount   = static_cast<uint32_t>(global_extensions.size()),
+      .ppEnabledExtensionNames = global_extensions.data(),  //
   };
 
-  if (auto instance_opt = context_.createInstance(instance_info)) {
-    instance_ = std::move(instance_opt.value());
+  if (auto result = ctx.createInstance(instance_info)) {
+    instance_ = std::move(*result);
   } else {
-    eray::util::Logger::err("Failed to create a Vulkan Instance. Error type: {}", vk::to_string(instance_opt.error()));
+    eray::util::Logger::err("Failed to create a Vulkan Instance. Error type: {}", vk::to_string(result.error()));
     return std::unexpected(InstanceCreationError{});
   }
 
@@ -88,7 +142,7 @@ std::expected<void, Device::DebugMessengerCreationError> Device::create_debug_me
   auto debug_utils_messenger_create_info_ext = vk::DebugUtilsMessengerCreateInfoEXT{
       .messageSeverity = severity_flags,
       .messageType     = msg_type_flags,
-      .pfnUserCallback = &debug_callback  //
+      .pfnUserCallback = &debug_callback,
   };
 
   if (auto debug_messenger_opt = instance_.createDebugUtilsMessengerEXT(debug_utils_messenger_create_info_ext)) {
