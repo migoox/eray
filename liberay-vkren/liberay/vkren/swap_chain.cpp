@@ -1,18 +1,20 @@
 #include <liberay/util/try.hpp>
 #include <liberay/vkren/swap_chain.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
-std::expected<SwapChain, SwapChain::CreationError> SwapChain::create(const Device& device,
-                                                                     const ExtentCreator& extent_creator) noexcept {
+std::expected<SwapChain, SwapChain::CreationError> SwapChain::create(const Device& device, uint32_t width,
+                                                                     uint32_t height) noexcept {
   auto swap_chain = SwapChain();
-  TRY(swap_chain.create_swap_chain(device, extent_creator));
+  TRY(swap_chain.create_swap_chain(device, width, height));
   TRY(swap_chain.create_image_views(device));
   return swap_chain;
 }
 
-std::expected<void, SwapChain::SwapChainCreationError> SwapChain::create_swap_chain(
-    const vkren::Device& device, const ExtentCreator& extent_creator) noexcept {
+std::expected<void, SwapChain::SwapChainCreationError> SwapChain::create_swap_chain(const Device& device,
+                                                                                    uint32_t width,
+                                                                                    uint32_t height) noexcept {
   // Surface formats (pixel format, e.g. B8G8R8A8, color space e.g. SRGB)
   auto available_formats       = device.physical_device().getSurfaceFormatsKHR(device.surface());
   auto available_present_modes = device.physical_device().getSurfacePresentModesKHR(device.surface());
@@ -48,7 +50,12 @@ std::expected<void, SwapChain::SwapChainCreationError> SwapChain::create_swap_ch
 
   // Swap extend is the resolution of the swap chain images, and it's almost always exactly equal to the resolution
   // of the window that we're drawing to in pixels.
-  auto swap_extent = extent_creator(surface_capabilities);
+  auto swap_extent = vk::Extent2D{
+      .width = std::clamp(width, surface_capabilities.minImageExtent.width, surface_capabilities.maxImageExtent.width),
+      .height =
+          std::clamp(height, surface_capabilities.minImageExtent.height, surface_capabilities.maxImageExtent.height),
+
+  };
 
   // It is recommended to request at least one more image than the minimum
   auto min_img_count = std::max(3U, surface_capabilities.minImageCount + 1);
@@ -216,12 +223,12 @@ vk::PresentModeKHR SwapChain::choose_swap_presentMode(const std::vector<vk::Pres
   return vk::PresentModeKHR::eFifo;
 }
 
-std::expected<void, SwapChain::CreationError> SwapChain::recreate(const Device& device_,
-                                                                  const ExtentCreator& extent_creator) {
+std::expected<void, SwapChain::CreationError> SwapChain::recreate(const Device& device_, uint32_t width,
+                                                                  uint32_t height) {
   device_->waitIdle();
 
   cleanup();
-  if (auto result = create_swap_chain(device_, extent_creator); !result) {
+  if (auto result = create_swap_chain(device_, width, height); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: Swap chain creation failed.");
     return std::unexpected(result.error());
   }

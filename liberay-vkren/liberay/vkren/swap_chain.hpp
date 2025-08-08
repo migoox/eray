@@ -28,10 +28,7 @@ class SwapChain {
 
   using CreationError = std::variant<SwapChainCreationError, ImageViewsCreationError>;
 
-  using ExtentCreator = std::function<vk::Extent2D(const vk::SurfaceCapabilitiesKHR& capabilities)>;
-
-  static std::expected<SwapChain, CreationError> create(const Device& device_,
-                                                        const ExtentCreator& extent_creator) noexcept;
+  static std::expected<SwapChain, CreationError> create(const Device& device, uint32_t width, uint32_t height) noexcept;
 
   vk::raii::SwapchainKHR* operator->() noexcept { return &swap_chain_; }
   const vk::raii::SwapchainKHR* operator->() const noexcept { return &swap_chain_; }
@@ -52,7 +49,7 @@ class SwapChain {
    *
    * @param device_
    */
-  std::expected<void, SwapChain::CreationError> recreate(const Device& device_, const ExtentCreator& extent_creator);
+  std::expected<void, SwapChain::CreationError> recreate(const Device& device, uint32_t width, uint32_t height);
 
   /**
    * @brief Allows to destroy the swap chain explicitly. Example use case: Swap chain must be destroyed before
@@ -64,8 +61,8 @@ class SwapChain {
  private:
   SwapChain() = default;
 
-  std::expected<void, SwapChainCreationError> create_swap_chain(const vkren::Device& device,
-                                                                const ExtentCreator& info) noexcept;
+  std::expected<void, SwapChainCreationError> create_swap_chain(const vkren::Device& device, uint32_t width,
+                                                                uint32_t height) noexcept;
 
   std::expected<void, ImageViewsCreationError> create_image_views(const vkren::Device& device) noexcept;
 

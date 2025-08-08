@@ -260,7 +260,14 @@ class HelloTriangleApplication {
   }
 
   std::expected<void, VulkanInitError> create_swap_chain() {
-    if (auto result = vkren::SwapChain::create(device_, [this](const auto& c) { return choose_swap_extent(c); })) {
+    // Unfortunately, if you are using a high DPI display (like Apple’s Retina display), screen coordinates don’t
+    // correspond to pixels. For that reason we use glfwGetFrameBufferSize to get size in pixels. (Note:
+    // glfwGetWindowSize returns size in screen coordinates).
+    int width{};
+    int height{};
+    glfwGetFramebufferSize(window_, &width, &height);
+
+    if (auto result = vkren::SwapChain::create(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
       swap_chain_ = std::move(*result);
     } else {
       eray::util::Logger::err("Could not create a swap chain");
@@ -279,7 +286,7 @@ class HelloTriangleApplication {
       glfwWaitEvents();
     }
 
-    if (!swap_chain_.recreate(device_, [this](const auto& c) { return choose_swap_extent(c); })) {
+    if (!swap_chain_.recreate(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
       return std::unexpected(SwapchainRecreationFailure{});
     }
 
@@ -836,26 +843,6 @@ class HelloTriangleApplication {
     }
 
     return vk::PresentModeKHR::eFifo;
-  }
-
-  vk::Extent2D choose_swap_extent(const vk::SurfaceCapabilitiesKHR& capabilities) {
-    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
-      return capabilities.currentExtent;
-    }
-
-    // Unfortunately, if you are using a high DPI display (like Apple’s Retina display), screen coordinates don’t
-    // correspond to pixels. For that reason we use glfwGetFrameBufferSize to get size in pixels. (Note:
-    // glfwGetWindowSize returns size in screen coordinates).
-    int width{};
-    int height{};
-    glfwGetFramebufferSize(window_, &width, &height);
-
-    return {
-        .width  = std::clamp(static_cast<uint32_t>(width), capabilities.minImageExtent.width,
-                             capabilities.maxImageExtent.width),
-        .height = std::clamp(static_cast<uint32_t>(height), capabilities.minImageExtent.height,
-                             capabilities.maxImageExtent.height),
-    };
   }
 
   std::expected<uint32_t, NoSuitableMemoryType> find_mem_type(uint32_t type_filter, vk::MemoryPropertyFlags props) {
