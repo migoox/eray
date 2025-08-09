@@ -16,7 +16,7 @@ namespace eray::vkren {
 struct BufferResource {
   vk::raii::Buffer buffer       = nullptr;
   vk::raii::DeviceMemory memory = nullptr;
-  vk::DeviceSize size_in_bytes;
+  vk::DeviceSize mem_size_in_bytes;
   vk::BufferUsageFlags usage;
   vk::MemoryPropertyFlags properties;
 

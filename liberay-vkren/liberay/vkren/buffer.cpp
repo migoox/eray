@@ -48,11 +48,11 @@ Result<BufferResource, BufferResource::CreationError> BufferResource::create_exc
   buffer_opt->bindMemory(*buffer_mem_opt, 0);
 
   return BufferResource{
-      .buffer        = std::move(*buffer_opt),
-      .memory        = std::move(*buffer_mem_opt),
-      .size_in_bytes = size_in_bytes,
-      .usage         = usage,
-      .properties    = properties,
+      .buffer            = std::move(*buffer_opt),
+      .memory            = std::move(*buffer_mem_opt),
+      .mem_size_in_bytes = size_in_bytes,
+      .usage             = usage,
+      .properties        = properties,
   };
 }
 
