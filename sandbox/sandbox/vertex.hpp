@@ -57,10 +57,12 @@ struct VertexBuffer {
 
   static VertexBuffer create_triangle() {
     // interleaving vertex attributes
-    return VertexBuffer{.vertices =
-                            std::vector<Vertex>{Vertex{.pos = Vec2{0.0F, -0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}},
-                                                Vertex{.pos = Vec2{0.5F, 0.5F}, .color = Vec3{0.0F, 1.0F, 0.0F}},
-                                                Vertex{.pos = Vec2{-0.5F, 0.5F}, .color = Vec3{0.0F, 0.0F, 1.0F}}}};
+    return VertexBuffer{
+        .vertices = std::vector<Vertex>{Vertex{.pos = Vec2{0.0F, -0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}},
+                                        Vertex{.pos = Vec2{0.5F, 0.5F}, .color = Vec3{0.0F, 1.0F, 0.0F}},
+                                        Vertex{.pos = Vec2{-0.5F, 0.5F}, .color = Vec3{0.0F, 0.0F, 1.0F}}},
+        .indices  = std::vector<uint16_t>{0, 1, 2},
+    };
   }
 
   vk::BufferCreateInfo get_create_info(vk::SharingMode sharing_mode) const {
@@ -69,7 +71,7 @@ struct VertexBuffer {
         .flags = {},
 
         // Specifies size of the buffer in bytes
-        .size = size_in_bytes(),
+        .size = vertices_size_in_bytes(),
 
         .usage = vk::BufferUsageFlagBits::eVertexBuffer,
 
@@ -79,7 +81,9 @@ struct VertexBuffer {
     };
   }
 
-  uint32_t size_in_bytes() const { return static_cast<uint32_t>(sizeof(Vertex) * vertices.size()); }
+  uint32_t vertices_size_in_bytes() const { return static_cast<uint32_t>(sizeof(Vertex) * vertices.size()); }
+  uint32_t indices_size_in_bytes() const { return static_cast<uint32_t>(sizeof(uint16_t) * vertices.size()); }
 
   std::vector<Vertex> vertices;
+  std::vector<uint16_t> indices;
 };

@@ -258,7 +258,7 @@ Result<void, Device::LogicalDeviceCreationError> Device::create_logical_device(c
         std::unexpected(LogicalDeviceCreationError{});
       }
 
-      graphics_queue_family_index_ =
+      graphics_queue_family_ =
           static_cast<uint32_t>(std::distance(queue_family_props.begin(), graphics_queue_family_prop_it));
 
       auto surface_queue_family_prop_it =
@@ -272,17 +272,17 @@ Result<void, Device::LogicalDeviceCreationError> Device::create_logical_device(c
         std::unexpected(LogicalDeviceCreationError{});
       }
 
-      presentation_queue_family_index_ =
+      presentation_queue_family_ =
           static_cast<uint32_t>(std::distance(indexed_queue_family_props.begin(), surface_queue_family_prop_it));
     } else {
-      graphics_queue_family_index_ = presentation_queue_family_index_ =
+      graphics_queue_family_ = presentation_queue_family_ =
           static_cast<uint32_t>(std::distance(indexed_queue_family_props.begin(), queue_family_prop_it));
     }
   }
 
   float queue_priority          = 0.F;
   auto device_queue_create_info = vk::DeviceQueueCreateInfo{
-      .queueFamilyIndex = graphics_queue_family_index_,
+      .queueFamilyIndex = graphics_queue_family_,
       .queueCount       = 1,
       .pQueuePriorities = &queue_priority,  //
   };
@@ -308,14 +308,14 @@ Result<void, Device::LogicalDeviceCreationError> Device::create_logical_device(c
 
   // ==  Queues Creation ===============================================================================================
 
-  if (auto result = device_.getQueue(graphics_queue_family_index_, 0)) {
+  if (auto result = device_.getQueue(graphics_queue_family_, 0)) {
     graphics_queue_ = std::move(*result);
   } else {
     eray::util::Logger::err("Failed to create a graphics queue. {}", vk::to_string(result.error()));
     return std::unexpected(LogicalDeviceCreationError{});
   }
 
-  if (auto result = device_.getQueue(presentation_queue_family_index_, 0)) {
+  if (auto result = device_.getQueue(presentation_queue_family_, 0)) {
     presentation_queue_ = std::move(*result);
   } else {
     eray::util::Logger::err("Failed to create a presentation queue. {}", vk::to_string(result.error()));

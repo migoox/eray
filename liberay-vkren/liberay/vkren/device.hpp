@@ -4,7 +4,7 @@
 #include <liberay/util/logger.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/util/zstring_view.hpp>
-#include <liberay/vkren/result.hpp>
+#include <liberay/vkren/common.hpp>
 #include <variant>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
@@ -135,11 +135,11 @@ class Device {
   vk::raii::SurfaceKHR& surface() noexcept { return surface_; }
   const vk::raii::SurfaceKHR& surface() const noexcept { return surface_; }
 
-  uint32_t graphics_queue_family_index() const { return graphics_queue_family_index_; }
+  uint32_t graphics_queue_family() const { return graphics_queue_family_; }
   vk::raii::Queue& graphics_queue() noexcept { return graphics_queue_; }
   const vk::raii::Queue& graphics_queue() const noexcept { return graphics_queue_; }
 
-  uint32_t presentation_queue_family_index() const { return presentation_queue_family_index_; }
+  uint32_t presentation_queue_family() const { return presentation_queue_family_; }
   vk::raii::Queue& presentation_queue() noexcept { return presentation_queue_; }
   const vk::raii::Queue& presentation_queue() const noexcept { return presentation_queue_; }
 
@@ -210,9 +210,9 @@ class Device {
 
   // TODO(migoox): allow for creation of multiple queues
   vk::raii::Queue graphics_queue_ = nullptr;
-  uint32_t graphics_queue_family_index_{};
+  uint32_t graphics_queue_family_{};
   vk::raii::Queue presentation_queue_ = nullptr;
-  uint32_t presentation_queue_family_index_{};
+  uint32_t presentation_queue_family_{};
 };
 
 }  // namespace eray::vkren

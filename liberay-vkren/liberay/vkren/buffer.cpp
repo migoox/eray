@@ -1,17 +1,18 @@
 #include <liberay/util/logger.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_raii.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
-Result<BufferResource, BufferResource::CreationError> BufferResource::create_exclusive(
-    const Device& device, vk::DeviceSize size_in_bytes, vk::BufferUsageFlags usage,
-    vk::MemoryPropertyFlags properties) {
+Result<ExclusiveBufferResource, ExclusiveBufferResource::CreationError> ExclusiveBufferResource::create(
+    const Device& device, const CreateInfo& info) {
   // == Create Buffer Object ===========================================================================================
 
   auto buffer_info = vk::BufferCreateInfo{
-      .size        = size_in_bytes,
-      .usage       = usage,
+      .size        = info.size_in_bytes,
+      .usage       = info.buff_usage,
       .sharingMode = vk::SharingMode::eExclusive,
   };
 
@@ -30,7 +31,7 @@ Result<BufferResource, BufferResource::CreationError> BufferResource::create_exc
   // - memoryTypeBits: Bit field of the memory types that are suitable for the buffer
   //
   auto mem_requirements = buffer_opt->getMemoryRequirements();
-  auto mem_type_opt     = device.find_mem_type(mem_requirements.memoryTypeBits, properties);
+  auto mem_type_opt     = device.find_mem_type(mem_requirements.memoryTypeBits, info.mem_properties);
   if (!mem_type_opt) {
     util::Logger::err("Could not find a memory type that meets the buffer memory requirements");
     return std::unexpected(mem_type_opt.error());
@@ -47,17 +48,17 @@ Result<BufferResource, BufferResource::CreationError> BufferResource::create_exc
   }
   buffer_opt->bindMemory(*buffer_mem_opt, 0);
 
-  return BufferResource{
+  return ExclusiveBufferResource{
       .buffer            = std::move(*buffer_opt),
       .memory            = std::move(*buffer_mem_opt),
-      .mem_size_in_bytes = size_in_bytes,
-      .usage             = usage,
-      .properties        = properties,
+      .mem_size_in_bytes = info.size_in_bytes,
+      .usage             = info.buff_usage,
+      .mem_properties    = info.mem_properties,
   };
 }
 
-void BufferResource::fill_data(const void* src_data, vk::DeviceSize offset_in_bytes,
-                               vk::DeviceSize size_in_bytes) const {
+void ExclusiveBufferResource::fill_data(const void* src_data, vk::DeviceSize offset_in_bytes,
+                                        vk::DeviceSize size_in_bytes) const {
   void* dst = memory.mapMemory(offset_in_bytes, size_in_bytes);
   memcpy(dst, src_data, size_in_bytes);
   memory.unmapMemory();
@@ -71,6 +72,33 @@ void BufferResource::fill_data(const void* src_data, vk::DeviceSize offset_in_by
 
   // The transfer of data to the GPU is an operation that happens in the background, and the specification simply
   // tells us that it is guaranteed to be complete as of the next call to vkQueueSubmit
+}
+
+void ExclusiveBufferResource::copy_from(const Device& device, const vk::raii::CommandPool& cmd_pool,
+                                        const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const {
+  // Create a command buffer
+  auto alloc_info = vk::CommandBufferAllocateInfo{
+      .commandPool        = cmd_pool,
+      .level              = vk::CommandBufferLevel::ePrimary,
+      .commandBufferCount = 1,
+  };
+  vk::raii::CommandBuffer cmd_cpy_buff = std::move(device->allocateCommandBuffers(alloc_info)->front());
+
+  // Record the copying operation to the command buffer
+  cmd_cpy_buff.begin(vk::CommandBufferBeginInfo{
+      .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+  });
+  cmd_cpy_buff.copyBuffer(src_buff, buffer, cpy_info);
+  cmd_cpy_buff.end();
+
+  // Submit and block the CPU until it's ready
+  device.graphics_queue().submit(
+      vk::SubmitInfo{
+          .commandBufferCount = 1,
+          .pCommandBuffers    = &*cmd_cpy_buff,
+      },
+      nullptr);
+  device.graphics_queue().waitIdle();
 }
 
 }  // namespace eray::vkren

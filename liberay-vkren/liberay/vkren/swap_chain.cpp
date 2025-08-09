@@ -114,7 +114,7 @@ Result<void, SwapChain::SwapChainCreationError> SwapChain::create_swap_chain(con
 
   // We need to specify how to handle swap chain images that will be used across multiple queue families. That will be
   // the case if graphics and present queue families are different.
-  uint32_t indices[] = {device.graphics_queue_family_index(), device.presentation_queue_family_index()};
+  uint32_t indices[] = {device.graphics_queue_family(), device.presentation_queue_family()};
 
   // There are 2 ways to handle image ownership for queues:
   //  - VK_SHARING_MODE_EXCLUSIVE: Images can be used across multiple queue families without explicit ownership
@@ -123,7 +123,7 @@ Result<void, SwapChain::SwapChainCreationError> SwapChain::create_swap_chain(con
   //  transferred before
   // using it in another queue family. The best performance.
 
-  if (device.graphics_queue_family_index() != device.presentation_queue_family_index()) {
+  if (device.graphics_queue_family() != device.presentation_queue_family()) {
     // Multiple queues -> VK_SHARING_MODE_CONCURRENT to avoid ownership transfers and simplify the code. We are paying
     // a performance cost here.
     swap_chain_info.imageSharingMode = vk::SharingMode::eConcurrent;

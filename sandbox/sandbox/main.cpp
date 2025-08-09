@@ -509,7 +509,7 @@ class HelloTriangleApplication {
 
         // Each command pool can only allocate command buffers that are submitted on a single type of queue.
         // We setup commands for drawing, and thus we've chosen the graphics queue family.
-        .queueFamilyIndex = device_.graphics_queue_family_index(),
+        .queueFamilyIndex = device_.graphics_queue_family(),
     };
 
     if (auto result = device_->createCommandPool(command_pool_info)) {
@@ -526,12 +526,55 @@ class HelloTriangleApplication {
   }
 
   std::expected<void, VulkanInitError> create_vertex_buffer() {
-    auto vb                    = VertexBuffer::create_triangle();
-    vk::DeviceSize buffer_size = vb.size_in_bytes();
-    buffer_ =
-        eray::vkren::BufferResource::create_exclusive(device_, buffer_size, vk::BufferUsageFlagBits::eVertexBuffer)
-            .or_panic();
-    buffer_.fill_data(vb.vertices.data(), 0, vb.size_in_bytes());
+    auto vb = VertexBuffer::create_triangle();
+
+    {
+      vk::DeviceSize buffer_size = vb.vertices_size_in_bytes();
+      auto staging_buffer        = vkren::ExclusiveBufferResource::create(  //
+                                device_,
+                                vkren::ExclusiveBufferResource::CreateInfo{
+                                           .size_in_bytes = buffer_size,
+                                           .buff_usage    = vk::BufferUsageFlagBits::eTransferSrc,
+                                })
+                                       .or_panic();
+      staging_buffer.fill_data(vb.vertices.data(), 0, vb.vertices_size_in_bytes());
+
+      vert_buffer_ =
+          vkren::ExclusiveBufferResource::create(  //
+              device_,
+              vkren::ExclusiveBufferResource::CreateInfo{
+                  .size_in_bytes = buffer_size,
+                  .buff_usage    = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+
+                  // VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT bit specifies that memory allocated with this type is
+                  // the most efficient for device access. The memory mapping is not allowed!
+                  .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+              })
+              .or_panic();
+      vert_buffer_.copy_from(device_, command_pool_, staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
+    }
+
+    {
+      vk::DeviceSize buffer_size = vb.indices_size_in_bytes();
+      auto staging_buffer        = vkren::ExclusiveBufferResource::create(  //
+                                device_,
+                                vkren::ExclusiveBufferResource::CreateInfo{
+                                           .size_in_bytes = buffer_size,
+                                           .buff_usage    = vk::BufferUsageFlagBits::eTransferSrc,
+                                })
+                                       .or_panic();
+      staging_buffer.fill_data(vb.indices.data(), 0, vb.indices_size_in_bytes());
+
+      ind_buffer_ = vkren::ExclusiveBufferResource::create(  //
+                        device_,
+                        vkren::ExclusiveBufferResource::CreateInfo{
+                            .size_in_bytes = buffer_size,
+                            .buff_usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                            .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                        })
+                        .or_panic();
+      ind_buffer_.copy_from(device_, command_pool_, staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
+    }
 
     return {};
   }
@@ -715,7 +758,8 @@ class HelloTriangleApplication {
 
     // We can specify type of the pipeline
     command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
-    command_buffers_[frame_index].bindVertexBuffers(0, *buffer_.buffer, {0});
+    command_buffers_[frame_index].bindVertexBuffers(0, *vert_buffer_.buffer, {0});
+    command_buffers_[frame_index].bindIndexBuffer(*ind_buffer_.buffer, 0, vk::IndexType::eUint16);
 
     // Describes the region of framebuffer that the output will be rendered to
     command_buffers_[frame_index].setViewport(
@@ -735,7 +779,7 @@ class HelloTriangleApplication {
         0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_.extent()});
 
     // Draw 3 vertices
-    command_buffers_[frame_index].draw(3, 1, 0, 0);
+    command_buffers_[frame_index].drawIndexed(3, 1, 0, 0, 0);
 
     command_buffers_[frame_index].endRendering();
 
@@ -911,7 +955,8 @@ class HelloTriangleApplication {
    */
   std::array<vk::raii::Fence, kMaxFramesInFlight> in_flight_fences_ = {nullptr, nullptr};
 
-  eray::vkren::BufferResource buffer_;
+  eray::vkren::ExclusiveBufferResource vert_buffer_;
+  eray::vkren::ExclusiveBufferResource ind_buffer_;
 
   /**
    * @brief GLFW window pointer.

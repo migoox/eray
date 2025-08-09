@@ -2,8 +2,8 @@
 
 #include <cstddef>
 #include <liberay/util/ruleof.hpp>
+#include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
-#include <liberay/vkren/result.hpp>
 #include <variant>
 #include <vulkan/vulkan_raii.hpp>
 
