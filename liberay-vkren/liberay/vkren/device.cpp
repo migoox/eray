@@ -63,7 +63,7 @@ Device::CreateInfo Device::CreateInfo::DesktopTemplate::get(
   };
 }
 
-std::expected<Device, Device::CreationError> Device::create(vk::raii::Context& ctx, const CreateInfo& info) noexcept {
+Result<Device, Device::CreationError> Device::create(vk::raii::Context& ctx, const CreateInfo& info) noexcept {
   auto device = Device();
   TRY(device.create_instance(ctx, info));
   TRY(device.create_debug_messenger(info));
@@ -79,8 +79,8 @@ std::expected<Device, Device::CreationError> Device::create(vk::raii::Context& c
   return device;
 }
 
-std::expected<void, Device::InstanceCreationError> Device::create_instance(vk::raii::Context& ctx,
-                                                                           const CreateInfo& info) noexcept {
+Result<void, Device::InstanceCreationError> Device::create_instance(vk::raii::Context& ctx,
+                                                                    const CreateInfo& info) noexcept {
   auto extensions_props = ctx.enumerateInstanceExtensionProperties();
 
   // Check if the requested extensions are supported by the Vulkan implementation.
@@ -128,8 +128,7 @@ std::expected<void, Device::InstanceCreationError> Device::create_instance(vk::r
   return {};
 }
 
-std::expected<void, Device::DebugMessengerCreationError> Device::create_debug_messenger(
-    const CreateInfo& info) noexcept {
+Result<void, Device::DebugMessengerCreationError> Device::create_debug_messenger(const CreateInfo& info) noexcept {
   if (info.validation_layers.empty()) {
     eray::util::Logger::info("Debug messenger setup omitted: No validation layers provided.");
     return {};
@@ -156,7 +155,7 @@ std::expected<void, Device::DebugMessengerCreationError> Device::create_debug_me
   return {};
 }
 
-std::expected<void, Device::PhysicalDevicePickingError> Device::pick_physical_device(const CreateInfo& info) noexcept {
+Result<void, Device::PhysicalDevicePickingError> Device::pick_physical_device(const CreateInfo& info) noexcept {
   auto devices_opt = instance_.enumeratePhysicalDevices();
   if (!devices_opt) {
     eray::util::Logger::err("Failed to enumerate physical devices. {}", vk::to_string(devices_opt.error()));
@@ -232,7 +231,7 @@ std::expected<void, Device::PhysicalDevicePickingError> Device::pick_physical_de
   return {};
 }
 
-std::expected<void, Device::LogicalDeviceCreationError> Device::create_logical_device(const CreateInfo& info) noexcept {
+Result<void, Device::LogicalDeviceCreationError> Device::create_logical_device(const CreateInfo& info) noexcept {
   // ==  Find Required Queue Families ==================================================================================
 
   {
@@ -353,6 +352,27 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Device::debug_callback(vk::DebugUtilsMessageSev
     default:
       return vk::False;
   };
+}
+
+Result<uint32_t, Device::NoSuitableMemoryTypeError> Device::find_mem_type(uint32_t type_filter,
+                                                                          vk::MemoryPropertyFlags props) const {
+  // Graphics cards can offer different types of memory to allocate from. Each type of memory varies in terms of
+  // allowed operations and performance characteristics. We need to combine the requirements of the buffer and
+  // our own app requirements to find the right type of memory to use.
+
+  // memoryHeaps: distinct memory resources like dedicated VRAM and swap space in RAM for when VRAM runs out.
+  // Different types of memory exist within these heaps.
+  auto mem_props = physical_device().getMemoryProperties();
+
+  for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+    if ((((type_filter) & (1 << i)) != 0U) && (mem_props.memoryTypes[i].propertyFlags & props) == props) {
+      return i;
+    }
+  }
+
+  util::Logger::err("Could not find a memory type");
+
+  return std::unexpected(NoSuitableMemoryTypeError{});
 }
 
 }  // namespace eray::vkren

@@ -7,7 +7,7 @@
 #include <liberay/driver/gl/gl_handle.hpp>
 #include <liberay/util/enum_mapper.hpp>
 #include <liberay/util/ruleof.hpp>
-#include <liberay/util/zstring_view.hpp>.hpp>
+#include <liberay/util/zstring_view.hpp>
 #include <span>
 #include <unordered_map>
 #include <vector>

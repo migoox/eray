@@ -73,7 +73,7 @@ struct VertexBuffer {
 
         .usage = vk::BufferUsageFlagBits::eVertexBuffer,
 
-        // Just like the images int the swap chain, buffers might also be owned by a specific queue family or be shared
+        // Just like the images in the swap chain, buffers might also be owned by a specific queue family or be shared
         // between multiple at the same time
         .sharingMode = sharing_mode,
     };

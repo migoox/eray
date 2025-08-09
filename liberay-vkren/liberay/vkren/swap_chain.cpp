@@ -4,17 +4,16 @@
 
 namespace eray::vkren {
 
-std::expected<SwapChain, SwapChain::CreationError> SwapChain::create(const Device& device, uint32_t width,
-                                                                     uint32_t height) noexcept {
+Result<SwapChain, SwapChain::CreationError> SwapChain::create(const Device& device, uint32_t width,
+                                                              uint32_t height) noexcept {
   auto swap_chain = SwapChain();
   TRY(swap_chain.create_swap_chain(device, width, height));
   TRY(swap_chain.create_image_views(device));
   return swap_chain;
 }
 
-std::expected<void, SwapChain::SwapChainCreationError> SwapChain::create_swap_chain(const Device& device,
-                                                                                    uint32_t width,
-                                                                                    uint32_t height) noexcept {
+Result<void, SwapChain::SwapChainCreationError> SwapChain::create_swap_chain(const Device& device, uint32_t width,
+                                                                             uint32_t height) noexcept {
   // Surface formats (pixel format, e.g. B8G8R8A8, color space e.g. SRGB)
   auto available_formats       = device.physical_device().getSurfaceFormatsKHR(device.surface());
   auto available_present_modes = device.physical_device().getSurfacePresentModesKHR(device.surface());
@@ -153,8 +152,8 @@ std::expected<void, SwapChain::SwapChainCreationError> SwapChain::create_swap_ch
 
   return {};
 }
-std::expected<void, SwapChain::ImageViewsCreationError> SwapChain::create_image_views(
-    const vkren::Device& device) noexcept {
+
+Result<void, SwapChain::ImageViewsCreationError> SwapChain::create_image_views(const vkren::Device& device) noexcept {
   image_views_.clear();
 
   auto image_view_info =
@@ -223,8 +222,7 @@ vk::PresentModeKHR SwapChain::choose_swap_presentMode(const std::vector<vk::Pres
   return vk::PresentModeKHR::eFifo;
 }
 
-std::expected<void, SwapChain::CreationError> SwapChain::recreate(const Device& device_, uint32_t width,
-                                                                  uint32_t height) {
+Result<void, SwapChain::CreationError> SwapChain::recreate(const Device& device_, uint32_t width, uint32_t height) {
   device_->waitIdle();
 
   cleanup();

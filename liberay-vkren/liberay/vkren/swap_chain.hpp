@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/vkren/device.hpp>
+#include <liberay/vkren/result.hpp>
 #include <variant>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -28,7 +29,7 @@ class SwapChain {
 
   using CreationError = std::variant<SwapChainCreationError, ImageViewsCreationError>;
 
-  static std::expected<SwapChain, CreationError> create(const Device& device, uint32_t width, uint32_t height) noexcept;
+  static Result<SwapChain, CreationError> create(const Device& device, uint32_t width, uint32_t height) noexcept;
 
   vk::raii::SwapchainKHR* operator->() noexcept { return &swap_chain_; }
   const vk::raii::SwapchainKHR* operator->() const noexcept { return &swap_chain_; }
@@ -49,7 +50,7 @@ class SwapChain {
    *
    * @param device_
    */
-  std::expected<void, SwapChain::CreationError> recreate(const Device& device, uint32_t width, uint32_t height);
+  Result<void, SwapChain::CreationError> recreate(const Device& device, uint32_t width, uint32_t height);
 
   /**
    * @brief Allows to destroy the swap chain explicitly. Example use case: Swap chain must be destroyed before
@@ -61,10 +62,10 @@ class SwapChain {
  private:
   SwapChain() = default;
 
-  std::expected<void, SwapChainCreationError> create_swap_chain(const vkren::Device& device, uint32_t width,
-                                                                uint32_t height) noexcept;
+  Result<void, SwapChainCreationError> create_swap_chain(const vkren::Device& device, uint32_t width,
+                                                         uint32_t height) noexcept;
 
-  std::expected<void, ImageViewsCreationError> create_image_views(const vkren::Device& device) noexcept;
+  Result<void, ImageViewsCreationError> create_image_views(const vkren::Device& device) noexcept;
 
   static vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats);
   static vk::PresentModeKHR choose_swap_presentMode(const std::vector<vk::PresentModeKHR>& available_present_modes);

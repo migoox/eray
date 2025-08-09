@@ -4,9 +4,12 @@
 #include <liberay/util/logger.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/util/zstring_view.hpp>
+#include <liberay/vkren/result.hpp>
 #include <variant>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
@@ -39,8 +42,10 @@ class Device {
   using CreationError = std::variant<InstanceCreationError, PhysicalDevicePickingError, LogicalDeviceCreationError,
                                      SurfaceCreationError, DebugMessengerCreationError>;
 
+  struct NoSuitableMemoryTypeError {};
+
   using SurfaceCreator =
-      std::function<std::expected<vk::raii::SurfaceKHR, SurfaceCreationError>(vk::raii::Instance& instance)>;
+      std::function<Result<vk::raii::SurfaceKHR, SurfaceCreationError>(vk::raii::Instance& instance)>;
 
   struct CreateInfo {
     /**
@@ -94,7 +99,7 @@ class Device {
        * @param required_instance_extensions allows to provide instance extensions that are needed by platform, e.g.
        * when using GLFW you can acquire these instance extensions with `glfwGetRequiredInstanceExtensions`
        *
-       * @warning `DesktopTemplate` must outlive the `CreateInfo` because it is a owner of the allocated data.
+       * @warning `DesktopTemplate` must outlive the `CreateInfo` because it is an owner of the allocated data.
        *
        * @return CreateInfo
        */
@@ -113,7 +118,7 @@ class Device {
     };
   };
 
-  static std::expected<Device, CreationError> create(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
+  static Result<Device, CreationError> create(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
 
   vk::raii::Instance& instance() noexcept { return instance_; }
   const vk::raii::Instance& instance() const noexcept { return instance_; }
@@ -138,13 +143,15 @@ class Device {
   vk::raii::Queue& presentation_queue() noexcept { return presentation_queue_; }
   const vk::raii::Queue& presentation_queue() const noexcept { return presentation_queue_; }
 
+  Result<uint32_t, NoSuitableMemoryTypeError> find_mem_type(uint32_t type_filter, vk::MemoryPropertyFlags props) const;
+
  private:
   Device() = default;
 
-  std::expected<void, InstanceCreationError> create_instance(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
-  std::expected<void, DebugMessengerCreationError> create_debug_messenger(const CreateInfo& info) noexcept;
-  std::expected<void, PhysicalDevicePickingError> pick_physical_device(const CreateInfo& info) noexcept;
-  std::expected<void, LogicalDeviceCreationError> create_logical_device(const CreateInfo& info) noexcept;
+  Result<void, InstanceCreationError> create_instance(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
+  Result<void, DebugMessengerCreationError> create_debug_messenger(const CreateInfo& info) noexcept;
+  Result<void, PhysicalDevicePickingError> pick_physical_device(const CreateInfo& info) noexcept;
+  Result<void, LogicalDeviceCreationError> create_logical_device(const CreateInfo& info) noexcept;
 
   std::vector<const char*> get_global_extensions(const CreateInfo& info) noexcept;
 
