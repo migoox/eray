@@ -265,7 +265,7 @@ class HelloTriangleApplication {
         .binding        = 0,
         .descriptorType = vk::DescriptorType::eUniformBuffer,
 
-        // MVP transformation is in a single UBO
+        // Single uniform buffer contains one MVP
         .descriptorCount = 1,
 
         // We only reference the descriptor from the vertex shader
@@ -640,9 +640,9 @@ class HelloTriangleApplication {
     {
       vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
       for (auto i = 0; i < kMaxFramesInFlight; ++i) {
-        auto ubo = eray::vkren::ExclusiveBufferResource::create(
+        auto ubo = vkren::ExclusiveBufferResource::create(  //
                        device_,
-                       eray::vkren::ExclusiveBufferResource::CreateInfo{
+                       vkren::ExclusiveBufferResource::CreateInfo{
                            .size_in_bytes = buffer_size,
                            .buff_usage    = vk::BufferUsageFlagBits::eUniformBuffer,
                            .mem_properties =
