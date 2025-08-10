@@ -11,6 +11,10 @@ namespace eray::vkren {
  * @brief Represents a buffer with dedicated chunk of device memory. The buffer resource owns both -- buffer object and
  * the chunk of memory.
  *
+ * @note This buffer abstraction is trivial and according to https://developer.nvidia.com/vulkan-memory-management,
+ * should not be used frequently. Moreover since each buffer has it's own DeviceMemory in this scheme, there can be
+ * up to 4096 ExclusiveBufferResources in your app.
+ *
  */
 struct ExclusiveBufferResource {
   vk::raii::Buffer buffer       = nullptr;

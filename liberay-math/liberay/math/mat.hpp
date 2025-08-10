@@ -465,6 +465,23 @@ Mat<4, 4, T> perspective_gl_rh(T fovy, T aspect, T z_near, T z_far) {
 }
 
 /**
+ * @brief Right-handed perspective projection matrix with depth range 0 to 1 (Vulkan).
+ *
+ * @return Mat<4, 4, T>
+ */
+template <CFloatingPoint T>
+Mat<4, 4, T> perspective_vk_rh(T fovy, T aspect, T z_near, T z_far) {
+  const T tan_half_fovy = std::tan(fovy / static_cast<T>(2));
+
+  return Mat<4, 4, T>{
+      Vec<4, T>{static_cast<T>(1) / (aspect * tan_half_fovy), 0, 0, 0},  //
+      Vec<4, T>{0, static_cast<T>(1) / (tan_half_fovy), 0, 0},           //
+      Vec<4, T>{0, 0, z_far / (z_near - z_far), -static_cast<T>(1)},     //
+      Vec<4, T>{0, 0, -(z_far * z_near) / (z_far - z_near), 0}           //
+  };
+}
+
+/**
  * @brief Right-handed stereographic perspective projection matrix for right eye, with depth range -1 to 1 (OpenGL).
  *
  * @return Mat<4, 4, T>
@@ -520,6 +537,11 @@ Mat<4, 4, T> orthographic_gl_rh(T left, T right, T bottom, T top, T z_near, T z_
   };
 }
 
+/**
+ * @brief Right-handed inverse orthographic projection matrix with depth range -1 to 1 (OpenGL).
+ *
+ * @return Mat<4, 4, T>
+ */
 template <CFloatingPoint T>
 Mat<4, 4, T> inv_perspective_gl_rh(T fovy, T aspect, T z_near, T z_far) {
   T const tan_half_fovy = std::tan(fovy / static_cast<T>(2));
@@ -532,6 +554,11 @@ Mat<4, 4, T> inv_perspective_gl_rh(T fovy, T aspect, T z_near, T z_far) {
   };
 }
 
+/**
+ * @brief Right-handed inverse orthographic projection matrix with depth range -1 to 1 (OpenGL).
+ *
+ * @return Mat<4, 4, T>
+ */
 template <CFloatingPoint T>
 Mat<4, 4, T> inv_orthographic_gl_rh(T left, T right, T bottom, T top, T z_near, T z_far) {
   // TODO(migoox): check correctness
@@ -543,6 +570,7 @@ Mat<4, 4, T> inv_orthographic_gl_rh(T left, T right, T bottom, T top, T z_near, 
                 (z_far + z_near) / static_cast<T>(2), static_cast<T>(1)}  //
   };
 }
+
 template <CFloatingPoint T>
 constexpr std::optional<Mat<4, 4, T>> inverse(const Mat<4, 4, T>& m) {
   const T coef00 = m[2][2] * m[3][3] - m[3][2] * m[2][3];

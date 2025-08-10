@@ -1,5 +1,6 @@
 #pragma once
 
+#include <liberay/math/mat.hpp>
 #include <liberay/math/vec.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -86,4 +87,12 @@ struct VertexBuffer {
 
   std::vector<Vertex> vertices;
   std::vector<uint16_t> indices;
+};
+
+struct UniformBufferObject {
+  using Mat4 = eray::math::Mat4f;
+
+  Mat4 model;
+  Mat4 view;
+  Mat4 proj;
 };

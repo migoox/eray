@@ -2,6 +2,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -11,6 +12,7 @@
 #include <liberay/util/try.hpp>
 #include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/buffer.hpp>
+#include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <ranges>
@@ -24,6 +26,10 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
+
+#include "liberay/math/mat.hpp"
+#include "liberay/math/vec.hpp"
+#include "liberay/math/vec_fwd.hpp"
 
 struct GLFWWindowCreationFailure {};
 
@@ -91,9 +97,12 @@ class HelloTriangleApplication {
   std::expected<void, VulkanInitError> init_vk() {
     TRY(create_device())
     TRY(create_swap_chain())
+    create_descriptor_set_layout();
     TRY(create_graphics_pipeline())
     TRY(create_command_pool())
-    TRY(create_vertex_buffer())
+    TRY(create_buffers())
+    create_descriptor_pool();
+    create_descriptor_sets();
     TRY(create_command_buffers())
     TRY(create_sync_objs())
 
@@ -200,6 +209,7 @@ class HelloTriangleApplication {
       eray::util::Logger::err("Failed to present swap chain image");
       return std::unexpected(SwapChainImageAcquireFailure{});
     }
+    update_ubo(current_frame_);
 
     device_->resetFences(*in_flight_fences_[current_frame_]);
     command_buffers_[current_frame_].reset();
@@ -247,6 +257,47 @@ class HelloTriangleApplication {
     current_frame_     = (current_frame_ + 1) % kMaxFramesInFlight;
 
     return {};
+  }
+
+  void create_descriptor_set_layout() {
+    // Uniform buffer
+    auto layout_binding = vk::DescriptorSetLayoutBinding{
+        .binding        = 0,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+
+        // MVP transformation is in a single UBO
+        .descriptorCount = 1,
+
+        // We only reference the descriptor from the vertex shader
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+
+        // The descriptor is not related to image sampling
+        .pImmutableSamplers = nullptr,
+    };
+
+    auto layout_info = vk::DescriptorSetLayoutCreateInfo{
+        .bindingCount = 1,
+        .pBindings    = &layout_binding,
+    };
+
+    descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
+  }
+
+  void update_ubo(uint32_t image_index) {
+    static auto start_time = std::chrono::high_resolution_clock::now();
+
+    auto curr_time = std::chrono::high_resolution_clock::now();
+    float time     = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - start_time).count();
+
+    UniformBufferObject ubo{};
+
+    // right-handed, depth [0, 1]
+    ubo.model = eray::math::rotation_axis(time * eray::math::radians(90.0F), eray::math::Vec3f(0.F, 0.F, 1.F));
+    ubo.view  = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -4.F));
+    ubo.proj  = eray::math::perspective_vk_rh(
+        eray::math::radians(80.0F), static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight), 0.01F, 10.F);
+
+    memcpy(uniform_buffers_mapped_[image_index], &ubo, sizeof(ubo));
   }
 
   void cleanup() {
@@ -436,8 +487,9 @@ class HelloTriangleApplication {
     // You can use uniform values in shaders, which are globals that can be changed at drawing time after the behavior
     // of your shaders without having to recreate. The uniform variables must be specified during the pipeline creation.
     auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
-        .setLayoutCount         = 0,
-        .pushConstantRangeCount = 0  //
+        .setLayoutCount         = 1,
+        .pSetLayouts            = &*descriptor_set_layout_,
+        .pushConstantRangeCount = 0,
     };
 
     if (auto result = device_->createPipelineLayout(pipeline_layout_info)) {
@@ -525,9 +577,10 @@ class HelloTriangleApplication {
     return {};
   }
 
-  std::expected<void, VulkanInitError> create_vertex_buffer() {
+  std::expected<void, VulkanInitError> create_buffers() {
     auto vb = VertexBuffer::create_triangle();
 
+    // Vertex buffer
     {
       vk::DeviceSize buffer_size = vb.vertices_size_in_bytes();
       auto staging_buffer        = vkren::ExclusiveBufferResource::create(  //
@@ -554,6 +607,7 @@ class HelloTriangleApplication {
       vert_buffer_.copy_from(device_, command_pool_, staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
     }
 
+    // Index buffer
     {
       vk::DeviceSize buffer_size = vb.indices_size_in_bytes();
       auto staging_buffer        = vkren::ExclusiveBufferResource::create(  //
@@ -574,6 +628,33 @@ class HelloTriangleApplication {
                         })
                         .or_panic();
       ind_buffer_.copy_from(device_, command_pool_, staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
+    }
+
+    // Copying to uniform buffer each frame means that staging buffer makes no sense.
+    // We should have multiple buffers, because multiple frames may be in flight at the same time and
+    // we don’t want to update the buffer in preparation of the next frame while a previous one is still reading
+    // from it!
+
+    uniform_buffers_.clear();
+    uniform_buffers_mapped_.clear();
+    {
+      vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
+      for (auto i = 0; i < kMaxFramesInFlight; ++i) {
+        auto ubo = eray::vkren::ExclusiveBufferResource::create(
+                       device_,
+                       eray::vkren::ExclusiveBufferResource::CreateInfo{
+                           .size_in_bytes = buffer_size,
+                           .buff_usage    = vk::BufferUsageFlagBits::eUniformBuffer,
+                           .mem_properties =
+                               vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                       })
+                       .or_panic();
+
+        // This technique is called persistent mapping, the buffer stays mapped for the application's whole life-time.
+        // It increases performance as the mapping process is not free.
+        uniform_buffers_mapped_.emplace_back(ubo.memory.mapMemory(0, buffer_size));
+        uniform_buffers_.emplace_back(std::move(ubo));
+      }
     }
 
     return {};
@@ -778,6 +859,12 @@ class HelloTriangleApplication {
     command_buffers_[frame_index].setScissor(
         0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_.extent()});
 
+    // Unlike vertex and index buffers, descriptor sets are not unique to graphics pipelines. Therefore, we need
+    // to specify if we want to bind descriptor sets to the graphics or compute pipeline. The next parameter is the
+    // layout that the descriptors are based on. The next three parameters specify the index of the first descriptor
+    // set, the number of sets to bind and the array of sets to bind.
+    command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout_, 0,
+                                                     *descriptor_sets_[frame_index], nullptr);
     // Draw 3 vertices
     command_buffers_[frame_index].drawIndexed(3, 1, 0, 0, 0);
 
@@ -796,6 +883,59 @@ class HelloTriangleApplication {
     });
 
     command_buffers_[frame_index].end();
+  }
+
+  void create_descriptor_pool() {
+    auto pool_size = vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, kMaxFramesInFlight);
+    auto pool_info = vk::DescriptorPoolCreateInfo{
+        .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+        .maxSets       = kMaxFramesInFlight,
+        .poolSizeCount = 1,
+        .pPoolSizes    = &pool_size,
+    };
+
+    descriptor_pool_ =
+        vkren::Result(device_->createDescriptorPool(pool_info)).or_panic("Could not create descriptor pool");
+  }
+
+  void create_descriptor_sets() {
+    auto layouts                   = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, *descriptor_set_layout_);
+    auto descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo{
+        .descriptorPool     = descriptor_pool_,
+        .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+        .pSetLayouts        = layouts.data(),
+    };
+    descriptor_sets_.clear();
+    descriptor_sets_ = vkren::Result(device_->allocateDescriptorSets(descriptor_set_alloc_info))
+                           .or_panic("Could not create descriptor sets");
+
+    for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
+      auto buffer_info = vk::DescriptorBufferInfo{
+          .buffer = uniform_buffers_[i].buffer,
+          .offset = 0,
+          .range  = sizeof(UniformBufferObject),  // It's also possible to use vk::WholeSize
+      };
+
+      auto descriptor_write = vk::WriteDescriptorSet{
+          // Specifies the descriptor set to update
+          .dstSet = descriptor_sets_[i],
+
+          // Specifies the binding of the descriptor set to update
+          .dstBinding = 0,
+
+          // It's possible to update multiple descriptors at once in an array, starting at index dstArrayElement
+          .dstArrayElement = 0,
+
+          // Specifies how many descriptor arrays we want to update
+          .descriptorCount = 1,
+
+          .descriptorType = vk::DescriptorType::eUniformBuffer,
+          .pBufferInfo    = &buffer_info,
+          //.pImageInfo for images
+      };
+
+      device_->updateDescriptorSets(descriptor_write, {});
+    }
   }
 
   vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
@@ -917,6 +1057,13 @@ class HelloTriangleApplication {
   vk::raii::PipelineLayout pipeline_layout_ = nullptr;
 
   /**
+   * @brief Descriptor set layout object is defined by an array of zero or more descriptor bindings. It's a way for
+   * shaders to freely access resource like buffers and images
+   *
+   */
+  vk::raii::DescriptorSetLayout descriptor_set_layout_ = nullptr;
+
+  /**
    * @brief Describes the graphics pipeline, including shaders stages, input assembly, rasterization and more.
    *
    */
@@ -957,6 +1104,12 @@ class HelloTriangleApplication {
 
   eray::vkren::ExclusiveBufferResource vert_buffer_;
   eray::vkren::ExclusiveBufferResource ind_buffer_;
+
+  std::vector<eray::vkren::ExclusiveBufferResource> uniform_buffers_;
+  std::vector<void*> uniform_buffers_mapped_;
+
+  vk::raii::DescriptorPool descriptor_pool_ = nullptr;
+  std::vector<vk::raii::DescriptorSet> descriptor_sets_;
 
   /**
    * @brief GLFW window pointer.
