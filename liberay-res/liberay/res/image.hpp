@@ -2,8 +2,9 @@
 
 #include <cmath>
 #include <cstdint>
-#include <expected>
 #include <filesystem>
+#include <liberay/util/result.hpp>
+#include <liberay/util/ruleof.hpp>
 #include <vector>
 
 namespace eray::res {
@@ -45,17 +46,23 @@ class Color {
   static ColorComponentU8 alpha(uint32_t color) { return static_cast<uint8_t>(color & 0xFF); }
 };
 
+/**
+ * @brief Represents an image with alpha channel (4 bytes per pixel). The pixel format is R8 G8 B8 A8.
+ *
+ */
 class Image {
  public:
-  Image(uint32_t width, uint32_t height, ColorU32 color = 0x000000FF);
-  Image(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data);
+  ERAY_DEFAULT_MOVE_AND_COPY_CTOR(Image)
+  ERAY_DEFAULT_MOVE_AND_COPY_ASSIGN(Image)
+
+  static Image create(uint32_t width, uint32_t height, ColorU32 color = 0x000000FF);
+  static Image create(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data);
 
   enum class LoadError : uint8_t {
     FileDoesNotExist = 0,
     InvalidFile      = 1,
   };
-
-  static std::expected<Image, LoadError> load_from_path(const std::filesystem::path& path);
+  static util::Result<Image, LoadError> load_from_path(const std::filesystem::path& path);
 
   bool is_in_bounds(ColorU32 x, ColorU32 y) const;
   void set_pixel(ColorU32 x, ColorU32 y, ColorU32 color);
@@ -66,12 +73,21 @@ class Image {
 
   size_t width() const { return width_; }
   size_t height() const { return height_; }
-  size_t bytes_size() const { return width_ * height_ * sizeof(uint32_t); }
+  size_t size_in_bytes() const { return width_ * height_ * sizeof(uint32_t); }
 
   const ColorU32* raw() const { return data_.data(); }
   const ColorComponentU8* raw_bytes() const { return reinterpret_cast<const ColorComponentU8*>(data_.data()); }
 
  private:
+  Image();
+  Image(uint32_t width, uint32_t height, ColorU32 color = 0x000000FF);
+  Image(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data);
+
+  static void swap_endianess(uint32_t* pixel) {
+    *pixel = ((*pixel & 0xFF000000) >> 24) | ((*pixel & 0x00FF0000) >> 8) | ((*pixel & 0x0000FF00) << 8) |
+             ((*pixel & 0x000000FF) << 24);
+  }
+
   size_t width_;
   size_t height_;
   size_t bpp_ = 4;

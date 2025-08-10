@@ -30,6 +30,8 @@
 #include "liberay/math/mat.hpp"
 #include "liberay/math/vec.hpp"
 #include "liberay/math/vec_fwd.hpp"
+#include "liberay/res/image.hpp"
+#include "liberay/vkren/image.hpp"
 
 struct GLFWWindowCreationFailure {};
 
@@ -105,6 +107,7 @@ class HelloTriangleApplication {
     create_descriptor_sets();
     TRY(create_command_buffers())
     TRY(create_sync_objs())
+    create_txt_img();
 
     return {};
   }
@@ -721,6 +724,43 @@ class HelloTriangleApplication {
     return {};
   }
 
+  void create_txt_img() {
+    auto img = eray::res::Image::load_from_path(eray::os::System::executable_dir() / "assets" / "cad.jpeg")
+                   .or_panic("cad is not there :(");
+
+    // Staging buffer
+    vk::DeviceSize img_size = img.size_in_bytes();
+    auto staging_buffer =
+        vkren::ExclusiveBufferResource::create(  //
+            device_,
+            vkren::ExclusiveBufferResource::CreateInfo{
+                .size_in_bytes  = img_size,
+                .buff_usage     = vk::BufferUsageFlagBits::eTransferSrc,
+                .mem_properties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            })
+            .or_panic("Could not create image staging buffer");
+    staging_buffer.fill_data(img.raw(), 0, img_size);
+
+    image_ = vkren::ExclusiveImage2DResource::create(
+                 device_,
+                 vkren::ExclusiveImage2DResource::CreateInfo{
+                     .size_in_bytes = img_size,
+
+                     // We want to sample the image in the fragment shader
+                     .image_usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+
+                     .format = vk::Format::eR8G8B8A8Srgb,
+                     .width  = static_cast<uint32_t>(img.width()),
+                     .height = static_cast<uint32_t>(img.height()),
+
+                     // Texels are laid out in an implementation defined order for optimal access
+                     .tiling = vk::ImageTiling::eOptimal,
+
+                     .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                 })
+                 .or_panic("Could not create an image resource");
+  }
+
   struct TransitionImageLayoutInfo {
     uint32_t image_index;
     size_t frame_index;
@@ -1111,6 +1151,8 @@ class HelloTriangleApplication {
 
   vk::raii::DescriptorPool descriptor_pool_ = nullptr;
   std::vector<vk::raii::DescriptorSet> descriptor_sets_;
+
+  eray::vkren::ExclusiveImage2DResource image_;
 
   /**
    * @brief GLFW window pointer.

@@ -17,16 +17,13 @@ Image::Image(uint32_t width, uint32_t height, ColorU32 color) : width_(width), h
 Image::Image(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data)
     : width_(width), height_(height), bpp_(bpp), data_(std::move(data)) {}
 
-namespace {
+Image Image::create(uint32_t width, uint32_t height, ColorU32 color) { return Image(width, height, color); }
 
-void swap_endianess(uint32_t* pixel) {
-  *pixel = ((*pixel & 0xFF000000) >> 24) | ((*pixel & 0x00FF0000) >> 8) | ((*pixel & 0x0000FF00) << 8) |
-           ((*pixel & 0x000000FF) << 24);
+Image Image::create(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data) {
+  return Image(width, height, bpp, std::move(data));
 }
 
-}  // namespace
-
-std::expected<Image, Image::LoadError> Image::load_from_path(const std::filesystem::path& path) {
+util::Result<Image, Image::LoadError> Image::load_from_path(const std::filesystem::path& path) {
   if (!std::filesystem::exists(path) || std::filesystem::is_directory(path)) {
     util::Logger::err(R"(Provided image file with path "{}" does not exist or is not a file.)", path.string());
     return std::unexpected(LoadError::FileDoesNotExist);
@@ -37,7 +34,8 @@ std::expected<Image, Image::LoadError> Image::load_from_path(const std::filesyst
   int height = 0;
   int bpp    = 0;
 
-  auto* buff = reinterpret_cast<uint32_t*>(stbi_load(util::path_to_utf8str(path).c_str(), &width, &height, &bpp, 4));
+  auto* buff = reinterpret_cast<uint32_t*>(
+      stbi_load(util::path_to_utf8str(path).c_str(), &width, &height, &bpp, STBI_rgb_alpha));
 
   for (int i = 0; i < width * height; ++i) {
     swap_endianess(&buff[i]);
