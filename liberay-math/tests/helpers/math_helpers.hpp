@@ -53,6 +53,7 @@ template <eray::math::CFloatingPoint T>
   return ::testing::AssertionSuccess();
 }
 
+// NOLINTBEGIN
 // Macro for glm vector comparison.
 #define EXPECT_VEC_NEAR(expected, actual, epsilon) EXPECT_PRED_FORMAT3(AreGLMVectorsNear, expected, actual, epsilon)
 #define ASSERT_VEC_NEAR(expected, actual, epsilon) ASSERT_PRED_FORMAT3(AreGLMVectorsNear, expected, actual, epsilon)
@@ -66,3 +67,4 @@ template <eray::math::CFloatingPoint T>
   EXPECT_PRED_FORMAT3(AreGLMQuaternionRotationsNear, expected, actual, epsilon)
 #define ASSERT_ROT_NEAR(expected, actual, epsilon) \
   ASSERT_PRED_FORMAT3(AreGLMQuaternionRotationsNear, expected, actual, epsilon)
+// NOLINTEND

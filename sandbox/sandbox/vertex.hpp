@@ -92,7 +92,8 @@ struct VertexBuffer {
 struct UniformBufferObject {
   using Mat4 = eray::math::Mat4f;
 
-  Mat4 model;
-  Mat4 view;
-  Mat4 proj;
+  // A float4x4 matrix must have the same alignment as a float4
+  alignas(16) Mat4 model;
+  alignas(16) Mat4 view;
+  alignas(16) Mat4 proj;
 };
