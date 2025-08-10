@@ -59,10 +59,12 @@ struct VertexBuffer {
   static VertexBuffer create_triangle() {
     // interleaving vertex attributes
     return VertexBuffer{
-        .vertices = std::vector<Vertex>{Vertex{.pos = Vec2{0.0F, -0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}},
-                                        Vertex{.pos = Vec2{0.5F, 0.5F}, .color = Vec3{0.0F, 1.0F, 0.0F}},
-                                        Vertex{.pos = Vec2{-0.5F, 0.5F}, .color = Vec3{0.0F, 0.0F, 1.0F}}},
-        .indices  = std::vector<uint16_t>{0, 1, 2},
+        // NOTE: Vulkan NDC has +y pointing downwards in contrast to upwards as in OpenGL. Vulkan NDC is right-handed.
+        .vertices = std::vector<Vertex>{Vertex{.pos = Vec2{0.5F, 0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}},
+                                        Vertex{.pos = Vec2{0.5F, -0.5F}, .color = Vec3{0.0F, 1.0F, 0.0F}},
+                                        Vertex{.pos = Vec2{-0.5F, -0.5F}, .color = Vec3{0.0F, 0.0F, 1.0F}},
+                                        Vertex{.pos = Vec2{-0.5F, 0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}}},
+        .indices  = std::vector<uint16_t>{0, 1, 2, 2, 3, 0},
     };
   }
 
@@ -83,7 +85,7 @@ struct VertexBuffer {
   }
 
   uint32_t vertices_size_in_bytes() const { return static_cast<uint32_t>(sizeof(Vertex) * vertices.size()); }
-  uint32_t indices_size_in_bytes() const { return static_cast<uint32_t>(sizeof(uint16_t) * vertices.size()); }
+  uint32_t indices_size_in_bytes() const { return static_cast<uint32_t>(sizeof(uint16_t) * indices.size()); }
 
   std::vector<Vertex> vertices;
   std::vector<uint16_t> indices;

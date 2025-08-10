@@ -450,6 +450,15 @@ Mat<4, 4, T> frustum_gl_rh(T left, T right, T bottom, T top, T z_near, T z_far) 
 /**
  * @brief Right-handed perspective projection matrix with depth range -1 to 1 (OpenGL).
  *
+ * RH ViewSpace:  OpenGL ClipSpace:
+ *      +y            +y
+ *      |             |  +z
+ *      |             | /
+ *      |___ +x   =>  |/____ +x
+ *     /
+ *    /
+ *   +z
+ *
  * @return Mat<4, 4, T>
  */
 template <CFloatingPoint T>
@@ -467,6 +476,15 @@ Mat<4, 4, T> perspective_gl_rh(T fovy, T aspect, T z_near, T z_far) {
 /**
  * @brief Right-handed perspective projection matrix with depth range 0 to 1 (Vulkan).
  *
+ * RH ViewSpace:   Vulkan ClipSpace:
+ *      +y
+ *      |              +z
+ *      |              /
+ *      |___ +x   =>  /____ +x
+ *     /              |
+ *    /               |
+ *   +z              +y
+ *
  * @return Mat<4, 4, T>
  */
 template <CFloatingPoint T>
@@ -475,9 +493,35 @@ Mat<4, 4, T> perspective_vk_rh(T fovy, T aspect, T z_near, T z_far) {
 
   return Mat<4, 4, T>{
       Vec<4, T>{static_cast<T>(1) / (aspect * tan_half_fovy), 0, 0, 0},  //
+      Vec<4, T>{0, -static_cast<T>(1) / (tan_half_fovy), 0, 0},          //
+      Vec<4, T>{0, 0, z_far / (z_near - z_far), static_cast<T>(-1)},     //
+      Vec<4, T>{0, 0, (z_far * z_near) / (z_near - z_far), 0}            //
+  };
+}
+
+/**
+ * @brief Right-handed perspective projection matrix with depth range 0 to 1 (DirectX).
+ *
+ * RH ViewSpace:   DirectX ClipSpace:
+ *      +y            +y
+ *      |             | +z
+ *      |             | /
+ *      |___ +x   =>  |/____ +x
+ *     /
+ *    /
+ *   +z
+ *
+ * @return Mat<4, 4, T>
+ */
+template <CFloatingPoint T>
+Mat<4, 4, T> perspective_dx_rh(T fovy, T aspect, T z_near, T z_far) {
+  const T tan_half_fovy = std::tan(fovy / static_cast<T>(2));
+
+  return Mat<4, 4, T>{
+      Vec<4, T>{static_cast<T>(1) / (aspect * tan_half_fovy), 0, 0, 0},  //
       Vec<4, T>{0, static_cast<T>(1) / (tan_half_fovy), 0, 0},           //
-      Vec<4, T>{0, 0, z_far / (z_near - z_far), -static_cast<T>(1)},     //
-      Vec<4, T>{0, 0, -(z_far * z_near) / (z_far - z_near), 0}           //
+      Vec<4, T>{0, 0, z_far / (z_near - z_far), static_cast<T>(-1)},     //
+      Vec<4, T>{0, 0, (z_far * z_near) / (z_near - z_far), 0}            //
   };
 }
 

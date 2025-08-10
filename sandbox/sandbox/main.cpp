@@ -292,9 +292,10 @@ class HelloTriangleApplication {
     UniformBufferObject ubo{};
 
     // right-handed, depth [0, 1]
-    ubo.model = eray::math::rotation_axis(time * eray::math::radians(90.0F), eray::math::Vec3f(0.F, 0.F, 1.F));
-    ubo.view  = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -4.F));
-    ubo.proj  = eray::math::perspective_vk_rh(
+    ubo.model = eray::math::translation(eray::math::Vec3f(1.F, 1.F, 1.F)) *
+                eray::math::rotation_axis(time * eray::math::radians(90.0F), eray::math::Vec3f(0.F, 0.F, 1.F));
+    ubo.view = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -4.F));
+    ubo.proj = eray::math::perspective_vk_rh(
         eray::math::radians(80.0F), static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight), 0.01F, 10.F);
 
     memcpy(uniform_buffers_mapped_[image_index], &ubo, sizeof(ubo));
@@ -866,7 +867,7 @@ class HelloTriangleApplication {
     command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout_, 0,
                                                      *descriptor_sets_[frame_index], nullptr);
     // Draw 3 vertices
-    command_buffers_[frame_index].drawIndexed(3, 1, 0, 0, 0);
+    command_buffers_[frame_index].drawIndexed(6, 1, 0, 0, 0);
 
     command_buffers_[frame_index].endRendering();
 
