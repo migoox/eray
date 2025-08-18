@@ -100,15 +100,6 @@ class basic_zstring_view : public std::basic_string_view<TChar> {
  * string_view as a plain string view.
  * A zstring_view can be constructed from a std::string because the data in std::string is null-terminated.
  *
- * +--------------------------------+---------------+------------------+-------------+--------------------+
- * | Feature                        | zstring_view  | std::string_view | const char* | const std::string& |
- * +--------------------------------+---------------+------------------+-------------+--------------------+
- * | Null-termination guarantee     |     ✅ Yes    |      ❌ No       |    ❌ No    |      ✅ Yes        |
- * | Stores string length           |     ✅ Yes    |      ✅ Yes      |    ❌ No    |      ✅ Yes        |
- * | Avoids copying string data     |     ✅ Yes    |      ✅ Yes      |    ✅ Yes   |      ❌ No         |
- * | Bounds-checked access          |     ✅ Yes    |      ❌ No       |    ❌ No    |      ✅ Yes        |
- * | Compatible with C APIs         |     ✅ Yes    |      ❌ No       |    ✅ Yes   |      ✅ Yes        |
- * +--------------------------------+---------------+------------------+-------------+--------------------+
  */
 using zstring_view  = basic_zstring_view<char>;
 using zwstring_view = basic_zstring_view<wchar_t>;

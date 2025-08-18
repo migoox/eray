@@ -53,8 +53,7 @@ struct ExclusiveBufferResource {
    *
    * @param src_buff
    */
-  void copy_from(const Device& device, const vk::raii::CommandPool& cmd_pool, const vk::raii::Buffer& src_buff,
-                 vk::BufferCopy cpy_info) const;
+  void copy_from(const Device& device, const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const;
 };
 
 }  // namespace eray::vkren

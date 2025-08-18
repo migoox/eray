@@ -38,9 +38,10 @@ class Device {
   struct SurfaceCreationError {};
   struct PhysicalDevicePickingError {};
   struct LogicalDeviceCreationError {};
+  struct CommandPoolCreationError {};
 
   using CreationError = std::variant<InstanceCreationError, PhysicalDevicePickingError, LogicalDeviceCreationError,
-                                     SurfaceCreationError, DebugMessengerCreationError>;
+                                     SurfaceCreationError, DebugMessengerCreationError, CommandPoolCreationError>;
 
   struct NoSuitableMemoryTypeError {};
 
@@ -145,6 +146,35 @@ class Device {
 
   Result<uint32_t, NoSuitableMemoryTypeError> find_mem_type(uint32_t type_filter, vk::MemoryPropertyFlags props) const;
 
+  template <typename T>
+  using OptRef = std::optional<std::reference_wrapper<T>>;
+
+  /**
+   * @brief To end the single_time commands, see `end_single_time_commands`.
+   *
+   * @param command_pool
+   * @return vk::raii::CommandBuffer
+   */
+  [[nodiscard]] vk::raii::CommandBuffer begin_single_time_commands(
+      OptRef<vk::raii::CommandPool> command_pool = std::nullopt) const;
+
+  /**
+   * @brief Blocks the CPU until the commands are submitted.
+   *
+   * @param cmd_buff
+   */
+  void end_single_time_commands(vk::raii::CommandBuffer& cmd_buff) const;
+
+  /**
+   * @brief Non-blocking, defines a pipeline barrier.
+   *
+   * @param image
+   * @param old_layout
+   * @param new_layout
+   */
+  void transition_image_layout(const vk::raii::Image& image, vk::ImageLayout old_layout,
+                               vk::ImageLayout new_layout) const;
+
  private:
   Device() = default;
 
@@ -152,6 +182,7 @@ class Device {
   Result<void, DebugMessengerCreationError> create_debug_messenger(const CreateInfo& info) noexcept;
   Result<void, PhysicalDevicePickingError> pick_physical_device(const CreateInfo& info) noexcept;
   Result<void, LogicalDeviceCreationError> create_logical_device(const CreateInfo& info) noexcept;
+  Result<void, CommandPoolCreationError> create_command_pool() noexcept;
 
   std::vector<const char*> get_global_extensions(const CreateInfo& info) noexcept;
 
@@ -207,6 +238,12 @@ class Device {
    *
    */
   vk::raii::Device device_ = nullptr;
+
+  /**
+   * @brief Used for command buffers allocation when user does not provide the command pool.
+   *
+   */
+  vk::raii::CommandPool single_time_cmd_pool_ = nullptr;
 
   // TODO(migoox): allow for creation of multiple queues
   vk::raii::Queue graphics_queue_ = nullptr;

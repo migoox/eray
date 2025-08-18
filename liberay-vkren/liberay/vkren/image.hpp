@@ -40,18 +40,6 @@ struct ExclusiveImage2DResource {
   static Result<ExclusiveImage2DResource, CreationError> create(const Device& device, const CreateInfo& info);
 
   /**
-   * @brief Copies CPU `src_data` to GPU memory. Creates vk::SharingMode::eExclusive buffer. Uses map to achieve
-   * this.
-   *
-   * @warning This call might require flushing the if VK_MEMORY_PROPERTY_HOST_COHERENT_BIT is not set.
-   *
-   * @param src_data
-   * @param offset_in_bytes
-   * @param size_in_bytes
-   */
-  void fill_data(const void* src_data, vk::DeviceSize offset_in_bytes, vk::DeviceSize size_in_bytes) const;
-
-  /**
    * @brief Blocks the program execution and copies GPU `src_buff` data to the other GPU buffer.
    *
    * @warning Requires the `src_buff` to be a VK_BUFFER_USAGE_TRANSFER_SRC_BIT set and the current buffer to
@@ -59,7 +47,7 @@ struct ExclusiveImage2DResource {
    *
    * @param src_buff
    */
-  void copy_from(const Device& device, const vk::raii::CommandPool& cmd_pool, const vk::raii::Buffer& src_buff,
-                 vk::BufferCopy cpy_info) const;
+  void copy_from(const Device& device, const vk::raii::Buffer& src_buff) const;
 };
+
 }  // namespace eray::vkren

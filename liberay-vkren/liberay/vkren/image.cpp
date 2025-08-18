@@ -1,5 +1,7 @@
 #include <liberay/vkren/image.hpp>
+#include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 Result<ExclusiveImage2DResource, ExclusiveImage2DResource::CreationError> ExclusiveImage2DResource::create(
@@ -60,6 +62,38 @@ Result<ExclusiveImage2DResource, ExclusiveImage2DResource::CreationError> Exclus
       .height            = info.height,
       .mem_properties    = info.mem_properties,
   };
+}
+
+void ExclusiveImage2DResource::copy_from(const Device& device, const vk::raii::Buffer& src_buff) const {
+  auto cmd_buff    = device.begin_single_time_commands();
+  auto copy_region = vk::BufferImageCopy{
+      .bufferOffset = 0,
+
+      // For example, you could have some padding bytes between rows of the image. Specifying 0 for both indicates that
+      // the pixels are simply tightly packed like they are in our case.
+      .bufferRowLength   = 0,
+      .bufferImageHeight = 0,
+
+      // The imageSubresource, imageOffset and imageExtent fields indicate to which part of the image we want to copy
+      // the pixels.
+
+      .imageSubresource =
+          vk::ImageSubresourceLayers{
+              .aspectMask     = vk::ImageAspectFlagBits::eColor,
+              .mipLevel       = 0,
+              .baseArrayLayer = 0,
+              .layerCount     = 1,
+          },
+      .imageOffset = vk::Offset3D{.x = 0, .y = 0, .z = 0},
+      .imageExtent =
+          vk::Extent3D{
+              .width  = width,
+              .height = height,
+              .depth  = 1,
+          },
+  };
+  cmd_buff.copyBufferToImage(src_buff, image, vk::ImageLayout::eTransferDstOptimal, copy_region);
+  device.end_single_time_commands(cmd_buff);
 }
 
 }  // namespace eray::vkren

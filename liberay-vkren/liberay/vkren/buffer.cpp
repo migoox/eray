@@ -74,31 +74,11 @@ void ExclusiveBufferResource::fill_data(const void* src_data, vk::DeviceSize off
   // tells us that it is guaranteed to be complete as of the next call to vkQueueSubmit
 }
 
-void ExclusiveBufferResource::copy_from(const Device& device, const vk::raii::CommandPool& cmd_pool,
-                                        const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const {
-  // Create a command buffer
-  auto alloc_info = vk::CommandBufferAllocateInfo{
-      .commandPool        = cmd_pool,
-      .level              = vk::CommandBufferLevel::ePrimary,
-      .commandBufferCount = 1,
-  };
-  vk::raii::CommandBuffer cmd_cpy_buff = std::move(device->allocateCommandBuffers(alloc_info)->front());
-
-  // Record the copying operation to the command buffer
-  cmd_cpy_buff.begin(vk::CommandBufferBeginInfo{
-      .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
-  });
+void ExclusiveBufferResource::copy_from(const Device& device, const vk::raii::Buffer& src_buff,
+                                        vk::BufferCopy cpy_info) const {
+  auto cmd_cpy_buff = device.begin_single_time_commands();
   cmd_cpy_buff.copyBuffer(src_buff, buffer, cpy_info);
-  cmd_cpy_buff.end();
-
-  // Submit and block the CPU until it's ready
-  device.graphics_queue().submit(
-      vk::SubmitInfo{
-          .commandBufferCount = 1,
-          .pCommandBuffers    = &*cmd_cpy_buff,
-      },
-      nullptr);
-  device.graphics_queue().waitIdle();
+  device.end_single_time_commands(cmd_cpy_buff);
 }
 
 }  // namespace eray::vkren

@@ -75,6 +75,7 @@ Result<Device, Device::CreationError> Device::create(vk::raii::Context& ctx, con
   }
   TRY(device.pick_physical_device(info));
   TRY(device.create_logical_device(info));
+  TRY(device.create_command_pool());
 
   return device;
 }
@@ -325,6 +326,32 @@ Result<void, Device::LogicalDeviceCreationError> Device::create_logical_device(c
   return {};
 }
 
+Result<void, Device::CommandPoolCreationError> Device::create_command_pool() noexcept {
+  auto command_pool_info = vk::CommandPoolCreateInfo{
+      // There are two possible flags for command pools:
+      // - VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: Hint that command buffers are rerecorded with new commands very often
+      //   (may change memory allocation behavior).
+      // - VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT: Allow command buffers to be rerecorded individually,
+      //   without this flag they all have to be reset together. (Reset and rerecord over it in every frame)
+
+      .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+
+      // Each command pool can only allocate command buffers that are submitted on a single type of queue.
+      // We setup commands for drawing, and thus we've chosen the graphics queue family.
+      .queueFamilyIndex = graphics_queue_family(),
+  };
+
+  if (auto result = device_.createCommandPool(command_pool_info)) {
+    single_time_cmd_pool_ = std::move(*result);
+  } else {
+    eray::util::Logger::err("Could not create a command pool. {}", vk::to_string(result.error()));
+
+    return std::unexpected(CommandPoolCreationError{});
+  }
+
+  return {};
+}
+
 std::vector<const char*> Device::get_global_extensions(const CreateInfo& info) noexcept {
   auto result = std::vector<const char*>(info.global_extensions.begin(), info.global_extensions.end());
 
@@ -373,6 +400,83 @@ Result<uint32_t, Device::NoSuitableMemoryTypeError> Device::find_mem_type(uint32
   util::Logger::err("Could not find a memory type");
 
   return std::unexpected(NoSuitableMemoryTypeError{});
+}
+
+vk::raii::CommandBuffer Device::begin_single_time_commands(OptRef<vk::raii::CommandPool> command_pool) const {
+  auto cmd_buff_info = vk::CommandBufferAllocateInfo{
+      .commandPool        = command_pool ? *command_pool : single_time_cmd_pool_,
+      .level              = vk::CommandBufferLevel::ePrimary,
+      .commandBufferCount = 1,
+  };
+  auto cmd_buff = std::move(device_.allocateCommandBuffers(cmd_buff_info)->front());
+  cmd_buff.begin(vk::CommandBufferBeginInfo{
+      .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+  });
+
+  return cmd_buff;
+}
+
+void Device::end_single_time_commands(vk::raii::CommandBuffer& cmd_buff) const {
+  cmd_buff.end();
+
+  const auto submit_info = vk::SubmitInfo{
+      .waitSemaphoreCount   = 0,
+      .pWaitSemaphores      = nullptr,
+      .pWaitDstStageMask    = nullptr,
+      .commandBufferCount   = 1,
+      .pCommandBuffers      = &*cmd_buff,
+      .signalSemaphoreCount = 0,
+      .pSignalSemaphores    = nullptr,  //
+  };
+  graphics_queue().submit(submit_info, nullptr);
+  graphics_queue().waitIdle();  // equivalent of having submitted a valid fence to every previously executed queue
+                                // submission command
+}
+
+void Device::transition_image_layout(const vk::raii::Image& image, vk::ImageLayout old_layout,
+                                     vk::ImageLayout new_layout) const {
+  auto cmd_buff = begin_single_time_commands();
+  auto barrier  = vk::ImageMemoryBarrier{
+       .oldLayout           = old_layout,
+       .newLayout           = new_layout,
+       .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+       .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+       .image               = image,  //
+       .subresourceRange =
+          vk::ImageSubresourceRange{
+               .aspectMask     = vk::ImageAspectFlagBits::eColor,
+               .baseMipLevel   = 0,
+               .levelCount     = 1,
+               .baseArrayLayer = 0,
+               .layerCount     = 1,
+          },
+  };
+
+  auto src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
+  auto dst_stage = vk::PipelineStageFlagBits::eTransfer;
+  if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eTransferDstOptimal) {
+    barrier.srcAccessMask = {};
+    barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+
+    src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
+    dst_stage = vk::PipelineStageFlagBits::eTransfer;
+
+  } else if (old_layout == vk::ImageLayout::eTransferDstOptimal &&
+             new_layout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+    src_stage = vk::PipelineStageFlagBits::eTransfer;
+    dst_stage = vk::PipelineStageFlagBits::eFragmentShader;
+
+  } else {
+    eray::util::panic("Unsupported layout transition");
+  }
+
+  // Defines memory dependency between commands that were submitted to the same queue
+  cmd_buff.pipelineBarrier(src_stage, dst_stage, {}, {}, nullptr, barrier);
+
+  end_single_time_commands(cmd_buff);
 }
 
 }  // namespace eray::vkren

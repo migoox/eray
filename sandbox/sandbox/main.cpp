@@ -608,7 +608,7 @@ class HelloTriangleApplication {
                   .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
               })
               .or_panic();
-      vert_buffer_.copy_from(device_, command_pool_, staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
+      vert_buffer_.copy_from(device_, staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
     }
 
     // Index buffer
@@ -631,7 +631,7 @@ class HelloTriangleApplication {
                             .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
                         })
                         .or_panic();
-      ind_buffer_.copy_from(device_, command_pool_, staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
+      ind_buffer_.copy_from(device_, staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
     }
 
     // Copying to uniform buffer each frame means that staging buffer makes no sense.
@@ -741,6 +741,7 @@ class HelloTriangleApplication {
             .or_panic("Could not create image staging buffer");
     staging_buffer.fill_data(img.raw(), 0, img_size);
 
+    // Image object
     image_ = vkren::ExclusiveImage2DResource::create(
                  device_,
                  vkren::ExclusiveImage2DResource::CreateInfo{
@@ -759,6 +760,10 @@ class HelloTriangleApplication {
                      .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
                  })
                  .or_panic("Could not create an image resource");
+    device_.transition_image_layout(image_.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+    image_.copy_from(device_, staging_buffer.buffer);
+    device_.transition_image_layout(image_.image, vk::ImageLayout::eTransferDstOptimal,
+                                    vk::ImageLayout::eShaderReadOnlyOptimal);
   }
 
   struct TransitionImageLayoutInfo {
@@ -1161,8 +1166,8 @@ class HelloTriangleApplication {
   GLFWwindow* window_ = nullptr;
 
   /**
-   * @brief Although many drivers and platforms trigger VK_ERROR_OUT_OF_DATE_KHR automatically after a window resize, it
-   * is not guaranteed to happen. That's why there is an extra code to handle resizes explicitly.
+   * @brief Although many drivers and platforms trigger VK_ERROR_OUT_OF_DATE_KHR automatically after a window resize,
+   * it is not guaranteed to happen. That's why there is an extra code to handle resizes explicitly.
    *
    */
   bool framebuffer_resized_ = false;
