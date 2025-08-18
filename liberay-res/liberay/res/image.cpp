@@ -38,7 +38,7 @@ util::Result<Image, Image::LoadError> Image::load_from_path(const std::filesyste
       stbi_load(util::path_to_utf8str(path).c_str(), &width, &height, &bpp, STBI_rgb_alpha));
 
   for (int i = 0; i < width * height; ++i) {
-    swap_endianess(&buff[i]);
+    // swap_endianess(&buff[i]);
   }
 
   if (!buff) {

@@ -6,6 +6,7 @@ struct VSInput {
   // vertex attributes
   float2 pos;
   float3 color;
+  float2 texCoords;
 };
 
 struct UniformBuffer {
@@ -18,6 +19,7 @@ ConstantBuffer<UniformBuffer> ubo;
 struct VertexOutput {
   float4 pos : SV_Position;
   float3 color;
+  float2 fragTexCoords;
 };
 
 // Slang and SPIR-V both support having multiple entry points in one file. This means
@@ -25,15 +27,18 @@ struct VertexOutput {
 [shader("vertex")]
 VertexOutput mainVert(VSInput input) {
   VertexOutput output;
-  output.color = input.color;
-  output.pos   = mul(ubo.model, float4(input.pos, 1.0));
-  output.pos   = mul(ubo.view, output.pos);
-  output.pos   = mul(ubo.proj, output.pos);
+  output.color         = input.color;
+  output.pos           = mul(ubo.model, float4(input.pos, 1.0));
+  output.pos           = mul(ubo.view, output.pos);
+  output.pos           = mul(ubo.proj, output.pos);
+  output.fragTexCoords = input.texCoords;
   return output;
 }
 
+Sampler2D texture;
+
 [shader("fragment")]
-float4 mainFrag(VertexOutput inVert) : SV_Target {
-  return float4(inVert.color, 1.0);
+float4 mainFrag(VertexOutput input) : SV_Target {
+  return float4(texture.Sample(input.fragTexCoords).rgb * input.color, 1.0);
 }
 

@@ -41,7 +41,6 @@ Device::CreateInfo Device::CreateInfo::DesktopTemplate::get(
           .features =
               vk::PhysicalDeviceFeatures{
                   .samplerAnisotropy = vk::True,
-
               },
       },                                                             // vk::PhysicalDeviceFeatures2
       {.synchronization2 = vk::True, .dynamicRendering = vk::True},  // Enable dynamic rendering from Vulkan 1.3

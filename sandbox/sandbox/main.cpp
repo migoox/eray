@@ -6,7 +6,11 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <liberay/math/mat.hpp>
+#include <liberay/math/vec.hpp>
+#include <liberay/math/vec_fwd.hpp>
 #include <liberay/os/system.hpp>
+#include <liberay/res/image.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
@@ -14,6 +18,7 @@
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
+#include <liberay/vkren/image.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <ranges>
 #include <sandbox/vertex.hpp>
@@ -26,12 +31,6 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
-
-#include "liberay/math/mat.hpp"
-#include "liberay/math/vec.hpp"
-#include "liberay/math/vec_fwd.hpp"
-#include "liberay/res/image.hpp"
-#include "liberay/vkren/image.hpp"
 
 struct GLFWWindowCreationFailure {};
 
@@ -103,11 +102,11 @@ class HelloTriangleApplication {
     TRY(create_graphics_pipeline())
     TRY(create_command_pool())
     TRY(create_buffers())
+    TRY(create_command_buffers())
+    create_txt_img();
     create_descriptor_pool();
     create_descriptor_sets();
-    TRY(create_command_buffers())
     TRY(create_sync_objs())
-    create_txt_img();
 
     return {};
   }
@@ -263,26 +262,35 @@ class HelloTriangleApplication {
   }
 
   void create_descriptor_set_layout() {
-    // Uniform buffer
-    auto layout_binding = vk::DescriptorSetLayoutBinding{
-        .binding        = 0,
-        .descriptorType = vk::DescriptorType::eUniformBuffer,
+    auto bindings = std::array{
+        // Uniform buffer
+        vk::DescriptorSetLayoutBinding{
+            .binding        = 0,
+            .descriptorType = vk::DescriptorType::eUniformBuffer,
 
-        // Single uniform buffer contains one MVP
-        .descriptorCount = 1,
+            // Single uniform buffer contains one MVP
+            .descriptorCount = 1,
 
-        // We only reference the descriptor from the vertex shader
-        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+            // We only reference the descriptor from the vertex shader
+            .stageFlags = vk::ShaderStageFlagBits::eVertex,
 
-        // The descriptor is not related to image sampling
-        .pImmutableSamplers = nullptr,
+            // The descriptor is not related to image sampling
+            .pImmutableSamplers = nullptr,
+        },
+
+        // Sampler
+        vk::DescriptorSetLayoutBinding{
+            .binding            = 1,
+            .descriptorType     = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount    = 1,
+            .stageFlags         = vk::ShaderStageFlagBits::eFragment,
+            .pImmutableSamplers = nullptr,
+        },
     };
-
     auto layout_info = vk::DescriptorSetLayoutCreateInfo{
-        .bindingCount = 1,
-        .pBindings    = &layout_binding,
+        .bindingCount = bindings.size(),
+        .pBindings    = bindings.data(),
     };
-
     descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
   }
 
@@ -295,7 +303,7 @@ class HelloTriangleApplication {
     UniformBufferObject ubo{};
 
     // right-handed, depth [0, 1]
-    ubo.model = eray::math::translation(eray::math::Vec3f(1.F, 1.F, 1.F)) *
+    ubo.model = eray::math::translation(eray::math::Vec3f(0.F, 0.F, 0.F)) *
                 eray::math::rotation_axis(time * eray::math::radians(90.0F), eray::math::Vec3f(0.F, 0.F, 1.F));
     ubo.view = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -4.F));
     ubo.proj = eray::math::perspective_vk_rh(
@@ -955,14 +963,16 @@ class HelloTriangleApplication {
   }
 
   void create_descriptor_pool() {
-    auto pool_size = vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, kMaxFramesInFlight);
+    auto pool_size = std::array{
+        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, kMaxFramesInFlight),
+        vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, kMaxFramesInFlight),
+    };
     auto pool_info = vk::DescriptorPoolCreateInfo{
         .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
         .maxSets       = kMaxFramesInFlight,
-        .poolSizeCount = 1,
-        .pPoolSizes    = &pool_size,
+        .poolSizeCount = pool_size.size(),
+        .pPoolSizes    = pool_size.data(),
     };
-
     descriptor_pool_ =
         vkren::Result(device_->createDescriptorPool(pool_info)).or_panic("Could not create descriptor pool");
   }
@@ -984,23 +994,37 @@ class HelloTriangleApplication {
           .offset = 0,
           .range  = sizeof(UniformBufferObject),  // It's also possible to use vk::WholeSize
       };
+      auto image_info = vk::DescriptorImageInfo{
+          .sampler     = txt_sampler_,
+          .imageView   = txt_view_,
+          .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+      };
 
-      auto descriptor_write = vk::WriteDescriptorSet{
-          // Specifies the descriptor set to update
-          .dstSet = descriptor_sets_[i],
+      auto descriptor_write = std::array{
+          vk::WriteDescriptorSet{
+              // Specifies the descriptor set to update
+              .dstSet = descriptor_sets_[i],
 
-          // Specifies the binding of the descriptor set to update
-          .dstBinding = 0,
+              // Specifies the binding of the descriptor set to update
+              .dstBinding = 0,
 
-          // It's possible to update multiple descriptors at once in an array, starting at index dstArrayElement
-          .dstArrayElement = 0,
+              // It's possible to update multiple descriptors at once in an array, starting at index dstArrayElement
+              .dstArrayElement = 0,
 
-          // Specifies how many descriptor arrays we want to update
-          .descriptorCount = 1,
+              // Specifies how many descriptor arrays we want to update
+              .descriptorCount = 1,
 
-          .descriptorType = vk::DescriptorType::eUniformBuffer,
-          .pBufferInfo    = &buffer_info,
-          //.pImageInfo for images
+              .descriptorType = vk::DescriptorType::eUniformBuffer,
+              .pBufferInfo    = &buffer_info,
+          },
+          vk::WriteDescriptorSet{
+              .dstSet          = descriptor_sets_[i],
+              .dstBinding      = 1,
+              .dstArrayElement = 0,
+              .descriptorCount = 1,
+              .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
+              .pImageInfo      = &image_info,
+          },
       };
 
       device_->updateDescriptorSets(descriptor_write, {});

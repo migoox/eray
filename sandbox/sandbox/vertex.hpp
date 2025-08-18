@@ -12,6 +12,7 @@ struct Vertex {
 
   Vec2 pos;
   Vec3 color;
+  Vec2 tex_coord;
 
   static vk::VertexInputBindingDescription get_binding_desc() {
     return vk::VertexInputBindingDescription{
@@ -27,8 +28,8 @@ struct Vertex {
     };
   }
 
-  static std::array<vk::VertexInputAttributeDescription, 2> get_attribs_desc() {
-    return {
+  static auto get_attribs_desc() {
+    return std::array{
         vk::VertexInputAttributeDescription{
             // References the location directive of the input in the vertex shader
             .location = 0,
@@ -47,7 +48,12 @@ struct Vertex {
             .format   = vk::Format::eR32G32B32Sfloat,
             .offset   = offsetof(Vertex, color),
         },
-
+        vk::VertexInputAttributeDescription{
+            .location = 2,
+            .binding  = 0,
+            .format   = vk::Format::eR32G32Sfloat,
+            .offset   = offsetof(Vertex, tex_coord),
+        },
     };
   }
 };
@@ -59,12 +65,13 @@ struct VertexBuffer {
   static VertexBuffer create_triangle() {
     // interleaving vertex attributes
     return VertexBuffer{
-        // NOTE: Vulkan NDC has +y pointing downwards in contrast to upwards as in OpenGL. Vulkan NDC is right-handed.
-        .vertices = std::vector<Vertex>{Vertex{.pos = Vec2{0.5F, 0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}},
-                                        Vertex{.pos = Vec2{0.5F, -0.5F}, .color = Vec3{0.0F, 1.0F, 0.0F}},
-                                        Vertex{.pos = Vec2{-0.5F, -0.5F}, .color = Vec3{0.0F, 0.0F, 1.0F}},
-                                        Vertex{.pos = Vec2{-0.5F, 0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}}},
-        .indices  = std::vector<uint16_t>{0, 1, 2, 2, 3, 0},
+        .vertices =
+            std::vector<Vertex>{
+                Vertex{.pos = Vec2{0.5F, 0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}, .tex_coord = Vec2{1.F, 1.F}},
+                Vertex{.pos = Vec2{0.5F, -0.5F}, .color = Vec3{0.0F, 1.0F, 0.0F}, .tex_coord = Vec2{1.F, 0.F}},
+                Vertex{.pos = Vec2{-0.5F, -0.5F}, .color = Vec3{0.0F, 0.0F, 1.0F}, .tex_coord = Vec2{0.F, 0.F}},
+                Vertex{.pos = Vec2{-0.5F, 0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}, .tex_coord = Vec2{0.F, 1.F}}},
+        .indices = std::vector<uint16_t>{0, 1, 2, 2, 3, 0},
     };
   }
 

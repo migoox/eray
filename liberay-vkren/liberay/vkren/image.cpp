@@ -103,7 +103,6 @@ Result<vk::raii::ImageView, vk::Result> ExclusiveImage2DResource::create_img_vie
       .format   = format,
       .components =
           vk::ComponentMapping{
-
               .r = vk::ComponentSwizzle::eIdentity,
               .g = vk::ComponentSwizzle::eIdentity,
               .b = vk::ComponentSwizzle::eIdentity,
