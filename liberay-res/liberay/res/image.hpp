@@ -96,3 +96,4 @@ class Image {
 };
 
 }  // namespace eray::res
+

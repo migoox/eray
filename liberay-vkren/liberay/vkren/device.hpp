@@ -194,7 +194,7 @@ class Device {
   static auto get_default_feature_chain() {
     return vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
                               vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>{
-        {},                                                            // vk::PhysicalDeviceFeatures2
+        {},
         {.synchronization2 = vk::True, .dynamicRendering = vk::True},  // Enable dynamic rendering from Vulkan 1.3
         {.extendedDynamicState = vk::True}  // Enable extended dynamic state from the extension
     };

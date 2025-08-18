@@ -37,7 +37,13 @@ Device::CreateInfo Device::CreateInfo::DesktopTemplate::get(
   // == Feature Chain ================================================================================================
   feature_chain_ = vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
                                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>{
-      {},                                                            // vk::PhysicalDeviceFeatures2
+      {
+          .features =
+              vk::PhysicalDeviceFeatures{
+                  .samplerAnisotropy = vk::True,
+
+              },
+      },                                                             // vk::PhysicalDeviceFeatures2
       {.synchronization2 = vk::True, .dynamicRendering = vk::True},  // Enable dynamic rendering from Vulkan 1.3
       {.extendedDynamicState = vk::True}                             // Enable extended dynamic state from the extension
   };
@@ -179,7 +185,9 @@ Result<void, Device::PhysicalDevicePickingError> Device::pick_physical_device(co
     auto queue_families = device.getQueueFamilyProperties();
     auto extensions     = device.enumerateDeviceExtensionProperties();
 
-    if (!features.geometryShader || !features.tessellationShader) {
+    if (!features.geometryShader || !features.tessellationShader || !features.samplerAnisotropy) {
+      util::Logger::info("Physical device with name {} is not suitable. This device will not be considered.",
+                         std::string_view(props.deviceName));
       continue;
     }
 

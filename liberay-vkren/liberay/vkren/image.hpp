@@ -48,6 +48,8 @@ struct ExclusiveImage2DResource {
    * @param src_buff
    */
   void copy_from(const Device& device, const vk::raii::Buffer& src_buff) const;
+
+  Result<vk::raii::ImageView, vk::Result> create_img_view(const Device& device);
 };
 
 }  // namespace eray::vkren

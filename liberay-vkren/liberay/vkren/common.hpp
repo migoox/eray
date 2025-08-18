@@ -8,7 +8,7 @@ namespace eray::vkren {
 
 template <typename TError>
 struct VulkanResultLogger {
-  static void log_crash(const std::source_location& l, const TError& err, util::zstring_view msg = "") {
+  static void log_panic(const std::source_location& l, const TError& err, util::zstring_view msg = "") {
     if constexpr (std::is_same_v<TError, vk::Result>) {
       if (msg.empty()) {
         util::Logger::instance().log(util::LogLevel::Err, false, l, "Program has crashed due to a Vulkan error: {}",

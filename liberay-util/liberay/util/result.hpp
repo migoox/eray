@@ -19,8 +19,8 @@ struct ResultFmtWithLoc {
 
 template <typename TLogger, typename TError>
 concept CResultLogger = requires(std::source_location loc, const TError& err, zstring_view msg) {
-  TLogger::log_crash(loc, err);
-  TLogger::log_crash(loc, err, msg);
+  TLogger::log_panic(loc, err);
+  TLogger::log_panic(loc, err, msg);
 };
 
 template <typename TType, typename TError, CResultLogger<TError> TResultLogger>
@@ -41,7 +41,7 @@ struct ResultBase : public std::expected<TType, TError> {
     if (this->has_value()) {
       return std::move(this->value());
     }
-    TResultLogger::log_crash(fmt_loc.loc, this->error(), fmt_loc.value);
+    TResultLogger::log_panic(fmt_loc.loc, this->error(), fmt_loc.value);
     std::abort();
   }
 };
@@ -58,14 +58,14 @@ struct ResultBase<void, TError, TResultLogger> : public std::expected<void, TErr
     if (this->has_value()) {
       return std::move(this->value());
     }
-    TResultLogger::log_crash(fmt_loc.loc, this->error(), fmt_loc.value);
+    TResultLogger::log_panic(fmt_loc.loc, this->error(), fmt_loc.value);
     std::abort();
   }
 };
 
 template <typename TError>
 struct GenericResultLogger {
-  static void log_crash(const std::source_location& l, const TError&, zstring_view msg = "") {
+  static void log_panic(const std::source_location& l, const TError&, zstring_view msg = "") {
     if (msg.empty()) {
       Logger::instance().log(LogLevel::Err, false, l, "Program has crashed!");
     } else {

@@ -742,28 +742,51 @@ class HelloTriangleApplication {
     staging_buffer.fill_data(img.raw(), 0, img_size);
 
     // Image object
-    image_ = vkren::ExclusiveImage2DResource::create(
-                 device_,
-                 vkren::ExclusiveImage2DResource::CreateInfo{
-                     .size_in_bytes = img_size,
+    txt_image_ = vkren::ExclusiveImage2DResource::create(
+                     device_,
+                     vkren::ExclusiveImage2DResource::CreateInfo{
+                         .size_in_bytes = img_size,
 
-                     // We want to sample the image in the fragment shader
-                     .image_usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+                         // We want to sample the image in the fragment shader
+                         .image_usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
 
-                     .format = vk::Format::eR8G8B8A8Srgb,
-                     .width  = static_cast<uint32_t>(img.width()),
-                     .height = static_cast<uint32_t>(img.height()),
+                         .format = vk::Format::eR8G8B8A8Srgb,
+                         .width  = static_cast<uint32_t>(img.width()),
+                         .height = static_cast<uint32_t>(img.height()),
 
-                     // Texels are laid out in an implementation defined order for optimal access
-                     .tiling = vk::ImageTiling::eOptimal,
+                         // Texels are laid out in an implementation defined order for optimal access
+                         .tiling = vk::ImageTiling::eOptimal,
 
-                     .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                 })
-                 .or_panic("Could not create an image resource");
-    device_.transition_image_layout(image_.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
-    image_.copy_from(device_, staging_buffer.buffer);
-    device_.transition_image_layout(image_.image, vk::ImageLayout::eTransferDstOptimal,
+                         .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                     })
+                     .or_panic("Could not create an image resource");
+    device_.transition_image_layout(txt_image_.image, vk::ImageLayout::eUndefined,
+                                    vk::ImageLayout::eTransferDstOptimal);
+    txt_image_.copy_from(device_, staging_buffer.buffer);
+    device_.transition_image_layout(txt_image_.image, vk::ImageLayout::eTransferDstOptimal,
                                     vk::ImageLayout::eShaderReadOnlyOptimal);
+
+    // Image View
+    txt_view_ = txt_image_.create_img_view(device_).or_panic("Could not create the image view");
+
+    // Image Sampler
+    auto pdev_props   = device_.physical_device().getProperties();
+    auto sampler_info = vk::SamplerCreateInfo{
+        .magFilter        = vk::Filter::eLinear,
+        .minFilter        = vk::Filter::eLinear,
+        .mipmapMode       = vk::SamplerMipmapMode::eLinear,
+        .addressModeU     = vk::SamplerAddressMode::eRepeat,
+        .addressModeV     = vk::SamplerAddressMode::eRepeat,
+        .addressModeW     = vk::SamplerAddressMode::eRepeat,
+        .mipLodBias       = 0.0F,
+        .anisotropyEnable = vk::True,
+        .maxAnisotropy    = pdev_props.limits.maxSamplerAnisotropy,
+        .compareEnable    = vk::False,
+        .compareOp        = vk::CompareOp::eAlways,
+        .minLod           = 0.0F,
+        .maxLod           = 0.0F,
+    };
+    txt_sampler_ = vkren::Result(device_->createSampler(sampler_info)).or_panic("Could not create the sampler");
   }
 
   struct TransitionImageLayoutInfo {
@@ -1157,7 +1180,9 @@ class HelloTriangleApplication {
   vk::raii::DescriptorPool descriptor_pool_ = nullptr;
   std::vector<vk::raii::DescriptorSet> descriptor_sets_;
 
-  eray::vkren::ExclusiveImage2DResource image_;
+  eray::vkren::ExclusiveImage2DResource txt_image_;
+  vk::raii::ImageView txt_view_  = nullptr;
+  vk::raii::Sampler txt_sampler_ = nullptr;
 
   /**
    * @brief GLFW window pointer.

@@ -96,4 +96,30 @@ void ExclusiveImage2DResource::copy_from(const Device& device, const vk::raii::B
   device.end_single_time_commands(cmd_buff);
 }
 
+Result<vk::raii::ImageView, vk::Result> ExclusiveImage2DResource::create_img_view(const Device& device) {
+  auto img_create_info = vk::ImageViewCreateInfo{
+      .image    = image,
+      .viewType = vk::ImageViewType::e2D,
+      .format   = format,
+      .components =
+          vk::ComponentMapping{
+
+              .r = vk::ComponentSwizzle::eIdentity,
+              .g = vk::ComponentSwizzle::eIdentity,
+              .b = vk::ComponentSwizzle::eIdentity,
+              .a = vk::ComponentSwizzle::eIdentity,
+          },
+      .subresourceRange =
+          vk::ImageSubresourceRange{
+              .aspectMask     = vk::ImageAspectFlagBits::eColor,
+              .baseMipLevel   = 0,
+              .levelCount     = 1,
+              .baseArrayLayer = 0,
+              .layerCount     = 1  //
+          },
+  };
+
+  return device->createImageView(img_create_info);
+}
+
 }  // namespace eray::vkren
