@@ -304,7 +304,8 @@ class HelloTriangleApplication {
 
     // right-handed, depth [0, 1]
     ubo.model = eray::math::translation(eray::math::Vec3f(0.F, 0.F, 0.F)) *
-                eray::math::rotation_axis(time * eray::math::radians(90.0F), eray::math::Vec3f(0.F, 0.F, 1.F));
+                eray::math::rotation_axis(eray::math::radians(45.0F), eray::math::Vec3f(0.F, 0.F, 1.F)) *
+                eray::math::rotation_axis(eray::math::radians(-50.0F), eray::math::Vec3f(1.F, 0.F, 0.F));
     ubo.view = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -4.F));
     ubo.proj = eray::math::perspective_vk_rh(
         eray::math::radians(80.0F), static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight), 0.01F, 10.F);
@@ -359,7 +360,6 @@ class HelloTriangleApplication {
     auto common_err = [](auto&& err) -> VulkanInitError { return std::forward<decltype(err)>(err); };
 
     // == 1. Shader stage ==============================================================================================
-
     auto shader_module_opt = read_binary(eray::os::System::executable_dir() / "shaders" / "main_sh.spv")
                                  .transform_error(common_err)
                                  .and_then([this, common_err](const auto& bytecode) {
@@ -460,18 +460,21 @@ class HelloTriangleApplication {
     };
 
     // == 5. Multisampling =============================================================================================
-
     auto multisampling_state_info = vk::PipelineMultisampleStateCreateInfo{
         .rasterizationSamples = vk::SampleCountFlagBits::e1,
         .sampleShadingEnable  = vk::False,
     };
 
     // == 6. Depth and Stencil Testing =================================================================================
-
-    // TODO(migoox): Add
+    auto depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo{
+        .depthTestEnable       = vk::True,
+        .depthWriteEnable      = vk::True,
+        .depthCompareOp        = vk::CompareOp::eLess,
+        .depthBoundsTestEnable = vk::False,
+        .stencilTestEnable     = vk::False,
+    };
 
     // == 7. Color blending ============================================================================================
-
     auto color_blend_attachment = vk::PipelineColorBlendAttachmentState{
         .blendEnable = vk::True,
 
@@ -518,10 +521,11 @@ class HelloTriangleApplication {
     // We use the dynamic rendering feature (Vulkan 1.3), the structure below specifies color attachment data, and
     // the format. In previous versions of Vulkan, we would need to create framebuffers to bind our image views to
     // a render pass, so the dynamic rendering eliminates the need for render pass and framebuffer.
-    auto format = swap_chain_.format();
+    auto format = swap_chain_.color_format();
     vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
         .colorAttachmentCount    = 1,
         .pColorAttachmentFormats = &format,
+        .depthAttachmentFormat   = swap_chain_.depth_stencil_format(),
     };
 
     auto pipeline_info = vk::GraphicsPipelineCreateInfo{
@@ -535,6 +539,7 @@ class HelloTriangleApplication {
         .pViewportState      = &viewport_state_info,
         .pRasterizationState = &rasterization_state_info,
         .pMultisampleState   = &multisampling_state_info,
+        .pDepthStencilState  = &depth_stencil_state_info,
         .pColorBlendState    = &color_blending_info,
         .pDynamicState       = &dynamic_state,
         .layout              = pipeline_layout_,
@@ -797,7 +802,7 @@ class HelloTriangleApplication {
     txt_sampler_ = vkren::Result(device_->createSampler(sampler_info)).or_panic("Could not create the sampler");
   }
 
-  struct TransitionImageLayoutInfo {
+  struct TransitionColorAttachmentLayoutInfo {
     uint32_t image_index;
     size_t frame_index;
     vk::ImageLayout old_layout;
@@ -823,7 +828,7 @@ class HelloTriangleApplication {
    * @param src_stage_mask
    * @param dst_stage_mask
    */
-  void transition_image_layout(TransitionImageLayoutInfo info) {
+  void transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo info) {
     auto barrier = vk::ImageMemoryBarrier2{
         .srcStageMask        = info.src_stage_mask,
         .srcAccessMask       = info.src_access_mask,
@@ -837,6 +842,46 @@ class HelloTriangleApplication {
         .subresourceRange =
             vk::ImageSubresourceRange{
                 .aspectMask     = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel   = 0,
+                .levelCount     = 1,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+    };
+
+    auto dependency_info = vk::DependencyInfo{
+        .dependencyFlags         = {},
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers    = &barrier,
+    };
+
+    command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
+  }
+
+  struct TransitionDepthAttachmentLayoutInfo {
+    size_t frame_index;
+    vk::ImageLayout old_layout;
+    vk::ImageLayout new_layout;
+    vk::AccessFlags2 src_access_mask;
+    vk::AccessFlags2 dst_access_mask;
+    vk::PipelineStageFlags2 src_stage_mask;
+    vk::PipelineStageFlags2 dst_stage_mask;
+  };
+
+  void transition_depth_attachment_layout(TransitionDepthAttachmentLayoutInfo info) {
+    auto barrier = vk::ImageMemoryBarrier2{
+        .srcStageMask        = info.src_stage_mask,
+        .srcAccessMask       = info.src_access_mask,
+        .dstStageMask        = info.dst_stage_mask,
+        .dstAccessMask       = info.dst_access_mask,
+        .oldLayout           = info.old_layout,
+        .newLayout           = info.new_layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image               = swap_chain_.depth_stencil_image(),  //
+        .subresourceRange =
+            vk::ImageSubresourceRange{
+                .aspectMask     = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil,
                 .baseMipLevel   = 0,
                 .levelCount     = 1,
                 .baseArrayLayer = 0,
@@ -872,7 +917,7 @@ class HelloTriangleApplication {
     });
 
     // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
-    transition_image_layout(TransitionImageLayoutInfo{
+    transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
         .image_index     = image_index,
         .frame_index     = frame_index,
         .old_layout      = vk::ImageLayout::eUndefined,
@@ -883,10 +928,19 @@ class HelloTriangleApplication {
         .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
     });
 
-    // Set up the color attachment
-    vk::ClearValue clear_color = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F);
-    auto attachment_info       = vk::RenderingAttachmentInfo{
+    transition_depth_attachment_layout(TransitionDepthAttachmentLayoutInfo{
+        .frame_index     = frame_index,
+        .old_layout      = vk::ImageLayout::eUndefined,
+        .new_layout      = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        .src_access_mask = {},
+        .dst_access_mask =
+            vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+        .src_stage_mask = vk::PipelineStageFlagBits2::eTopOfPipe,
+        .dst_stage_mask =
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+    });
 
+    auto color_buffer_attachment_info = vk::RenderingAttachmentInfo{
         // Specifies which image to render to
         .imageView = swap_chain_.image_views()[image_index],
 
@@ -899,7 +953,14 @@ class HelloTriangleApplication {
         // Specifies what to do with the image after rendering
         .storeOp = vk::AttachmentStoreOp::eStore,
 
-        .clearValue = clear_color,
+        .clearValue = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F),
+    };
+    auto depth_buffer_attachment_info = vk::RenderingAttachmentInfo{
+        .imageView   = swap_chain_.depth_stencil_image_view(),
+        .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        .loadOp      = vk::AttachmentLoadOp::eClear,
+        .storeOp     = vk::AttachmentStoreOp::eStore,
+        .clearValue  = vk::ClearDepthStencilValue(1.0F, 0),
     };
 
     auto rendering_info = vk::RenderingInfo{
@@ -910,7 +971,8 @@ class HelloTriangleApplication {
             },
         .layerCount           = 1,
         .colorAttachmentCount = 1,
-        .pColorAttachments    = &attachment_info,
+        .pColorAttachments    = &color_buffer_attachment_info,
+        .pDepthAttachment     = &depth_buffer_attachment_info,
     };
     command_buffers_[frame_index].beginRendering(rendering_info);
 
@@ -943,12 +1005,12 @@ class HelloTriangleApplication {
     command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout_, 0,
                                                      *descriptor_sets_[frame_index], nullptr);
     // Draw 3 vertices
-    command_buffers_[frame_index].drawIndexed(6, 1, 0, 0, 0);
+    command_buffers_[frame_index].drawIndexed(12, 1, 0, 0, 0);
 
     command_buffers_[frame_index].endRendering();
 
     // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
-    transition_image_layout(TransitionImageLayoutInfo{
+    transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
         .image_index     = image_index,
         .frame_index     = frame_index,
         .old_layout      = vk::ImageLayout::eColorAttachmentOptimal,

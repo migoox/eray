@@ -96,7 +96,8 @@ void ExclusiveImage2DResource::copy_from(const Device& device, const vk::raii::B
   device.end_single_time_commands(cmd_buff);
 }
 
-Result<vk::raii::ImageView, vk::Result> ExclusiveImage2DResource::create_img_view(const Device& device) {
+Result<vk::raii::ImageView, vk::Result> ExclusiveImage2DResource::create_img_view(const Device& device,
+                                                                                  vk::ImageAspectFlags aspect_mask) {
   auto img_create_info = vk::ImageViewCreateInfo{
       .image    = image,
       .viewType = vk::ImageViewType::e2D,
@@ -110,7 +111,7 @@ Result<vk::raii::ImageView, vk::Result> ExclusiveImage2DResource::create_img_vie
           },
       .subresourceRange =
           vk::ImageSubresourceRange{
-              .aspectMask     = vk::ImageAspectFlagBits::eColor,
+              .aspectMask     = aspect_mask,
               .baseMipLevel   = 0,
               .levelCount     = 1,
               .baseArrayLayer = 0,

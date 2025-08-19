@@ -10,7 +10,7 @@ struct Vertex {
   using Vec2 = eray::math::Vec2f;
   using Vec3 = eray::math::Vec3f;
 
-  Vec2 pos;
+  Vec3 pos;
   Vec3 color;
   Vec2 tex_coord;
 
@@ -38,7 +38,7 @@ struct Vertex {
             .binding = 0,
 
             // Describes the type of data for the attribute
-            .format = vk::Format::eR32G32Sfloat,
+            .format = vk::Format::eR32G32B32Sfloat,
 
             .offset = offsetof(Vertex, pos),
         },
@@ -67,11 +67,22 @@ struct VertexBuffer {
     return VertexBuffer{
         .vertices =
             std::vector<Vertex>{
-                Vertex{.pos = Vec2{0.5F, 0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}, .tex_coord = Vec2{1.F, 1.F}},
-                Vertex{.pos = Vec2{0.5F, -0.5F}, .color = Vec3{0.0F, 1.0F, 0.0F}, .tex_coord = Vec2{1.F, 0.F}},
-                Vertex{.pos = Vec2{-0.5F, -0.5F}, .color = Vec3{0.0F, 0.0F, 1.0F}, .tex_coord = Vec2{0.F, 0.F}},
-                Vertex{.pos = Vec2{-0.5F, 0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}, .tex_coord = Vec2{0.F, 1.F}}},
-        .indices = std::vector<uint16_t>{0, 1, 2, 2, 3, 0},
+                Vertex{.pos = Vec3{0.5F, 0.5F, 0.F}, .color = Vec3{1.0F, 0.0F, 0.0F}, .tex_coord = Vec2{1.F, 1.F}},
+                Vertex{.pos = Vec3{0.5F, -0.5F, 0.F}, .color = Vec3{0.0F, 1.0F, 0.0F}, .tex_coord = Vec2{1.F, 0.F}},
+                Vertex{.pos = Vec3{-0.5F, -0.5F, 0.F}, .color = Vec3{0.0F, 0.0F, 1.0F}, .tex_coord = Vec2{0.F, 0.F}},
+                Vertex{.pos = Vec3{-0.5F, 0.5F, 0.F}, .color = Vec3{1.0F, 0.0F, 0.0F}, .tex_coord = Vec2{0.F, 1.F}},
+
+                Vertex{.pos = Vec3{0.5F, 0.5F, 0.5F}, .color = Vec3{1.0F, 1.0F, 0.0F}, .tex_coord = Vec2{1.F, 1.F}},
+                Vertex{.pos = Vec3{0.5F, -0.5F, 0.5F}, .color = Vec3{0.0F, 1.0F, 1.0F}, .tex_coord = Vec2{1.F, 0.F}},
+                Vertex{.pos = Vec3{-0.5F, -0.5F, 0.5F}, .color = Vec3{0.0F, 0.0F, 1.0F}, .tex_coord = Vec2{0.F, 0.F}},
+                Vertex{.pos = Vec3{-0.5F, 0.5F, 0.5F}, .color = Vec3{1.0F, 0.0F, 1.0F}, .tex_coord = Vec2{0.F, 1.F}}},
+        .indices =
+            std::vector<uint16_t>{
+                4, 5, 6,  //
+                6, 7, 4,  //
+                0, 1, 2,  //
+                2, 3, 0,  //
+            },
     };
   }
 

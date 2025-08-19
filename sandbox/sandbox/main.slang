@@ -4,7 +4,7 @@
 
 struct VSInput {
   // vertex attributes
-  float2 pos;
+  float3 pos;
   float3 color;
   float2 texCoords;
 };

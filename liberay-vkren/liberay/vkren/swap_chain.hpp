@@ -2,9 +2,12 @@
 
 #include <cstddef>
 #include <liberay/util/ruleof.hpp>
+#include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
+#include <liberay/vkren/image.hpp>
 #include <variant>
+#include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 namespace eray::vkren {
@@ -24,10 +27,19 @@ class SwapChain {
   ERAY_DELETE_COPY(SwapChain)
   ERAY_DEFAULT_MOVE(SwapChain)
 
-  struct SwapChainCreationError {};
-  struct ImageViewsCreationError {};
+  struct SwapChainCreationError {
+    vk::Result vk_result = vk::Result::eSuccess;
+  };
+  struct ImageViewsCreationError {
+    vk::Result vk_result = vk::Result::eSuccess;
+  };
+  struct DepthBufferCreationError {
+    vk::Result vk_result = vk::Result::eSuccess;
+  };
+  struct DepthFormatError {};
 
-  using CreationError = std::variant<SwapChainCreationError, ImageViewsCreationError>;
+  using CreationError =
+      std::variant<SwapChainCreationError, ImageViewsCreationError, DepthBufferCreationError, DepthFormatError>;
 
   static Result<SwapChain, CreationError> create(const Device& device, uint32_t width, uint32_t height) noexcept;
 
@@ -37,11 +49,14 @@ class SwapChain {
   vk::raii::SwapchainKHR& operator*() noexcept { return swap_chain_; }
   const vk::raii::SwapchainKHR& operator*() const noexcept { return swap_chain_; }
 
-  const std::vector<vk::Image>& images() { return images_; }
+  const std::vector<vk::Image>& images() const { return images_; }
+  const vk::raii::Image& depth_stencil_image() const { return depth_stencil_image_.image; }
 
   const std::vector<vk::raii::ImageView>& image_views() { return image_views_; }
+  const vk::raii::ImageView& depth_stencil_image_view() const { return depth_stencil_image_view_; }
 
-  vk::Format format() { return format_; }
+  vk::Format color_format() { return format_; }
+  vk::Format depth_stencil_format() { return depth_stencil_format_; }
 
   const vk::Extent2D& extent() { return extent_; }
 
@@ -62,10 +77,14 @@ class SwapChain {
  private:
   SwapChain() = default;
 
-  Result<void, SwapChainCreationError> create_swap_chain(const vkren::Device& device, uint32_t width,
-                                                         uint32_t height) noexcept;
+  Result<void, CreationError> create_swap_chain(const vkren::Device& device, uint32_t width, uint32_t height) noexcept;
+  Result<void, CreationError> create_image_views(const vkren::Device& device) noexcept;
+  Result<void, CreationError> create_depth_stencil_buffer(const vkren::Device& device) noexcept;
 
-  Result<void, ImageViewsCreationError> create_image_views(const vkren::Device& device) noexcept;
+  Result<vk::Format, DepthFormatError> find_supported_depth_stencil_format(const Device& device,
+                                                                           const std::vector<vk::Format>& candidates,
+                                                                           vk::ImageTiling tiling,
+                                                                           vk::FormatFeatureFlags features);
 
   static vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats);
   static vk::PresentModeKHR choose_swap_presentMode(const std::vector<vk::PresentModeKHR>& available_present_modes);
@@ -82,10 +101,26 @@ class SwapChain {
   vk::raii::SwapchainKHR swap_chain_ = vk::raii::SwapchainKHR(nullptr);
 
   /**
-   * @brief Stores handles to the Swap chain images.
+   * @brief Stores handles to the Swap chain images (color attachment). Images are created by the `SwapchainKHR`.
    *
    */
   std::vector<vk::Image> images_;
+
+  /**
+   * @brief An image view DESCRIBES HOW TO ACCESS THE IMAGE and which part of the image to access, for example, if it
+   * should be treated as a 2D texture depth texture without any mipmapping levels.
+   *
+   */
+  std::vector<vk::raii::ImageView> image_views_;
+
+  /**
+   * @brief Handle to a depth buffer attachment. In contrast to the color attachment we only need a single depth image,
+   * because only one draw operation is running at once.
+   *
+   */
+  vkren::ExclusiveImage2DResource depth_stencil_image_;
+  vk::raii::ImageView depth_stencil_image_view_ = nullptr;
+  vk::Format depth_stencil_format_              = vk::Format::eUndefined;
 
   /**
    * @brief Describes the format e.g. RGBA.
@@ -98,13 +133,6 @@ class SwapChain {
    *
    */
   vk::Extent2D extent_{};
-
-  /**
-   * @brief An image view DESCRIBES HOW TO ACCESS THE IMAGE and which part of the image to access, for example, if it
-   * should be treated as a 2D texture depth texture without any mipmapping levels.
-   *
-   */
-  std::vector<vk::raii::ImageView> image_views_;
 };
 
 }  // namespace eray::vkren

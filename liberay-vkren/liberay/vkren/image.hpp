@@ -3,6 +3,7 @@
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <variant>
+#include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 namespace eray::vkren {
@@ -49,7 +50,8 @@ struct ExclusiveImage2DResource {
    */
   void copy_from(const Device& device, const vk::raii::Buffer& src_buff) const;
 
-  Result<vk::raii::ImageView, vk::Result> create_img_view(const Device& device);
+  Result<vk::raii::ImageView, vk::Result> create_img_view(
+      const Device& device, vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlagBits::eColor);
 };
 
 }  // namespace eray::vkren
