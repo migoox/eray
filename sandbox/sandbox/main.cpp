@@ -2,7 +2,6 @@
 #include <vulkan/vulkan_core.h>
 
 #include <algorithm>
-#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
