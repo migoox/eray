@@ -295,10 +295,10 @@ class HelloTriangleApplication {
   }
 
   void update_ubo(uint32_t image_index) {
-    static auto start_time = std::chrono::high_resolution_clock::now();
+    // static auto start_time = std::chrono::high_resolution_clock::now();
 
-    auto curr_time = std::chrono::high_resolution_clock::now();
-    float time     = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - start_time).count();
+    // auto curr_time = std::chrono::high_resolution_clock::now();
+    // float time     = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - start_time).count();
 
     UniformBufferObject ubo{};
 
