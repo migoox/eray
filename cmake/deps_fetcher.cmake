@@ -176,57 +176,18 @@ function(fetch_googletest)
 endfunction()
 
 # =============================================================================
-# assimp 
+# fastgltf 
 # =============================================================================
-function(fetch_assimp)
-  if(NOT TARGET assimp)
-    loader_begin("assimp")
-      set(ASSIMP_BUILD_TESTS
-        OFF
-        CACHE BOOL "Do not build assimp tests" FORCE)
-
-    set(ASSIMP_INSTALL
-        OFF
-        CACHE BOOL "Do not install assimp" FORCE)
-
-    set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT
-        OFF
-        CACHE BOOL "Disable all importers" FORCE)
-
-    set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT
-        OFF
-        CACHE BOOL "Disable all exporters" FORCE)
-
-    set(ASSIMP_BUILD_GLTF_IMPORTER
-        ON
-        CACHE BOOL "Enable GLTF importer" FORCE)
-
-    set(ASSIMP_BUILD_GLTF_EXPORTER
-        ON
-        CACHE BOOL "Disable GLTF exporter" FORCE)
-
-    set(ASSIMP_BUILD_OBJ_IMPORTER
-        ON
-        CACHE BOOL "Disable OBJ importer" FORCE)
-
-    set(ASSIMP_BUILD_OBJ_EXPORTER
-        ON
-        CACHE BOOL "Disable OBJ exporter" FORCE)
-
-    set(ASSIMP_BUILD_ASSIMP_VIEW
-        OFF
-        CACHE BOOL "Do not build the assimp view tool." FORCE)
-        
-    set(ASSIMP_BUILD_ZLIB
-        ON
-        CACHE BOOL "Build the zlib" FORCE)
+function(fetch_fastgltf)
+  if(NOT TARGET fastgltf)
+    loader_begin("fastgltf")
 
     FetchContent_Declare(
-      assimp 
-      GIT_REPOSITORY "https://github.com/assimp/assimp.git"
-      GIT_TAG "v5.4.3"
+      fastgltf 
+      GIT_REPOSITORY "https://github.com/spnda/fastgltf.git"
+      GIT_TAG "v0.9.0"
       UPDATE_DISCONNECTED 1)
-    FetchContent_MakeAvailable(assimp)
+    FetchContent_MakeAvailable(fastgltf)
 
     loader_end()
   endif()
