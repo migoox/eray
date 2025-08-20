@@ -7,6 +7,8 @@
 #include <liberay/util/ruleof.hpp>
 #include <vector>
 
+#include "liberay/res/error.hpp"
+
 namespace eray::res {
 
 using ColorU32         = uint32_t;
@@ -63,11 +65,7 @@ class Image {
   static Image create(uint32_t width, uint32_t height, ColorU32 color = Color::kBlack);
   static Image create(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data);
 
-  enum class LoadError : uint8_t {
-    FileDoesNotExist = 0,
-    InvalidFile      = 1,
-  };
-  static util::Result<Image, LoadError> load_from_path(const std::filesystem::path& path);
+  static util::Result<Image, FileError> load_from_path(const std::filesystem::path& path);
 
   bool is_in_bounds(uint32_t x, uint32_t y) const;
   void set_pixel(uint32_t x, uint32_t y, ColorU32 color);

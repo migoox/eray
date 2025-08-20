@@ -3,6 +3,8 @@
 
 #include <expected>
 #include <filesystem>
+#include <liberay/res/error.hpp>
+#include <liberay/res/file.hpp>
 #include <liberay/res/image.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/path_utf8.hpp>
@@ -23,10 +25,10 @@ Image Image::create(uint32_t width, uint32_t height, uint32_t bpp, std::vector<C
   return Image(width, height, bpp, std::move(data));
 }
 
-util::Result<Image, Image::LoadError> Image::load_from_path(const std::filesystem::path& path) {
-  if (!std::filesystem::exists(path) || std::filesystem::is_directory(path)) {
-    util::Logger::err(R"(Provided image file with path "{}" does not exist or is not a file.)", path.string());
-    return std::unexpected(LoadError::FileDoesNotExist);
+util::Result<Image, FileError> Image::load_from_path(const std::filesystem::path& path) {
+  auto validation_result = validate_file(path);
+  if (!validation_result) {
+    return std::unexpected(validation_result.error());
   }
 
   stbi_set_flip_vertically_on_load(1);
@@ -37,13 +39,13 @@ util::Result<Image, Image::LoadError> Image::load_from_path(const std::filesyste
   auto* buff = reinterpret_cast<uint32_t*>(
       stbi_load(util::path_to_utf8str(path).c_str(), &width, &height, &bpp, STBI_rgb_alpha));
 
-  for (int i = 0; i < width * height; ++i) {
-    // swap_endianess(&buff[i]);
-  }
-
   if (!buff) {
     util::Logger::err("Could not load the image. The file is invalid.");
-    return std::unexpected(LoadError::InvalidFile);
+    return std::unexpected(FileError{
+        .path = path,
+        .msg  = "stbi_load result is NULL",
+        .code = FileErrorCode::ReadFailure,
+    });
   }
 
   auto data = std::vector<ColorU32>();
