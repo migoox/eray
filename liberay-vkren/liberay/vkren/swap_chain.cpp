@@ -3,6 +3,7 @@
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
 #include <liberay/util/variant_match.hpp>
+#include <liberay/vkren/error.hpp>
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <vulkan/vulkan.hpp>
@@ -11,8 +12,7 @@
 
 namespace eray::vkren {
 
-Result<SwapChain, SwapChain::CreationError> SwapChain::create(const Device& device, uint32_t width,
-                                                              uint32_t height) noexcept {
+Result<SwapChain, Error> SwapChain::create(const Device& device, uint32_t width, uint32_t height) noexcept {
   auto swap_chain = SwapChain();
   TRY(swap_chain.create_swap_chain(device, width, height));
   TRY(swap_chain.create_image_views(device));
@@ -20,8 +20,7 @@ Result<SwapChain, SwapChain::CreationError> SwapChain::create(const Device& devi
   return swap_chain;
 }
 
-Result<void, SwapChain::CreationError> SwapChain::create_swap_chain(const Device& device, uint32_t width,
-                                                                    uint32_t height) noexcept {
+Result<void, Error> SwapChain::create_swap_chain(const Device& device, uint32_t width, uint32_t height) noexcept {
   // Surface formats (pixel format, e.g. B8G8R8A8, color space e.g. SRGB)
   auto available_formats       = device.physical_device().getSurfaceFormatsKHR(device.surface());
   auto available_present_modes = device.physical_device().getSurfacePresentModesKHR(device.surface());
@@ -30,7 +29,10 @@ Result<void, SwapChain::CreationError> SwapChain::create_swap_chain(const Device
     eray::util::Logger::err(
         "The physical device's swap chain support is not sufficient. Required at least one available format and at "
         "least one presentation mode.");
-    return std::unexpected(SwapChainCreationError{});
+    return std::unexpected(Error{
+        .msg  = "Required at least one format and at least one presentation mode.",
+        .code = ErrorCode::PhysicalDeviceNotSufficient{},
+    });
   }
 
   auto swap_surface_format = choose_swap_surface_format(available_formats);
@@ -152,7 +154,11 @@ Result<void, SwapChain::CreationError> SwapChain::create_swap_chain(const Device
     swap_chain_ = std::move(*result);
   } else {
     eray::util::Logger::err("Failed to create a swap chain: {}", vk::to_string(result.error()));
-    return std::unexpected(SwapChainCreationError{.vk_result = std::move(result.error())});
+    return std::unexpected(Error{
+        .msg     = "Vulkan Swap Chain creation failure",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = result.error(),
+    });
   }
   images_ = swap_chain_.getImages();
   format_ = swap_surface_format.format;
@@ -161,7 +167,7 @@ Result<void, SwapChain::CreationError> SwapChain::create_swap_chain(const Device
   return {};
 }
 
-Result<void, SwapChain::CreationError> SwapChain::create_image_views(const vkren::Device& device) noexcept {
+Result<void, Error> SwapChain::create_image_views(const vkren::Device& device) noexcept {
   image_views_.clear();
 
   auto image_view_info =
@@ -194,14 +200,18 @@ Result<void, SwapChain::CreationError> SwapChain::create_image_views(const vkren
       image_views_.emplace_back(std::move(*result));
     } else {
       eray::util::Logger::err("Failed to create a swap chain image view: {}", vk::to_string(result.error()));
-      return std::unexpected(ImageViewsCreationError{});
+      return std::unexpected(Error{
+          .msg     = "Swap Chain color attachment Image View creation failure",
+          .code    = ErrorCode::VulkanObjectCreationFailure{},
+          .vk_code = result.error(),
+      });
     }
   }
 
   return {};
 }
 
-Result<void, SwapChain::CreationError> SwapChain::create_depth_stencil_buffer(const vkren::Device& device) noexcept {
+Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& device) noexcept {
   auto format_opt = find_supported_depth_stencil_format(
       device, {vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint}, vk::ImageTiling::eOptimal,
       vk::FormatFeatureFlagBits::eDepthStencilAttachment);
@@ -220,18 +230,7 @@ Result<void, SwapChain::CreationError> SwapChain::create_depth_stencil_buffer(co
       .tiling         = vk::ImageTiling::eOptimal,
       .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
   };
-  auto img_opt = vkren::ExclusiveImage2DResource::create(device, img_info)
-                     .transform_error([](ExclusiveImage2DResource::CreationError&& err) -> DepthBufferCreationError {
-                       return std::visit(util::match{
-                                             [](vk::Result&& e) {
-                                               return DepthBufferCreationError{
-                                                   .vk_result = std::move(e),
-                                               };
-                                             },
-                                             [](auto&&) { return DepthBufferCreationError{}; },
-                                         },
-                                         std::move(err));
-                     });
+  auto img_opt = vkren::ExclusiveImage2DResource::create(device, img_info);
   if (!img_opt) {
     util::Logger::err("Could not create an image resource for depth buffer");
     return std::unexpected(img_opt.error());
@@ -241,16 +240,17 @@ Result<void, SwapChain::CreationError> SwapChain::create_depth_stencil_buffer(co
   auto view_opt = depth_stencil_image_.create_img_view(device, vk::ImageAspectFlagBits::eDepth);
   if (!view_opt) {
     util::Logger::err("Could not create image view for depth buffer");
-    return std::unexpected(DepthBufferCreationError{.vk_result = std::move(view_opt.error())});
+    return std::unexpected(view_opt.error());
   }
   depth_stencil_image_view_ = std::move(*view_opt);
 
   return {};
 }
 
-Result<vk::Format, SwapChain::DepthFormatError> SwapChain::find_supported_depth_stencil_format(
-    const Device& device, const std::vector<vk::Format>& candidates, vk::ImageTiling tiling,
-    vk::FormatFeatureFlags features) {
+Result<vk::Format, Error> SwapChain::find_supported_depth_stencil_format(const Device& device,
+                                                                         const std::vector<vk::Format>& candidates,
+                                                                         vk::ImageTiling tiling,
+                                                                         vk::FormatFeatureFlags features) {
   for (const auto format : candidates) {
     auto props = device.physical_device().getFormatProperties(format);
     if (tiling == vk::ImageTiling::eLinear && (props.linearTilingFeatures & features) == features) {
@@ -261,8 +261,11 @@ Result<vk::Format, SwapChain::DepthFormatError> SwapChain::find_supported_depth_
     }
   }
 
-  util::Logger::err("Failed to find the supported format for depth buffer");
-  return std::unexpected(DepthFormatError{});
+  util::Logger::err("Physical device does not support any of the requested depth buffer formats");
+  return std::unexpected(Error{
+      .msg  = "Depth buffer formats are not supported",
+      .code = ErrorCode::PhysicalDeviceNotSufficient{},
+  });
 }
 
 vk::SurfaceFormatKHR SwapChain::choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
@@ -294,7 +297,7 @@ vk::PresentModeKHR SwapChain::choose_swap_presentMode(const std::vector<vk::Pres
   return vk::PresentModeKHR::eFifo;
 }
 
-Result<void, SwapChain::CreationError> SwapChain::recreate(const Device& device_, uint32_t width, uint32_t height) {
+Result<void, Error> SwapChain::recreate(const Device& device_, uint32_t width, uint32_t height) {
   device_->waitIdle();
 
   cleanup();

@@ -2,7 +2,7 @@
 
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
-#include <variant>
+#include <liberay/vkren/error.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -37,8 +37,7 @@ struct ExclusiveImage2DResource {
     vk::MemoryPropertyFlags mem_properties;
   };
 
-  using CreationError = std::variant<vk::Result, Device::NoSuitableMemoryTypeError>;
-  static Result<ExclusiveImage2DResource, CreationError> create(const Device& device, const CreateInfo& info);
+  static Result<ExclusiveImage2DResource, Error> create(const Device& device, const CreateInfo& info);
 
   /**
    * @brief Blocks the program execution and copies GPU `src_buff` data to the other GPU buffer.
@@ -50,7 +49,7 @@ struct ExclusiveImage2DResource {
    */
   void copy_from(const Device& device, const vk::raii::Buffer& src_buff) const;
 
-  Result<vk::raii::ImageView, vk::Result> create_img_view(
+  Result<vk::raii::ImageView, Error> create_img_view(
       const Device& device, vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlagBits::eColor);
 };
 

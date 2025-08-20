@@ -54,7 +54,8 @@ class Color {
 };
 
 /**
- * @brief Represents an image with alpha channel (4 bytes per pixel). The pixel format is R8 G8 B8 A8.
+ * @brief Represents an image with alpha channel (4 bytes per pixel). The pixel format is R8 G8 B8 A8. The data is
+ * stored in RAM.
  *
  */
 class Image {
@@ -80,6 +81,13 @@ class Image {
 
   const ColorU32* raw() const { return data_.data(); }
   const ColorComponentU8* raw_bytes() const { return reinterpret_cast<const ColorComponentU8*>(data_.data()); }
+
+  /**
+   * @brief Calculates the number of mip levels basing on height and width of the image.
+   *
+   * @return uint32_t
+   */
+  uint32_t mip_levels() const;
 
  private:
   Image();

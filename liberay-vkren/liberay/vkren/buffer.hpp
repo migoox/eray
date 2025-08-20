@@ -2,7 +2,6 @@
 
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
-#include <variant>
 #include <vulkan/vulkan_raii.hpp>
 
 namespace eray::vkren {
@@ -30,8 +29,7 @@ struct ExclusiveBufferResource {
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
   };
 
-  using CreationError = std::variant<vk::Result, Device::NoSuitableMemoryTypeError>;
-  static Result<ExclusiveBufferResource, CreationError> create(const Device& device, const CreateInfo& info);
+  static Result<ExclusiveBufferResource, Error> create(const Device& device, const CreateInfo& info);
 
   /**
    * @brief Copies CPU `src_data` to GPU memory. Creates vk::SharingMode::eExclusive buffer. Uses map to achieve

@@ -2,10 +2,12 @@
 #include <liberay/util/logger.hpp>
 #include <liberay/util/try.hpp>
 #include <liberay/vkren/device.hpp>
+#include <liberay/vkren/error.hpp>
 #include <map>
 #include <ranges>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 namespace eray::vkren {
@@ -68,7 +70,7 @@ Device::CreateInfo Device::CreateInfo::DesktopTemplate::get(
   };
 }
 
-Result<Device, Device::CreationError> Device::create(vk::raii::Context& ctx, const CreateInfo& info) noexcept {
+Result<Device, Error> Device::create(vk::raii::Context& ctx, const CreateInfo& info) noexcept {
   auto device = Device();
   TRY(device.create_instance(ctx, info));
   TRY(device.create_debug_messenger(info));
@@ -76,7 +78,10 @@ Result<Device, Device::CreationError> Device::create(vk::raii::Context& ctx, con
     device.surface_ = std::move(*result);
   } else {
     util::Logger::err("Failed to create a surface with the injected surface creator.");
-    return std::unexpected(result.error());
+    return std::unexpected(Error{
+        .msg  = "Surface creation failure",
+        .code = ErrorCode::SurfaceCreationFailure{},
+    });
   }
   TRY(device.pick_physical_device(info));
   TRY(device.create_logical_device(info));
@@ -85,8 +90,7 @@ Result<Device, Device::CreationError> Device::create(vk::raii::Context& ctx, con
   return device;
 }
 
-Result<void, Device::InstanceCreationError> Device::create_instance(vk::raii::Context& ctx,
-                                                                    const CreateInfo& info) noexcept {
+Result<void, Error> Device::create_instance(vk::raii::Context& ctx, const CreateInfo& info) noexcept {
   auto extensions_props = ctx.enumerateInstanceExtensionProperties();
 
   // Check if the requested extensions are supported by the Vulkan implementation.
@@ -96,7 +100,10 @@ Result<void, Device::InstanceCreationError> Device::create_instance(vk::raii::Co
           return std::string_view(prop.extensionName) == ext_name;
         })) {
       eray::util::Logger::err("Failed to create a Vulkan Instance. Requested extension {} is not supported", ext);
-      return std::unexpected(InstanceCreationError{});
+      return std::unexpected(Error{
+          .msg  = std::format("Extension {} is not supported", ext),
+          .code = ErrorCode::ExtensionNotSupportedFailure{.extension = ext},
+      });
     }
   }
 
@@ -108,7 +115,10 @@ Result<void, Device::InstanceCreationError> Device::create_instance(vk::raii::Co
         });
       })) {
     eray::util::Logger::err("Failed to create a Vulkan Instance. Use of unsupported validation layer(s).");
-    return std::unexpected(InstanceCreationError{});
+    return std::unexpected(Error{
+        .msg  = "Unsupported validation layer(s) provided",
+        .code = ErrorCode::ValidationLayerNotSupportedFailure{},
+    });
   }
 
   auto instance_info = vk::InstanceCreateInfo{
@@ -126,7 +136,11 @@ Result<void, Device::InstanceCreationError> Device::create_instance(vk::raii::Co
     instance_ = std::move(*result);
   } else {
     eray::util::Logger::err("Failed to create a Vulkan Instance. Error type: {}", vk::to_string(result.error()));
-    return std::unexpected(InstanceCreationError{});
+    return std::unexpected(Error{
+        .msg     = "Vulkan Instance Creation error",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = result.error(),
+    });
   }
 
   eray::util::Logger::succ("Successfully created a Vulkan Instance");
@@ -134,7 +148,7 @@ Result<void, Device::InstanceCreationError> Device::create_instance(vk::raii::Co
   return {};
 }
 
-Result<void, Device::DebugMessengerCreationError> Device::create_debug_messenger(const CreateInfo& info) noexcept {
+Result<void, Error> Device::create_debug_messenger(const CreateInfo& info) noexcept {
   if (info.validation_layers.empty()) {
     eray::util::Logger::info("Debug messenger setup omitted: No validation layers provided.");
     return {};
@@ -155,23 +169,34 @@ Result<void, Device::DebugMessengerCreationError> Device::create_debug_messenger
   } else {
     eray::util::Logger::err("Failed to create a vulkan debug messenger. Error type: {}",
                             vk::to_string(debug_messenger_opt.error()));
-    return std::unexpected(DebugMessengerCreationError{});
+    return std::unexpected(Error{
+        .msg     = "Debug Messenger Creation error",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = debug_messenger_opt.error(),
+    });
   }
 
   return {};
 }
 
-Result<void, Device::PhysicalDevicePickingError> Device::pick_physical_device(const CreateInfo& info) noexcept {
+Result<void, Error> Device::pick_physical_device(const CreateInfo& info) noexcept {
   auto devices_opt = instance_.enumeratePhysicalDevices();
   if (!devices_opt) {
     eray::util::Logger::err("Failed to enumerate physical devices. {}", vk::to_string(devices_opt.error()));
-    return std::unexpected(PhysicalDevicePickingError{});
+    return std::unexpected(Error{
+        .msg     = "Physical devices enumeration failure",
+        .code    = ErrorCode::PhysicalDeviceNotSufficient{},
+        .vk_code = devices_opt.error(),
+    });
   }
   auto devices = devices_opt.value();
 
   if (devices.empty()) {
     eray::util::Logger::err("Failed to find GPUs with Vulkan support.");
-    return std::unexpected(PhysicalDevicePickingError{});
+    return std::unexpected(Error{
+        .msg  = "No physical device with Vulkan support",
+        .code = ErrorCode::PhysicalDeviceNotSufficient{},
+    });
   }
 
   // Ordered map for automatic sorting by device score
@@ -220,7 +245,10 @@ Result<void, Device::PhysicalDevicePickingError> Device::pick_physical_device(co
 
   if (candidates.empty()) {
     eray::util::Logger::err("Failed to find GPUs that meet the requirements.");
-    return std::unexpected(PhysicalDevicePickingError{});
+    return std::unexpected(Error{
+        .msg  = "No physical device meeting the requirements",
+        .code = ErrorCode::PhysicalDeviceNotSufficient{},
+    });
   }
 
   auto candidates_str = std::string("Physical Device (GPU) Candidates:");
@@ -239,7 +267,7 @@ Result<void, Device::PhysicalDevicePickingError> Device::pick_physical_device(co
   return {};
 }
 
-Result<void, Device::LogicalDeviceCreationError> Device::create_logical_device(const CreateInfo& info) noexcept {
+Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexcept {
   // ==  Find Required Queue Families ==================================================================================
 
   {
@@ -263,7 +291,10 @@ Result<void, Device::LogicalDeviceCreationError> Device::create_logical_device(c
 
       if (graphics_queue_family_prop_it == queue_family_props.end()) {
         eray::util::Logger::err("Could not find a graphics queue family on the physical device");
-        std::unexpected(LogicalDeviceCreationError{});
+        return std::unexpected(Error{
+            .msg  = "Graphics queue family not supported on the physical device",
+            .code = ErrorCode::PhysicalDeviceNotSufficient{},
+        });
       }
 
       graphics_queue_family_ =
@@ -277,7 +308,10 @@ Result<void, Device::LogicalDeviceCreationError> Device::create_logical_device(c
 
       if (surface_queue_family_prop_it == indexed_queue_family_props.end()) {
         eray::util::Logger::err("Could not find a presentation queue family on the physical device");
-        std::unexpected(LogicalDeviceCreationError{});
+        return std::unexpected(Error{
+            .msg  = "Presentation queue family not supported on the physical device",
+            .code = ErrorCode::PhysicalDeviceNotSufficient{},
+        });
       }
 
       presentation_queue_family_ =
@@ -311,7 +345,11 @@ Result<void, Device::LogicalDeviceCreationError> Device::create_logical_device(c
     device_ = std::move(*result);
   } else {
     eray::util::Logger::err("Failed to create a logical device. {}", vk::to_string(result.error()));
-    return std::unexpected(LogicalDeviceCreationError{});
+    return std::unexpected(Error{
+        .msg     = "Vulkan Logical Device creation failure",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = result.error(),
+    });
   }
 
   // ==  Queues Creation ===============================================================================================
@@ -320,20 +358,28 @@ Result<void, Device::LogicalDeviceCreationError> Device::create_logical_device(c
     graphics_queue_ = std::move(*result);
   } else {
     eray::util::Logger::err("Failed to create a graphics queue. {}", vk::to_string(result.error()));
-    return std::unexpected(LogicalDeviceCreationError{});
+    return std::unexpected(Error{
+        .msg     = "Vulkan Graphics Queue creation failure",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = result.error(),
+    });
   }
 
   if (auto result = device_.getQueue(presentation_queue_family_, 0)) {
     presentation_queue_ = std::move(*result);
   } else {
     eray::util::Logger::err("Failed to create a presentation queue. {}", vk::to_string(result.error()));
-    return std::unexpected(LogicalDeviceCreationError{});
+    return std::unexpected(Error{
+        .msg     = "Vulkan Presentation Queue creation failure",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = result.error(),
+    });
   }
 
   return {};
 }
 
-Result<void, Device::CommandPoolCreationError> Device::create_command_pool() noexcept {
+Result<void, Error> Device::create_command_pool() noexcept {
   auto command_pool_info = vk::CommandPoolCreateInfo{
       // There are two possible flags for command pools:
       // - VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: Hint that command buffers are rerecorded with new commands very often
@@ -352,8 +398,11 @@ Result<void, Device::CommandPoolCreationError> Device::create_command_pool() noe
     single_time_cmd_pool_ = std::move(*result);
   } else {
     eray::util::Logger::err("Could not create a command pool. {}", vk::to_string(result.error()));
-
-    return std::unexpected(CommandPoolCreationError{});
+    return std::unexpected(Error{
+        .msg     = "Vulkan Command Pool creation failure",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = result.error(),
+    });
   }
 
   return {};
@@ -388,8 +437,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Device::debug_callback(vk::DebugUtilsMessageSev
   };
 }
 
-Result<uint32_t, Device::NoSuitableMemoryTypeError> Device::find_mem_type(uint32_t type_filter,
-                                                                          vk::MemoryPropertyFlags props) const {
+Result<uint32_t, Error> Device::find_mem_type(uint32_t type_filter, vk::MemoryPropertyFlags props) const {
   // Graphics cards can offer different types of memory to allocate from. Each type of memory varies in terms of
   // allowed operations and performance characteristics. We need to combine the requirements of the buffer and
   // our own app requirements to find the right type of memory to use.
@@ -406,7 +454,10 @@ Result<uint32_t, Device::NoSuitableMemoryTypeError> Device::find_mem_type(uint32
 
   util::Logger::err("Could not find a memory type");
 
-  return std::unexpected(NoSuitableMemoryTypeError{});
+  return std::unexpected(Error{
+      .msg  = "No suitable memory type",
+      .code = ErrorCode::NoSuitableMemoryTypeFailure{},
+  });
 }
 
 vk::raii::CommandBuffer Device::begin_single_time_commands(OptRef<vk::raii::CommandPool> command_pool) const {

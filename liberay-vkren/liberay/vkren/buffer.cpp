@@ -1,13 +1,13 @@
 #include <liberay/util/logger.hpp>
 #include <liberay/vkren/buffer.hpp>
+#include <liberay/vkren/error.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
-Result<ExclusiveBufferResource, ExclusiveBufferResource::CreationError> ExclusiveBufferResource::create(
-    const Device& device, const CreateInfo& info) {
+Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create(const Device& device, const CreateInfo& info) {
   // == Create Buffer Object ===========================================================================================
 
   auto buffer_info = vk::BufferCreateInfo{
@@ -19,7 +19,11 @@ Result<ExclusiveBufferResource, ExclusiveBufferResource::CreationError> Exclusiv
   auto buffer_opt = device->createBuffer(buffer_info);
   if (!buffer_opt) {
     util::Logger::err("Could not create a buffer object: {}", vk::to_string(buffer_opt.error()));
-    return std::unexpected(buffer_opt.error());
+    return std::unexpected(Error{
+        .msg     = "Vulkan Buffer Object creation failure",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = buffer_opt.error(),
+    });
   }
 
   // == Allocate Device Memory =========================================================================================
@@ -44,7 +48,11 @@ Result<ExclusiveBufferResource, ExclusiveBufferResource::CreationError> Exclusiv
   auto buffer_mem_opt = device->allocateMemory(alloc_info);
   if (!buffer_mem_opt) {
     util::Logger::err("Could not allocate memory for a buffer object: {}", vk::to_string(buffer_mem_opt.error()));
-    return std::unexpected(buffer_mem_opt.error());
+    return std::unexpected(Error{
+        .msg     = "Could not allocate memory",
+        .code    = ErrorCode::MemoryAllocationFailure{},
+        .vk_code = buffer_mem_opt.error(),
+    });
   }
   buffer_opt->bindMemory(*buffer_mem_opt, 0);
 

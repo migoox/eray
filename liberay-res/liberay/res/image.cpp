@@ -81,4 +81,8 @@ bool Image::is_in_bounds(uint32_t x, uint32_t y) const { return x < width_ && y 
 
 uint32_t Image::pixel(uint32_t x, uint32_t y) const { return data_[x + y * width_]; }
 
+uint32_t Image::mip_levels() const {
+  return static_cast<uint32_t>(std::floor(std::log2(std::max(width_, height_)))) + 1;
+}
+
 }  // namespace eray::res

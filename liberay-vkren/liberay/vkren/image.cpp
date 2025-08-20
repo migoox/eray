@@ -4,8 +4,7 @@
 #include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
-Result<ExclusiveImage2DResource, ExclusiveImage2DResource::CreationError> ExclusiveImage2DResource::create(
-    const Device& device, const CreateInfo& info) {
+Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create(const Device& device, const CreateInfo& info) {
   // == Create Image Object ===========================================================================================
 
   auto image_info = vk::ImageCreateInfo{
@@ -22,8 +21,12 @@ Result<ExclusiveImage2DResource, ExclusiveImage2DResource::CreationError> Exclus
 
   auto image_opt = device->createImage(image_info);
   if (!image_opt) {
-    util::Logger::err("Could not create a buffer object: {}", vk::to_string(image_opt.error()));
-    return std::unexpected(image_opt.error());
+    util::Logger::err("Could not create an image object: {}", vk::to_string(image_opt.error()));
+    return std::unexpected(Error{
+        .msg     = "Vulkan Image Creation failed",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = image_opt.error(),
+    });
   }
 
   // == Allocate Device Memory =========================================================================================
@@ -38,7 +41,11 @@ Result<ExclusiveImage2DResource, ExclusiveImage2DResource::CreationError> Exclus
   auto mem_type_opt     = device.find_mem_type(mem_requirements.memoryTypeBits, info.mem_properties);
   if (!mem_type_opt) {
     util::Logger::err("Could not find a memory type that meets the buffer memory requirements");
-    return std::unexpected(mem_type_opt.error());
+    return std::unexpected(Error{
+        .msg     = "No memory type that meets the buffer memory requirements",
+        .code    = ErrorCode::NoSuitableMemoryTypeFailure{},
+        .vk_code = vk::Result::eSuccess,
+    });
   }
 
   auto alloc_info = vk::MemoryAllocateInfo{
@@ -48,7 +55,11 @@ Result<ExclusiveImage2DResource, ExclusiveImage2DResource::CreationError> Exclus
   auto image_mem_opt = device->allocateMemory(alloc_info);
   if (!image_mem_opt) {
     util::Logger::err("Could not allocate memory for a buffer object: {}", vk::to_string(image_mem_opt.error()));
-    return std::unexpected(image_mem_opt.error());
+    return std::unexpected(Error{
+        .msg     = "Vulkan memory allocation failed",
+        .code    = ErrorCode::MemoryAllocationFailure{},
+        .vk_code = image_mem_opt.error(),
+    });
   }
   image_opt->bindMemory(*image_mem_opt, 0);
 
@@ -96,8 +107,8 @@ void ExclusiveImage2DResource::copy_from(const Device& device, const vk::raii::B
   device.end_single_time_commands(cmd_buff);
 }
 
-Result<vk::raii::ImageView, vk::Result> ExclusiveImage2DResource::create_img_view(const Device& device,
-                                                                                  vk::ImageAspectFlags aspect_mask) {
+Result<vk::raii::ImageView, Error> ExclusiveImage2DResource::create_img_view(const Device& device,
+                                                                             vk::ImageAspectFlags aspect_mask) {
   auto img_create_info = vk::ImageViewCreateInfo{
       .image    = image,
       .viewType = vk::ImageViewType::e2D,
@@ -119,7 +130,17 @@ Result<vk::raii::ImageView, vk::Result> ExclusiveImage2DResource::create_img_vie
           },
   };
 
-  return device->createImageView(img_create_info);
+  auto img_view_opt = device->createImageView(img_create_info);
+  if (!img_view_opt) {
+    util::Logger::err("Could not create an image view: {}", vk::to_string(img_view_opt.error()));
+    return std::unexpected(Error{
+        .msg     = "Vulkan Image View creation failed",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = img_view_opt.error(),
+    });
+  }
+
+  return std::move(*img_view_opt);
 }
 
 }  // namespace eray::vkren

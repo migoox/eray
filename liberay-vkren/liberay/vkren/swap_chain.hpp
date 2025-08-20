@@ -6,7 +6,6 @@
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/image.hpp>
-#include <variant>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -27,21 +26,7 @@ class SwapChain {
   ERAY_DELETE_COPY(SwapChain)
   ERAY_DEFAULT_MOVE(SwapChain)
 
-  struct SwapChainCreationError {
-    vk::Result vk_result = vk::Result::eSuccess;
-  };
-  struct ImageViewsCreationError {
-    vk::Result vk_result = vk::Result::eSuccess;
-  };
-  struct DepthBufferCreationError {
-    vk::Result vk_result = vk::Result::eSuccess;
-  };
-  struct DepthFormatError {};
-
-  using CreationError =
-      std::variant<SwapChainCreationError, ImageViewsCreationError, DepthBufferCreationError, DepthFormatError>;
-
-  static Result<SwapChain, CreationError> create(const Device& device, uint32_t width, uint32_t height) noexcept;
+  static Result<SwapChain, Error> create(const Device& device, uint32_t width, uint32_t height) noexcept;
 
   vk::raii::SwapchainKHR* operator->() noexcept { return &swap_chain_; }
   const vk::raii::SwapchainKHR* operator->() const noexcept { return &swap_chain_; }
@@ -65,7 +50,7 @@ class SwapChain {
    *
    * @param device_
    */
-  Result<void, SwapChain::CreationError> recreate(const Device& device, uint32_t width, uint32_t height);
+  Result<void, Error> recreate(const Device& device, uint32_t width, uint32_t height);
 
   /**
    * @brief Allows to destroy the swap chain explicitly. Example use case: Swap chain must be destroyed before
@@ -77,14 +62,14 @@ class SwapChain {
  private:
   SwapChain() = default;
 
-  Result<void, CreationError> create_swap_chain(const vkren::Device& device, uint32_t width, uint32_t height) noexcept;
-  Result<void, CreationError> create_image_views(const vkren::Device& device) noexcept;
-  Result<void, CreationError> create_depth_stencil_buffer(const vkren::Device& device) noexcept;
+  Result<void, Error> create_swap_chain(const vkren::Device& device, uint32_t width, uint32_t height) noexcept;
+  Result<void, Error> create_image_views(const vkren::Device& device) noexcept;
+  Result<void, Error> create_depth_stencil_buffer(const vkren::Device& device) noexcept;
 
-  Result<vk::Format, DepthFormatError> find_supported_depth_stencil_format(const Device& device,
-                                                                           const std::vector<vk::Format>& candidates,
-                                                                           vk::ImageTiling tiling,
-                                                                           vk::FormatFeatureFlags features);
+  Result<vk::Format, Error> find_supported_depth_stencil_format(const Device& device,
+                                                                const std::vector<vk::Format>& candidates,
+                                                                vk::ImageTiling tiling,
+                                                                vk::FormatFeatureFlags features);
 
   static vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats);
   static vk::PresentModeKHR choose_swap_presentMode(const std::vector<vk::PresentModeKHR>& available_present_modes);

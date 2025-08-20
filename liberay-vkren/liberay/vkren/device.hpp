@@ -5,7 +5,7 @@
 #include <liberay/util/ruleof.hpp>
 #include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/common.hpp>
-#include <variant>
+#include <liberay/vkren/error.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
@@ -33,20 +33,7 @@ class Device {
   ERAY_DELETE_COPY(Device)
   ERAY_DEFAULT_MOVE(Device)
 
-  struct InstanceCreationError {};
-  struct DebugMessengerCreationError {};
-  struct SurfaceCreationError {};
-  struct PhysicalDevicePickingError {};
-  struct LogicalDeviceCreationError {};
-  struct CommandPoolCreationError {};
-
-  using CreationError = std::variant<InstanceCreationError, PhysicalDevicePickingError, LogicalDeviceCreationError,
-                                     SurfaceCreationError, DebugMessengerCreationError, CommandPoolCreationError>;
-
-  struct NoSuitableMemoryTypeError {};
-
-  using SurfaceCreator =
-      std::function<Result<vk::raii::SurfaceKHR, SurfaceCreationError>(vk::raii::Instance& instance)>;
+  using SurfaceCreator = std::function<std::optional<vk::raii::SurfaceKHR>(vk::raii::Instance&)>;
 
   struct CreateInfo {
     /**
@@ -119,7 +106,7 @@ class Device {
     };
   };
 
-  static Result<Device, CreationError> create(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
+  static Result<Device, Error> create(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
 
   vk::raii::Instance& instance() noexcept { return instance_; }
   const vk::raii::Instance& instance() const noexcept { return instance_; }
@@ -144,7 +131,7 @@ class Device {
   vk::raii::Queue& presentation_queue() noexcept { return presentation_queue_; }
   const vk::raii::Queue& presentation_queue() const noexcept { return presentation_queue_; }
 
-  Result<uint32_t, NoSuitableMemoryTypeError> find_mem_type(uint32_t type_filter, vk::MemoryPropertyFlags props) const;
+  Result<uint32_t, Error> find_mem_type(uint32_t type_filter, vk::MemoryPropertyFlags props) const;
 
   template <typename T>
   using OptRef = std::optional<std::reference_wrapper<T>>;
@@ -178,11 +165,11 @@ class Device {
  private:
   Device() = default;
 
-  Result<void, InstanceCreationError> create_instance(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
-  Result<void, DebugMessengerCreationError> create_debug_messenger(const CreateInfo& info) noexcept;
-  Result<void, PhysicalDevicePickingError> pick_physical_device(const CreateInfo& info) noexcept;
-  Result<void, LogicalDeviceCreationError> create_logical_device(const CreateInfo& info) noexcept;
-  Result<void, CommandPoolCreationError> create_command_pool() noexcept;
+  Result<void, Error> create_instance(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
+  Result<void, Error> create_debug_messenger(const CreateInfo& info) noexcept;
+  Result<void, Error> pick_physical_device(const CreateInfo& info) noexcept;
+  Result<void, Error> create_logical_device(const CreateInfo& info) noexcept;
+  Result<void, Error> create_command_pool() noexcept;
 
   std::vector<const char*> get_global_extensions(const CreateInfo& info) noexcept;
 

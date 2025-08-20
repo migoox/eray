@@ -31,6 +31,8 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
+#include "liberay/vkren/error.hpp"
+
 struct GLFWWindowCreationFailure {};
 
 namespace vkren = eray::vkren;
@@ -120,11 +122,11 @@ class HelloTriangleApplication {
     }
 
     // == Surface Creator ==============================================================================================
-    auto surface_creator = [this](const vk::raii::Instance& instance)
-        -> vkren::Result<vk::raii::SurfaceKHR, vkren::Device::SurfaceCreationError> {
+    auto surface_creator = [this](const vk::raii::Instance& instance) -> std::optional<vk::raii::SurfaceKHR> {
       VkSurfaceKHR surface{};
       if (glfwCreateWindowSurface(*instance, window_, nullptr, &surface)) {
-        return std::unexpected(vkren::Device::SurfaceCreationError{});
+        eray::util::Logger::info("Could not create a window surface");
+        return std::nullopt;
       }
 
       return vk::raii::SurfaceKHR(instance, surface);
