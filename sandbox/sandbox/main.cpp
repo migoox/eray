@@ -31,7 +31,7 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
-#include "liberay/vkren/error.hpp"
+#include "liberay/vkren/image_description.hpp"
 
 struct GLFWWindowCreationFailure {};
 
@@ -742,46 +742,19 @@ class HelloTriangleApplication {
     auto img = eray::res::Image::load_from_path(eray::os::System::executable_dir() / "assets" / "cad.jpeg")
                    .or_panic("cad is not there :(");
 
-    // Staging buffer
-    vk::DeviceSize img_size = img.size_in_bytes();
-    auto staging_buffer =
-        vkren::ExclusiveBufferResource::create(  //
-            device_,
-            vkren::ExclusiveBufferResource::CreateInfo{
-                .size_in_bytes  = img_size,
-                .buff_usage     = vk::BufferUsageFlagBits::eTransferSrc,
-                .mem_properties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            })
-            .or_panic("Could not create image staging buffer");
-    staging_buffer.fill_data(img.raw(), 0, img_size);
-
-    // Image object
-    txt_image_ = vkren::ExclusiveImage2DResource::create(
-                     device_,
-                     vkren::ExclusiveImage2DResource::CreateInfo{
-                         .size_in_bytes = img_size,
-
-                         // We want to sample the image in the fragment shader
-                         .image_usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-
-                         .format = vk::Format::eR8G8B8A8Srgb,
-                         .width  = static_cast<uint32_t>(img.width()),
-                         .height = static_cast<uint32_t>(img.height()),
-
-                         // Texels are laid out in an implementation defined order for optimal access
-                         .tiling = vk::ImageTiling::eOptimal,
-
-                         .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                     })
-                     .or_panic("Could not create an image resource");
-    device_.transition_image_layout(txt_image_.image, vk::ImageLayout::eUndefined,
-                                    vk::ImageLayout::eTransferDstOptimal);
-    txt_image_.copy_from(device_, staging_buffer.buffer);
-    device_.transition_image_layout(txt_image_.image, vk::ImageLayout::eTransferDstOptimal,
-                                    vk::ImageLayout::eShaderReadOnlyOptimal);
+    txt_image_ =
+        eray::vkren::ExclusiveImage2DResource::create_texture_image(device_,
+                                                                    vkren::ImageDescription{
+                                                                        .format     = vk::Format::eR8G8B8A8Srgb,
+                                                                        .width      = img.width(),
+                                                                        .height     = img.height(),
+                                                                        .mip_levels = img.calculate_mip_levels(),
+                                                                    },
+                                                                    img.raw(), img.size_in_bytes(), true)
+            .or_panic("Could not create a texture image");
 
     // Image View
-    txt_view_ = txt_image_.create_img_view(device_).or_panic("Could not create the image view");
+    txt_view_ = txt_image_.create_image_view(device_).or_panic("Could not create the image view");
 
     // Image Sampler
     auto pdev_props   = device_.physical_device().getProperties();
@@ -797,8 +770,8 @@ class HelloTriangleApplication {
         .maxAnisotropy    = pdev_props.limits.maxSamplerAnisotropy,
         .compareEnable    = vk::False,
         .compareOp        = vk::CompareOp::eAlways,
-        .minLod           = 0.0F,
-        .maxLod           = 0.0F,
+        .minLod           = 0.F,
+        .maxLod           = vk::LodClampNone,
     };
     txt_sampler_ = vkren::Result(device_->createSampler(sampler_info)).or_panic("Could not create the sampler");
   }

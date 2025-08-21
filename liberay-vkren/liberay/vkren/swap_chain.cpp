@@ -10,6 +10,8 @@
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
+#include "liberay/vkren/image_description.hpp"
+
 namespace eray::vkren {
 
 Result<SwapChain, Error> SwapChain::create(const Device& device, uint32_t width, uint32_t height) noexcept {
@@ -222,11 +224,15 @@ Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& 
   depth_stencil_format_ = *format_opt;
 
   auto img_info = vkren::ExclusiveImage2DResource::CreateInfo{
-      .size_in_bytes  = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
-      .image_usage    = vk::ImageUsageFlagBits::eDepthStencilAttachment,
-      .format         = depth_stencil_format_,
-      .width          = extent_.width,
-      .height         = extent_.height,
+      .size_in_bytes = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
+      .image_usage   = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+      .desc =
+          ImageDescription{
+              .format     = depth_stencil_format_,
+              .width      = extent_.width,
+              .height     = extent_.height,
+              .mip_levels = 1,
+          },
       .tiling         = vk::ImageTiling::eOptimal,
       .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
   };
@@ -237,7 +243,7 @@ Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& 
   }
   depth_stencil_image_ = std::move(*img_opt);
 
-  auto view_opt = depth_stencil_image_.create_img_view(device, vk::ImageAspectFlagBits::eDepth);
+  auto view_opt = depth_stencil_image_.create_image_view(device, vk::ImageAspectFlagBits::eDepth);
   if (!view_opt) {
     util::Logger::err("Could not create image view for depth buffer");
     return std::unexpected(view_opt.error());

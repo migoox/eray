@@ -1,6 +1,7 @@
 #pragma once
 
 #include <liberay/util/result.hpp>
+#include <liberay/vkren/error.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 
@@ -13,6 +14,15 @@ struct VulkanResultLogger {
       if (msg.empty()) {
         util::Logger::instance().log(util::LogLevel::Err, false, l, "Program has crashed due to a Vulkan error: {}",
                                      vk::to_string(err));
+      } else if constexpr (std::is_same_v<TError, Error>) {
+        if (err.vk_code != vk::Result::eSuccess) {
+          util::Logger::instance().log(util::LogLevel::Err, false, l,
+                                       "Program has crashed due to a Vulkan error: {}. Error message: {}",
+                                       vk::to_string(err.vk_code), err.msg);
+        } else {
+          util::Logger::instance().log(util::LogLevel::Err, false, l, "Program has crashed. Error message: {}",
+                                       err.msg);
+        }
       } else {
         util::Logger::instance().log(util::LogLevel::Err, false, l,
                                      "Program has crashed due to a Vulkan error: {}. Message: \"{}\"",
@@ -21,6 +31,15 @@ struct VulkanResultLogger {
     } else {
       if (msg.empty()) {
         util::Logger::instance().log(util::LogLevel::Err, false, l, "Program has crashed!");
+      } else if constexpr (std::is_same_v<TError, Error>) {
+        if (err.vk_code != vk::Result::eSuccess) {
+          util::Logger::instance().log(util::LogLevel::Err, false, l,
+                                       "Program has crashed due to a Vulkan error: {}. Error message: {}. {}",
+                                       vk::to_string(err.vk_code), err.msg, msg);
+        } else {
+          util::Logger::instance().log(util::LogLevel::Err, false, l, "Program has crashed. Error message: {}. {}",
+                                       err.msg, msg);
+        }
       } else {
         util::Logger::instance().log(util::LogLevel::Err, false, l, "Program has crashed with message: \"{}\"", msg);
       }

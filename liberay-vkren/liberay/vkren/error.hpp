@@ -48,6 +48,21 @@ struct Error {
    *
    */
   vk::Result vk_code = vk::Result::eSuccess;
+
+  template <typename TErrorCode>
+  bool has_code() const {
+    return std::holds_alternative<TErrorCode>(code);
+  }
+
+  template <typename TErrorCode>
+  TErrorCode& get_code() {
+    return std::get<TErrorCode>(code);
+  }
+
+  template <typename TErrorCode>
+  const TErrorCode& get_code() const {
+    return std::get<TErrorCode>(code);
+  }
 };
 
 }  // namespace eray::vkren

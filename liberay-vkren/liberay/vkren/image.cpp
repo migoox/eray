@@ -1,17 +1,74 @@
+#include <expected>
+#include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/image.hpp>
+#include <liberay/vkren/image_description.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
+
+Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture_image(const Device& device,
+                                                                                       ImageDescription desc,
+                                                                                       const void* data,
+                                                                                       vk::DeviceSize size_in_bytes,
+                                                                                       bool generate_mipmaps) {
+  // Staging buffer
+  auto staging_buffer = vkren::ExclusiveBufferResource::create(  //
+      device,
+      vkren::ExclusiveBufferResource::CreateInfo{
+          .size_in_bytes  = size_in_bytes,
+          .buff_usage     = vk::BufferUsageFlagBits::eTransferSrc,
+          .mem_properties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+      });
+  if (!staging_buffer) {
+    return std::unexpected(staging_buffer.error());
+  }
+
+  staging_buffer->fill_data(data, 0, size_in_bytes);
+
+  // Image object
+  auto txt_image = vkren::ExclusiveImage2DResource::create(
+      device, vkren::ExclusiveImage2DResource::CreateInfo{
+                  .size_in_bytes = size_in_bytes,
+
+                  // We want to sample the image in the fragment shader
+                  // transfer src for mipmap generation
+                  .image_usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled |
+                                 vk::ImageUsageFlagBits::eTransferSrc,
+
+                  .desc = desc,
+
+                  // Texels are laid out in an implementation defined order for optimal access
+                  .tiling = vk::ImageTiling::eOptimal,
+
+                  .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+              });
+  if (!txt_image) {
+    return std::unexpected(txt_image.error());
+  }
+
+  device.transition_image_layout(txt_image->image, txt_image->desc, vk::ImageLayout::eUndefined,
+                                 vk::ImageLayout::eTransferDstOptimal);
+  txt_image->copy_from(device, staging_buffer->buffer);
+  if (desc.mip_levels == 1 || !generate_mipmaps) {
+    device.transition_image_layout(txt_image->image, txt_image->desc, vk::ImageLayout::eTransferDstOptimal,
+                                   vk::ImageLayout::eShaderReadOnlyOptimal);
+  } else {
+    device.generate_mipmaps(txt_image->image, txt_image->desc);
+  }
+
+  return txt_image;
+}
+
 Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create(const Device& device, const CreateInfo& info) {
   // == Create Image Object ===========================================================================================
 
   auto image_info = vk::ImageCreateInfo{
       .imageType   = vk::ImageType::e2D,
-      .format      = info.format,
-      .extent      = vk::Extent3D{.width = info.width, .height = info.height, .depth = 1},
-      .mipLevels   = 1,
+      .format      = info.desc.format,
+      .extent      = vk::Extent3D{.width = info.desc.width, .height = info.desc.height, .depth = 1},
+      .mipLevels   = info.desc.mip_levels,
       .arrayLayers = 1,
       .samples     = vk::SampleCountFlagBits::e1,
       .tiling      = info.tiling,
@@ -68,10 +125,8 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create(const D
       .memory            = std::move(*image_mem_opt),
       .mem_size_in_bytes = mem_requirements.size,
       .image_usage       = info.image_usage,
-      .format            = info.format,
-      .width             = info.width,
-      .height            = info.height,
       .mem_properties    = info.mem_properties,
+      .desc              = info.desc,
   };
 }
 
@@ -98,8 +153,8 @@ void ExclusiveImage2DResource::copy_from(const Device& device, const vk::raii::B
       .imageOffset = vk::Offset3D{.x = 0, .y = 0, .z = 0},
       .imageExtent =
           vk::Extent3D{
-              .width  = width,
-              .height = height,
+              .width  = desc.width,
+              .height = desc.height,
               .depth  = 1,
           },
   };
@@ -107,12 +162,12 @@ void ExclusiveImage2DResource::copy_from(const Device& device, const vk::raii::B
   device.end_single_time_commands(cmd_buff);
 }
 
-Result<vk::raii::ImageView, Error> ExclusiveImage2DResource::create_img_view(const Device& device,
-                                                                             vk::ImageAspectFlags aspect_mask) {
+Result<vk::raii::ImageView, Error> ExclusiveImage2DResource::create_image_view(const Device& device,
+                                                                               vk::ImageAspectFlags aspect_mask) {
   auto img_create_info = vk::ImageViewCreateInfo{
       .image    = image,
       .viewType = vk::ImageViewType::e2D,
-      .format   = format,
+      .format   = desc.format,
       .components =
           vk::ComponentMapping{
               .r = vk::ComponentSwizzle::eIdentity,
@@ -124,7 +179,7 @@ Result<vk::raii::ImageView, Error> ExclusiveImage2DResource::create_img_view(con
           vk::ImageSubresourceRange{
               .aspectMask     = aspect_mask,
               .baseMipLevel   = 0,
-              .levelCount     = 1,
+              .levelCount     = desc.mip_levels,
               .baseArrayLayer = 0,
               .layerCount     = 1  //
           },

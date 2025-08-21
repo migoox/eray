@@ -16,12 +16,12 @@ Image::Image(uint32_t width, uint32_t height, ColorU32 color) : width_(width), h
   data_ = std::vector<uint32_t>(width_ * height_, color);
 }
 
-Image::Image(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data)
+Image::Image(uint32_t width, uint32_t height, uint8_t bpp, std::vector<ColorU32>&& data)
     : width_(width), height_(height), bpp_(bpp), data_(std::move(data)) {}
 
 Image Image::create(uint32_t width, uint32_t height, ColorU32 color) { return Image(width, height, color); }
 
-Image Image::create(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data) {
+Image Image::create(uint32_t width, uint32_t height, uint8_t bpp, std::vector<ColorU32>&& data) {
   return Image(width, height, bpp, std::move(data));
 }
 
@@ -51,8 +51,7 @@ util::Result<Image, FileError> Image::load_from_path(const std::filesystem::path
   auto data = std::vector<ColorU32>();
   data.insert(data.end(), &buff[0], &buff[width * height]);
   stbi_image_free(reinterpret_cast<void*>(buff));
-  return Image(static_cast<uint32_t>(width), static_cast<uint32_t>(height), static_cast<uint32_t>(bpp),
-               std::move(data));
+  return Image(static_cast<uint32_t>(width), static_cast<uint32_t>(height), static_cast<uint8_t>(bpp), std::move(data));
 }
 
 void Image::clear(uint32_t color) {
@@ -81,8 +80,10 @@ bool Image::is_in_bounds(uint32_t x, uint32_t y) const { return x < width_ && y 
 
 uint32_t Image::pixel(uint32_t x, uint32_t y) const { return data_[x + y * width_]; }
 
-uint32_t Image::mip_levels() const {
-  return static_cast<uint32_t>(std::floor(std::log2(std::max(width_, height_)))) + 1;
+uint32_t Image::calculate_mip_levels() const { return calculate_mip_levels(width_, height_); }
+
+uint32_t Image::calculate_mip_levels(uint32_t width, uint32_t height) {
+  return static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
 }
 
 }  // namespace eray::res

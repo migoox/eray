@@ -6,6 +6,7 @@
 #include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/error.hpp>
+#include <liberay/vkren/image_description.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
@@ -159,8 +160,10 @@ class Device {
    * @param old_layout
    * @param new_layout
    */
-  void transition_image_layout(const vk::raii::Image& image, vk::ImageLayout old_layout,
-                               vk::ImageLayout new_layout) const;
+  void transition_image_layout(const vk::raii::Image& image, const ImageDescription& image_desc,
+                               vk::ImageLayout old_layout, vk::ImageLayout new_layout) const;
+
+  Result<void, Error> generate_mipmaps(vk::raii::Image& image, const ImageDescription& image_desc) const;
 
  private:
   Device() = default;

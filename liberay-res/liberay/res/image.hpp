@@ -3,11 +3,10 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <liberay/res/error.hpp>
 #include <liberay/util/result.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <vector>
-
-#include "liberay/res/error.hpp"
 
 namespace eray::res {
 
@@ -64,7 +63,7 @@ class Image {
   ERAY_DEFAULT_MOVE_AND_COPY_ASSIGN(Image)
 
   static Image create(uint32_t width, uint32_t height, ColorU32 color = Color::kBlack);
-  static Image create(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data);
+  static Image create(uint32_t width, uint32_t height, uint8_t bpp, std::vector<ColorU32>&& data);
 
   static util::Result<Image, FileError> load_from_path(const std::filesystem::path& path);
 
@@ -75,8 +74,8 @@ class Image {
   void resize(uint32_t new_width, uint32_t new_height, ColorU32 color = Color::kBlack);
   void clear(ColorU32 color);
 
-  size_t width() const { return width_; }
-  size_t height() const { return height_; }
+  uint32_t width() const { return width_; }
+  uint32_t height() const { return height_; }
   size_t size_in_bytes() const { return width_ * height_ * sizeof(uint32_t); }
 
   const ColorU32* raw() const { return data_.data(); }
@@ -87,16 +86,18 @@ class Image {
    *
    * @return uint32_t
    */
-  uint32_t mip_levels() const;
+  uint32_t calculate_mip_levels() const;
+
+  static uint32_t calculate_mip_levels(uint32_t width, uint32_t height);
 
  private:
   Image();
   Image(uint32_t width, uint32_t height, ColorU32 color = Color::kBlack);
-  Image(uint32_t width, uint32_t height, uint32_t bpp, std::vector<ColorU32>&& data);
+  Image(uint32_t width, uint32_t height, uint8_t bpp, std::vector<ColorU32>&& data);
 
-  size_t width_;
-  size_t height_;
-  size_t bpp_ = 4;
+  uint32_t width_;
+  uint32_t height_;
+  uint8_t bpp_ = 4;
 
   std::vector<ColorU32> data_;
 };
