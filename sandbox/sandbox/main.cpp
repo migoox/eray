@@ -749,28 +749,8 @@ class HelloTriangleApplication {
   void create_txt_img() {
     auto img = eray::res::Image::load_from_path(eray::os::System::executable_dir() / "assets" / "cad.jpeg")
                    .or_panic("cad is not there :(");
-    auto mipmaps = img.generate_mipmaps_buffer();
-
-    // txt_image_ = eray::vkren::ExclusiveImage2DResource::create_texture_image(device_,
-    //                                                                          vkren::ImageDescription{
-    //                                                                              .format = vk::Format::eR8G8B8A8Srgb,
-    //                                                                              .width  = img.width() / 2,
-    //                                                                              .height = img.height() / 2,
-    //                                                                              .mip_levels = 1,
-    //                                                                          },
-    //                                                                          mipmaps.raw() + img.size_in_bytes() / 4,
-    //                                                                          img.size_in_bytes() / 4)
-    //                  .or_panic("Could not create a texture image");
-
-    txt_image_ = eray::vkren::ExclusiveImage2DResource::create_texture_image_from_mipmaps(
-                     device_,
-                     vkren::ImageDescription{
-                         .format     = vk::Format::eR8G8B8A8Srgb,
-                         .width      = img.width(),
-                         .height     = img.height(),
-                         .mip_levels = mipmaps.mip_levels,
-                     },
-                     mipmaps.raw(), mipmaps.size_in_bytes())
+    // Image
+    txt_image_ = eray::vkren::ExclusiveImage2DResource::create_texture(device_, img)
                      .or_panic("Could not create a texture image");
 
     // Image View

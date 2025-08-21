@@ -89,7 +89,7 @@ uint32_t Image::calculate_mip_levels(uint32_t width, uint32_t height) {
   return static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
 }
 
-MipMappedImage Image::generate_mipmaps_buffer() {
+MipMappedImage Image::generate_mipmaps_buffer() const {
   if (height_ == 0 || width_ == 0) {
     util::panic("Cannot generate mipmaps, width and height must contain non-zero values.");
   }

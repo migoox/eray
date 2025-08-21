@@ -95,7 +95,7 @@ class Image {
    * @brief CPU-sided mipmaps generation. Returns a buffer of packed images with LOD ranging 0 to mip levels - 1.
    *
    */
-  MipMappedImage generate_mipmaps_buffer();
+  MipMappedImage generate_mipmaps_buffer() const;
 
  private:
   Image();

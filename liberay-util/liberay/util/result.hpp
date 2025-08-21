@@ -47,7 +47,8 @@ struct ResultBase : public std::expected<TType, TError> {
 };
 
 template <typename TError, CResultLogger<TError> TResultLogger>
-struct ResultBase<void, TError, TResultLogger> : public std::expected<void, TError> {
+struct [[nodiscard("Result should be checked for errors")]] ResultBase<void, TError, TResultLogger>
+    : public std::expected<void, TError> {
   using base = std::expected<void, TError>;
   using base::base;  // inherit constructors
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <liberay/res/image.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/error.hpp>
@@ -46,21 +47,34 @@ struct ExclusiveImage2DResource {
    * @param size_in_bytes
    * @return Result<ExclusiveImage2DResource, Error>
    */
-  static Result<ExclusiveImage2DResource, Error> create_texture_image(const Device& device, ImageDescription desc,
-                                                                      const void* data, vk::DeviceSize size_in_bytes);
+  static Result<ExclusiveImage2DResource, Error> create_texture(const Device& device, ImageDescription desc,
+                                                                const void* data, vk::DeviceSize size_in_bytes);
+
+  /**
+   * @brief Creates texture from CPU image representation. Generates mipmaps with Vulkan Blitting. If Vulkan Blitting is
+   * not supported uses CPU algorithm fallback.
+   *
+   * @param device
+   * @param desc
+   * @param generate_mipmaps
+   * @return Result<ExclusiveImage2DResource, Error>
+   */
+  static Result<ExclusiveImage2DResource, Error> create_texture(const Device& device, const res::Image& image,
+                                                                bool generate_mipmaps = true);
+
   /**
    * @brief Expects a buffer containing packed images with LOD ranging 0 to mip levels - 1.
    *
    * @param device
    * @param desc
-   * @param data
+   * @param mipmaps_buffer
    * @param size_in_bytes
    * @return Result<ExclusiveImage2DResource, Error>
    */
-  static Result<ExclusiveImage2DResource, Error> create_texture_image_from_mipmaps(const Device& device,
-                                                                                   ImageDescription desc,
-                                                                                   const void* data,
-                                                                                   vk::DeviceSize size_in_bytes);
+  static Result<ExclusiveImage2DResource, Error> create_texture_from_mipmaps_buffer(const Device& device,
+                                                                                    ImageDescription desc,
+                                                                                    const void* mipmaps_buffer,
+                                                                                    vk::DeviceSize size_in_bytes);
 
   /**
    * @brief Blocks the program execution and copies GPU `src_buff` data to the other GPU buffer.
@@ -74,6 +88,11 @@ struct ExclusiveImage2DResource {
 
   Result<vk::raii::ImageView, Error> create_image_view(
       const Device& device, vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlagBits::eColor);
+
+ private:
+  static Result<ExclusiveImage2DResource, Error> copy_mip_maps_data(const Device& device,
+                                                                    const ExclusiveImage2DResource& image,
+                                                                    const void* data, vk::DeviceSize size_in_bytes);
 };
 
 }  // namespace eray::vkren

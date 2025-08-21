@@ -41,7 +41,7 @@ struct Error {
    * @brief Error code with optional context info.
    *
    */
-  std::variant<ErrorCode::Enum> code;
+  ErrorCode::Enum code;
 
   /**
    * @brief Vulkan API error code. If no Vulkan API error occurred, this member stores `vk::Result::eSuccess`.
