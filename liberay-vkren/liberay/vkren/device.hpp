@@ -165,6 +165,8 @@ class Device {
 
   Result<void, Error> generate_mipmaps(vk::raii::Image& image, const ImageDescription& image_desc) const;
 
+  vk::SampleCountFlagBits get_max_usable_sample_count() const;
+
  private:
   Device() = default;
 

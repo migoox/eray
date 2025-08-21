@@ -44,6 +44,7 @@ Device::CreateInfo Device::CreateInfo::DesktopTemplate::get(
       {
           .features =
               vk::PhysicalDeviceFeatures{
+                  .sampleRateShading = vk::True,
                   .samplerAnisotropy = vk::True,
               },
       },                                                             // vk::PhysicalDeviceFeatures2
@@ -267,6 +268,32 @@ Result<void, Error> Device::pick_physical_device(const CreateInfo& info) noexcep
                            std::string_view(physical_device_.getProperties().deviceName));
 
   return {};
+}
+
+vk::SampleCountFlagBits Device::get_max_usable_sample_count() const {
+  auto props  = physical_device_.getProperties();
+  auto counts = props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
+
+  if (counts & vk::SampleCountFlagBits::e64) {
+    return vk::SampleCountFlagBits::e64;
+  }
+  if (counts & vk::SampleCountFlagBits::e32) {
+    return vk::SampleCountFlagBits::e32;
+  }
+  if (counts & vk::SampleCountFlagBits::e16) {
+    return vk::SampleCountFlagBits::e16;
+  }
+  if (counts & vk::SampleCountFlagBits::e8) {
+    return vk::SampleCountFlagBits::e8;
+  }
+  if (counts & vk::SampleCountFlagBits::e4) {
+    return vk::SampleCountFlagBits::e4;
+  }
+  if (counts & vk::SampleCountFlagBits::e2) {
+    return vk::SampleCountFlagBits::e2;
+  }
+
+  return vk::SampleCountFlagBits::e1;
 }
 
 Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexcept {

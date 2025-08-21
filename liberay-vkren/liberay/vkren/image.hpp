@@ -34,6 +34,7 @@ struct ExclusiveImage2DResource {
     ImageDescription desc;
     vk::ImageTiling tiling = vk::ImageTiling::eOptimal;
     vk::MemoryPropertyFlags mem_properties;
+    vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1;
   };
 
   static Result<ExclusiveImage2DResource, Error> create(const Device& device, const CreateInfo& info);

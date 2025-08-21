@@ -31,8 +31,6 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
-#include "liberay/vkren/image_description.hpp"
-
 struct GLFWWindowCreationFailure {};
 
 namespace vkren = eray::vkren;
@@ -97,8 +95,8 @@ class HelloTriangleApplication {
 
  private:
   std::expected<void, VulkanInitError> init_vk() {
-    TRY(create_device())
-    TRY(create_swap_chain())
+    create_device();
+    create_swap_chain();
     create_descriptor_set_layout();
     TRY(create_graphics_pipeline())
     TRY(create_command_pool())
@@ -112,7 +110,7 @@ class HelloTriangleApplication {
     return {};
   }
 
-  std::expected<void, VulkanInitError> create_device() {
+  void create_device() {
     // == Global Extensions ============================================================================================
     if (!glfwVulkanSupported()) {
       eray::util::panic("GLFW could not load Vulkan");
@@ -144,15 +142,7 @@ class HelloTriangleApplication {
     auto desktop_template                 = vkren::Device::CreateInfo::DesktopTemplate();
     auto device_info                      = desktop_template.get(surface_creator, required_global_extensions);
     device_info.app_info.pApplicationName = "VkTriangle";
-
-    if (auto result = vkren::Device::create(context_, device_info)) {
-      device_ = std::move(*result);
-    } else {
-      eray::util::Logger::err("Could not create a logical device wrapper");
-      return std::unexpected(VulkanObjectCreationError{});
-    }
-
-    return {};
+    device_ = vkren::Device::create(context_, device_info).or_panic("Could not create a logical device wrapper");
   }
 
   std::expected<void, GLFWWindowCreationFailure> initWindow() {
@@ -331,22 +321,16 @@ class HelloTriangleApplication {
     eray::util::Logger::succ("Finished cleanup");
   }
 
-  std::expected<void, VulkanInitError> create_swap_chain() {
+  void create_swap_chain() {
     // Unfortunately, if you are using a high DPI display (like Apple’s Retina display), screen coordinates don’t
     // correspond to pixels. For that reason we use glfwGetFrameBufferSize to get size in pixels. (Note:
     // glfwGetWindowSize returns size in screen coordinates).
     int width{};
     int height{};
     glfwGetFramebufferSize(window_, &width, &height);
-
-    if (auto result = vkren::SwapChain::create(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
-      swap_chain_ = std::move(*result);
-    } else {
-      eray::util::Logger::err("Could not create a swap chain");
-      return std::unexpected(VulkanObjectCreationError{});
-    }
-
-    return {};
+    swap_chain_ = vkren::SwapChain::create(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                                           device_.get_max_usable_sample_count())
+                      .or_panic("Could not create a swap chain");
   }
 
   std::expected<void, SwapchainRecreationFailure> recreate_swap_chain() {
@@ -470,8 +454,9 @@ class HelloTriangleApplication {
 
     // == 5. Multisampling =============================================================================================
     auto multisampling_state_info = vk::PipelineMultisampleStateCreateInfo{
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
-        .sampleShadingEnable  = vk::False,
+        .rasterizationSamples = swap_chain_.msaa_sample_count(),
+        .sampleShadingEnable  = vk::True,
+        .minSampleShading     = .2F,
     };
 
     // == 6. Depth and Stencil Testing =================================================================================
@@ -530,11 +515,11 @@ class HelloTriangleApplication {
     // We use the dynamic rendering feature (Vulkan 1.3), the structure below specifies color attachment data, and
     // the format. In previous versions of Vulkan, we would need to create framebuffers to bind our image views to
     // a render pass, so the dynamic rendering eliminates the need for render pass and framebuffer.
-    auto format = swap_chain_.color_format();
+    auto format = swap_chain_.color_attachment_format();
     vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
         .colorAttachmentCount    = 1,
         .pColorAttachmentFormats = &format,
-        .depthAttachmentFormat   = swap_chain_.depth_stencil_format(),
+        .depthAttachmentFormat   = swap_chain_.depth_stencil_attachment_format(),
     };
 
     auto pipeline_info = vk::GraphicsPipelineCreateInfo{
@@ -776,7 +761,7 @@ class HelloTriangleApplication {
     txt_sampler_ = vkren::Result(device_->createSampler(sampler_info)).or_panic("Could not create the sampler");
   }
 
-  struct TransitionColorAttachmentLayoutInfo {
+  struct TransitionSwapChainImageLayoutInfo {
     uint32_t image_index;
     size_t frame_index;
     vk::ImageLayout old_layout;
@@ -802,7 +787,7 @@ class HelloTriangleApplication {
    * @param src_stage_mask
    * @param dst_stage_mask
    */
-  void transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo info) {
+  void transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo info) {
     auto barrier = vk::ImageMemoryBarrier2{
         .srcStageMask        = info.src_stage_mask,
         .srcAccessMask       = info.src_access_mask,
@@ -852,10 +837,50 @@ class HelloTriangleApplication {
         .newLayout           = info.new_layout,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.depth_stencil_image(),  //
+        .image               = swap_chain_.depth_stencil_attachment_image(),  //
         .subresourceRange =
             vk::ImageSubresourceRange{
                 .aspectMask     = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil,
+                .baseMipLevel   = 0,
+                .levelCount     = 1,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+    };
+
+    auto dependency_info = vk::DependencyInfo{
+        .dependencyFlags         = {},
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers    = &barrier,
+    };
+
+    command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
+  }
+
+  struct TransitionColorAttachmentLayoutInfo {
+    size_t frame_index;
+    vk::ImageLayout old_layout;
+    vk::ImageLayout new_layout;
+    vk::AccessFlags2 src_access_mask;
+    vk::AccessFlags2 dst_access_mask;
+    vk::PipelineStageFlags2 src_stage_mask;
+    vk::PipelineStageFlags2 dst_stage_mask;
+  };
+
+  void transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo info) {
+    auto barrier = vk::ImageMemoryBarrier2{
+        .srcStageMask        = info.src_stage_mask,
+        .srcAccessMask       = info.src_access_mask,
+        .dstStageMask        = info.dst_stage_mask,
+        .dstAccessMask       = info.dst_access_mask,
+        .oldLayout           = info.old_layout,
+        .newLayout           = info.new_layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image               = swap_chain_.color_attachment_image(),  //
+        .subresourceRange =
+            vk::ImageSubresourceRange{
+                .aspectMask     = vk::ImageAspectFlagBits::eColor,
                 .baseMipLevel   = 0,
                 .levelCount     = 1,
                 .baseArrayLayer = 0,
@@ -891,7 +916,7 @@ class HelloTriangleApplication {
     });
 
     // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
-    transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
+    transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
         .image_index     = image_index,
         .frame_index     = frame_index,
         .old_layout      = vk::ImageLayout::eUndefined,
@@ -914,12 +939,27 @@ class HelloTriangleApplication {
             vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
     });
 
+    transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
+        .frame_index     = frame_index,
+        .old_layout      = vk::ImageLayout::eUndefined,
+        .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
+        .src_access_mask = {},
+        .dst_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+        .src_stage_mask  = vk::PipelineStageFlagBits2::eTopOfPipe,
+        .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+    });
+
     auto color_buffer_attachment_info = vk::RenderingAttachmentInfo{
         // Specifies which image to render to
-        .imageView = swap_chain_.image_views()[image_index],
+        .imageView = swap_chain_.color_attachment_image_view(),
 
         // Specifies the layout the image will be in during rendering
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+
+        // Render pass multisample operation
+        .resolveMode        = vk::ResolveModeFlagBits::eAverage,
+        .resolveImageView   = swap_chain_.image_views()[image_index],
+        .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 
         // Specifies what to do with the image before rendering
         .loadOp = vk::AttachmentLoadOp::eClear,
@@ -930,7 +970,7 @@ class HelloTriangleApplication {
         .clearValue = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F),
     };
     auto depth_buffer_attachment_info = vk::RenderingAttachmentInfo{
-        .imageView   = swap_chain_.depth_stencil_image_view(),
+        .imageView   = swap_chain_.depth_stencil_attachment_image_view(),
         .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eClear,
         .storeOp     = vk::AttachmentStoreOp::eStore,
@@ -984,7 +1024,7 @@ class HelloTriangleApplication {
     command_buffers_[frame_index].endRendering();
 
     // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
-    transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
+    transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
         .image_index     = image_index,
         .frame_index     = frame_index,
         .old_layout      = vk::ImageLayout::eColorAttachmentOptimal,

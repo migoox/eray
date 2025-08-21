@@ -5,19 +5,21 @@
 #include <liberay/util/variant_match.hpp>
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/image.hpp>
+#include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
-#include "liberay/vkren/image_description.hpp"
-
 namespace eray::vkren {
 
-Result<SwapChain, Error> SwapChain::create(const Device& device, uint32_t width, uint32_t height) noexcept {
-  auto swap_chain = SwapChain();
+Result<SwapChain, Error> SwapChain::create(const Device& device, uint32_t width, uint32_t height,
+                                           vk::SampleCountFlagBits sample_count) noexcept {
+  auto swap_chain               = SwapChain();
+  swap_chain.msaa_sample_count_ = sample_count;
   TRY(swap_chain.create_swap_chain(device, width, height));
   TRY(swap_chain.create_image_views(device));
+  TRY(swap_chain.create_color_buffer(device));
   TRY(swap_chain.create_depth_stencil_buffer(device));
   return swap_chain;
 }
@@ -213,6 +215,38 @@ Result<void, Error> SwapChain::create_image_views(const vkren::Device& device) n
   return {};
 }
 
+Result<void, Error> SwapChain::create_color_buffer(const vkren::Device& device) noexcept {
+  auto img_info = vkren::ExclusiveImage2DResource::CreateInfo{
+      .size_in_bytes = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
+      .image_usage   = vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
+      .desc =
+          ImageDescription{
+              .format     = format_,
+              .width      = extent_.width,
+              .height     = extent_.height,
+              .mip_levels = 1,
+          },
+      .tiling         = vk::ImageTiling::eOptimal,
+      .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+      .sample_count   = msaa_sample_count_,
+  };
+  auto img_opt = ExclusiveImage2DResource::create(device, img_info);
+  if (!img_opt) {
+    util::Logger::err("Could not create an image resource for color attachment");
+    return std::unexpected(img_opt.error());
+  }
+  color_image_ = std::move(*img_opt);
+
+  auto view_opt = color_image_.create_image_view(device, vk::ImageAspectFlagBits::eColor);
+  if (!view_opt) {
+    util::Logger::err("Could not create image view for color attachment");
+    return std::unexpected(view_opt.error());
+  }
+  color_image_view_ = std::move(*view_opt);
+
+  return {};
+}
+
 Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& device) noexcept {
   auto format_opt = find_supported_depth_stencil_format(
       device, {vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint}, vk::ImageTiling::eOptimal,
@@ -235,6 +269,7 @@ Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& 
           },
       .tiling         = vk::ImageTiling::eOptimal,
       .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+      .sample_count   = msaa_sample_count_,
   };
   auto img_opt = vkren::ExclusiveImage2DResource::create(device, img_info);
   if (!img_opt) {
@@ -315,8 +350,12 @@ Result<void, Error> SwapChain::recreate(const Device& device_, uint32_t width, u
     eray::util::Logger::err("Could not recreate a swap chain: Image views creation failed.");
     return std::unexpected(result.error());
   }
+  if (auto result = create_color_buffer(device_); !result) {
+    eray::util::Logger::err("Could not recreate a swap chain: color buffer attachment creation failed.");
+    return std::unexpected(result.error());
+  }
   if (auto result = create_depth_stencil_buffer(device_); !result) {
-    eray::util::Logger::err("Could not recreate a swap chain: depth buffer creation failed.");
+    eray::util::Logger::err("Could not recreate a swap chain: depth buffer attachment creation failed.");
     return std::unexpected(result.error());
   }
 

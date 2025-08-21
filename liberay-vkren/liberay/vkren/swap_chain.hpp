@@ -26,7 +26,8 @@ class SwapChain {
   ERAY_DELETE_COPY(SwapChain)
   ERAY_DEFAULT_MOVE(SwapChain)
 
-  static Result<SwapChain, Error> create(const Device& device, uint32_t width, uint32_t height) noexcept;
+  static Result<SwapChain, Error> create(const Device& device, uint32_t width, uint32_t height,
+                                         vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) noexcept;
 
   vk::raii::SwapchainKHR* operator->() noexcept { return &swap_chain_; }
   const vk::raii::SwapchainKHR* operator->() const noexcept { return &swap_chain_; }
@@ -35,13 +36,24 @@ class SwapChain {
   const vk::raii::SwapchainKHR& operator*() const noexcept { return swap_chain_; }
 
   const std::vector<vk::Image>& images() const { return images_; }
-  const vk::raii::Image& depth_stencil_image() const { return depth_stencil_image_.image; }
+  const vk::raii::Image& depth_stencil_attachment_image() const { return depth_stencil_image_.image; }
+  const vk::raii::Image& color_attachment_image() const { return color_image_.image; }
 
   const std::vector<vk::raii::ImageView>& image_views() { return image_views_; }
-  const vk::raii::ImageView& depth_stencil_image_view() const { return depth_stencil_image_view_; }
+  const vk::raii::ImageView& depth_stencil_attachment_image_view() const { return depth_stencil_image_view_; }
 
-  vk::Format color_format() { return format_; }
-  vk::Format depth_stencil_format() { return depth_stencil_format_; }
+  /**
+   * @brief Color attachment for MSAA that can be used in render pass multisample resolve operation.
+   * See https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations.
+   *
+   * @return const vk::raii::ImageView&
+   */
+  const vk::raii::ImageView& color_attachment_image_view() const { return color_image_view_; }
+
+  vk::Format image_format() { return format_; }
+
+  vk::Format color_attachment_format() { return format_; }
+  vk::Format depth_stencil_attachment_format() { return depth_stencil_format_; }
 
   const vk::Extent2D& extent() { return extent_; }
 
@@ -59,11 +71,14 @@ class SwapChain {
    */
   void cleanup();
 
+  vk::SampleCountFlagBits msaa_sample_count() const { return msaa_sample_count_; }
+
  private:
   SwapChain() = default;
 
   Result<void, Error> create_swap_chain(const vkren::Device& device, uint32_t width, uint32_t height) noexcept;
   Result<void, Error> create_image_views(const vkren::Device& device) noexcept;
+  Result<void, Error> create_color_buffer(const vkren::Device& device) noexcept;
   Result<void, Error> create_depth_stencil_buffer(const vkren::Device& device) noexcept;
 
   Result<vk::Format, Error> find_supported_depth_stencil_format(const Device& device,
@@ -85,10 +100,6 @@ class SwapChain {
    */
   vk::raii::SwapchainKHR swap_chain_ = vk::raii::SwapchainKHR(nullptr);
 
-  /**
-   * @brief Stores handles to the Swap chain images (color attachment). Images are created by the `SwapchainKHR`.
-   *
-   */
   std::vector<vk::Image> images_;
 
   /**
@@ -99,8 +110,14 @@ class SwapChain {
   std::vector<vk::raii::ImageView> image_views_;
 
   /**
-   * @brief Handle to a depth buffer attachment. In contrast to the color attachment we only need a single depth image,
-   * because only one draw operation is running at once.
+   * @brief Handle to a color buffer attachment.
+   *
+   */
+  vkren::ExclusiveImage2DResource color_image_;
+  vk::raii::ImageView color_image_view_ = nullptr;
+
+  /**
+   * @brief Handle to a depth buffer attachment.
    *
    */
   vkren::ExclusiveImage2DResource depth_stencil_image_;
@@ -118,6 +135,8 @@ class SwapChain {
    *
    */
   vk::Extent2D extent_{};
+
+  vk::SampleCountFlagBits msaa_sample_count_{};
 };
 
 }  // namespace eray::vkren

@@ -227,7 +227,7 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create(const D
       .extent      = vk::Extent3D{.width = info.desc.width, .height = info.desc.height, .depth = 1},
       .mipLevels   = info.desc.mip_levels,
       .arrayLayers = 1,
-      .samples     = vk::SampleCountFlagBits::e1,
+      .samples     = info.sample_count,
       .tiling      = info.tiling,
       .usage       = info.image_usage,
       .sharingMode = vk::SharingMode::eExclusive,
