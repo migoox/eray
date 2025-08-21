@@ -52,6 +52,8 @@ class Color {
   static constexpr ColorU32 kBlack = 0xFF000000;
 };
 
+struct MipMappedImage;
+
 /**
  * @brief Represents an image with alpha channel (4 bytes per pixel). The pixel format is R8 G8 B8 A8. The data is
  * stored in RAM.
@@ -84,11 +86,16 @@ class Image {
   /**
    * @brief Calculates the number of mip levels basing on height and width of the image.
    *
-   * @return uint32_t
+   * @return uint32_t mip levels count
    */
   uint32_t calculate_mip_levels() const;
-
   static uint32_t calculate_mip_levels(uint32_t width, uint32_t height);
+
+  /**
+   * @brief CPU-sided mipmaps generation. Returns a buffer of packed images with LOD ranging 0 to mip levels - 1.
+   *
+   */
+  MipMappedImage generate_mipmaps_buffer();
 
  private:
   Image();
@@ -102,4 +109,15 @@ class Image {
   std::vector<ColorU32> data_;
 };
 
+struct MipMappedImage {
+  std::vector<ColorU32> data;
+  uint32_t lod0_width;
+  uint32_t lod0_height;
+  uint32_t mip_levels;
+  uint8_t bpp = 4;
+
+  size_t size_in_bytes() const { return data.size() * sizeof(uint32_t); }
+  const ColorU32* raw() const { return data.data(); }
+  const ColorComponentU8* raw_bytes() const { return reinterpret_cast<const ColorComponentU8*>(data.data()); }
+};
 }  // namespace eray::res

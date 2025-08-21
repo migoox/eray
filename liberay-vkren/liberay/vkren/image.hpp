@@ -36,9 +36,31 @@ struct ExclusiveImage2DResource {
   };
 
   static Result<ExclusiveImage2DResource, Error> create(const Device& device, const CreateInfo& info);
+
+  /**
+   * @brief If desc.mip_levels > 1 than the mipmaps will be generated with Vulkan Blitting.
+   *
+   * @param device
+   * @param desc
+   * @param data
+   * @param size_in_bytes
+   * @return Result<ExclusiveImage2DResource, Error>
+   */
   static Result<ExclusiveImage2DResource, Error> create_texture_image(const Device& device, ImageDescription desc,
-                                                                      const void* data, vk::DeviceSize size_in_bytes,
-                                                                      bool generate_mipmaps = false);
+                                                                      const void* data, vk::DeviceSize size_in_bytes);
+  /**
+   * @brief Expects a buffer containing packed images with LOD ranging 0 to mip levels - 1.
+   *
+   * @param device
+   * @param desc
+   * @param data
+   * @param size_in_bytes
+   * @return Result<ExclusiveImage2DResource, Error>
+   */
+  static Result<ExclusiveImage2DResource, Error> create_texture_image_from_mipmaps(const Device& device,
+                                                                                   ImageDescription desc,
+                                                                                   const void* data,
+                                                                                   vk::DeviceSize size_in_bytes);
 
   /**
    * @brief Blocks the program execution and copies GPU `src_buff` data to the other GPU buffer.

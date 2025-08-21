@@ -114,11 +114,19 @@ class HelloTriangleApplication {
 
   std::expected<void, VulkanInitError> create_device() {
     // == Global Extensions ============================================================================================
+    if (!glfwVulkanSupported()) {
+      eray::util::panic("GLFW could not load Vulkan");
+    }
+
     auto required_global_extensions = std::vector<const char*>();
     {
       uint32_t glfw_extensions_count = 0;
-      auto* glfw_extensions          = glfwGetRequiredInstanceExtensions(&glfw_extensions_count);
-      required_global_extensions = std::vector<const char*>(glfw_extensions, glfw_extensions + glfw_extensions_count);
+      if (auto* glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extensions_count)) {
+        required_global_extensions = std::vector<const char*>(glfw_extensions, glfw_extensions + glfw_extensions_count);
+        eray::util::Logger::info("{}", required_global_extensions);
+      } else {
+        eray::util::panic("Could not get required instance extensions from GLFW");
+      }
     }
 
     // == Surface Creator ==============================================================================================
@@ -741,17 +749,29 @@ class HelloTriangleApplication {
   void create_txt_img() {
     auto img = eray::res::Image::load_from_path(eray::os::System::executable_dir() / "assets" / "cad.jpeg")
                    .or_panic("cad is not there :(");
+    auto mipmaps = img.generate_mipmaps_buffer();
 
-    txt_image_ =
-        eray::vkren::ExclusiveImage2DResource::create_texture_image(device_,
-                                                                    vkren::ImageDescription{
-                                                                        .format     = vk::Format::eR8G8B8A8Srgb,
-                                                                        .width      = img.width(),
-                                                                        .height     = img.height(),
-                                                                        .mip_levels = img.calculate_mip_levels(),
-                                                                    },
-                                                                    img.raw(), img.size_in_bytes(), true)
-            .or_panic("Could not create a texture image");
+    // txt_image_ = eray::vkren::ExclusiveImage2DResource::create_texture_image(device_,
+    //                                                                          vkren::ImageDescription{
+    //                                                                              .format = vk::Format::eR8G8B8A8Srgb,
+    //                                                                              .width  = img.width() / 2,
+    //                                                                              .height = img.height() / 2,
+    //                                                                              .mip_levels = 1,
+    //                                                                          },
+    //                                                                          mipmaps.raw() + img.size_in_bytes() / 4,
+    //                                                                          img.size_in_bytes() / 4)
+    //                  .or_panic("Could not create a texture image");
+
+    txt_image_ = eray::vkren::ExclusiveImage2DResource::create_texture_image_from_mipmaps(
+                     device_,
+                     vkren::ImageDescription{
+                         .format     = vk::Format::eR8G8B8A8Srgb,
+                         .width      = img.width(),
+                         .height     = img.height(),
+                         .mip_levels = mipmaps.mip_levels,
+                     },
+                     mipmaps.raw(), mipmaps.size_in_bytes())
+                     .or_panic("Could not create a texture image");
 
     // Image View
     txt_view_ = txt_image_.create_image_view(device_).or_panic("Could not create the image view");

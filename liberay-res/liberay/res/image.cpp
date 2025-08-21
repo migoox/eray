@@ -1,5 +1,8 @@
+#include "liberay/util/panic.hpp"
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image/stb_image.h>
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include <stb_image/stb_image_resize2.h>
 
 #include <expected>
 #include <filesystem>
@@ -84,6 +87,53 @@ uint32_t Image::calculate_mip_levels() const { return calculate_mip_levels(width
 
 uint32_t Image::calculate_mip_levels(uint32_t width, uint32_t height) {
   return static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+}
+
+MipMappedImage Image::generate_mipmaps_buffer() {
+  if (height_ == 0 || width_ == 0) {
+    util::panic("Cannot generate mipmaps, width and height must contain non-zero values.");
+  }
+
+  const auto mip_levels = calculate_mip_levels();
+
+  auto mip_width  = static_cast<int>(width_);
+  auto mip_height = static_cast<int>(height_);
+  auto buff_size  = 0;
+  for (auto i = 0U; i < mip_levels; ++i) {
+    buff_size += mip_width * mip_height;
+    mip_width  = std::max(mip_width / 2, 1);
+    mip_height = std::max(mip_height / 2, 1);
+  }
+
+  auto result = std::vector<ColorU32>();
+  result.resize(static_cast<size_t>(buff_size));
+  std::ranges::copy(data_.begin(), data_.end(), result.begin());
+
+  mip_width  = static_cast<int>(width_);
+  mip_height = static_cast<int>(height_);
+  auto prev  = 0;
+  auto next  = static_cast<int>(width_ * height_);
+  for (auto i = 1U; i < mip_levels; ++i) {
+    auto new_mip_width  = std::max(mip_width / 2, 1);
+    auto new_mip_height = std::max(mip_height / 2, 1);
+
+    stbir_resize(result.data() + prev, mip_width, mip_height, 0, result.data() + next, new_mip_width, new_mip_height, 0,
+                 stbir_pixel_layout::STBIR_RGBA, stbir_datatype::STBIR_TYPE_UINT8, stbir_edge::STBIR_EDGE_CLAMP,
+                 stbir_filter::STBIR_FILTER_TRIANGLE);
+
+    prev       = next;
+    next       = next + new_mip_width * new_mip_height;
+    mip_width  = new_mip_width;
+    mip_height = new_mip_height;
+  }
+
+  return MipMappedImage{
+      .data        = std::move(result),
+      .lod0_width  = width_,
+      .lod0_height = height_,
+      .mip_levels  = mip_levels,
+      .bpp         = bpp_,
+  };
 }
 
 }  // namespace eray::res
