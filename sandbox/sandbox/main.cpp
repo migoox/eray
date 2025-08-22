@@ -139,7 +139,7 @@ class HelloTriangleApplication {
     };
 
     // == Device Creation ==============================================================================================
-    auto desktop_template                 = vkren::Device::CreateInfo::DesktopTemplate();
+    auto desktop_template                 = vkren::Device::CreateInfo::DesktopProfile();
     auto device_info                      = desktop_template.get(surface_creator, required_global_extensions);
     device_info.app_info.pApplicationName = "VkTriangle";
     device_ = vkren::Device::create(context_, device_info).or_panic("Could not create a logical device wrapper");
@@ -455,8 +455,11 @@ class HelloTriangleApplication {
     // == 5. Multisampling =============================================================================================
     auto multisampling_state_info = vk::PipelineMultisampleStateCreateInfo{
         .rasterizationSamples = swap_chain_.msaa_sample_count(),
-        .sampleShadingEnable  = vk::True,
-        .minSampleShading     = .2F,
+        // If sampling shading is enabled, an implementation must invoke the fragment shader at least
+        // minSampleShading*rasterizationSamples times per fragment
+        //
+        // VkPipelineMultisampleStateCreateInfo::rasterizationSamples ⌉, 1) times per fragment .sampleShadingEnable  =
+        // vk::True, .minSampleShading     = .2F,
     };
 
     // == 6. Depth and Stencil Testing =================================================================================
@@ -939,27 +942,12 @@ class HelloTriangleApplication {
             vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
     });
 
-    transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
-        .frame_index     = frame_index,
-        .old_layout      = vk::ImageLayout::eUndefined,
-        .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
-        .src_access_mask = {},
-        .dst_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
-        .src_stage_mask  = vk::PipelineStageFlagBits2::eTopOfPipe,
-        .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-    });
-
     auto color_buffer_attachment_info = vk::RenderingAttachmentInfo{
         // Specifies which image to render to
-        .imageView = swap_chain_.color_attachment_image_view(),
+        .imageView = swap_chain_.image_views()[image_index],
 
         // Specifies the layout the image will be in during rendering
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-
-        // Render pass multisample operation
-        .resolveMode        = vk::ResolveModeFlagBits::eAverage,
-        .resolveImageView   = swap_chain_.image_views()[image_index],
-        .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 
         // Specifies what to do with the image before rendering
         .loadOp = vk::AttachmentLoadOp::eClear,
@@ -969,6 +957,7 @@ class HelloTriangleApplication {
 
         .clearValue = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F),
     };
+
     auto depth_buffer_attachment_info = vk::RenderingAttachmentInfo{
         .imageView   = swap_chain_.depth_stencil_attachment_image_view(),
         .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
@@ -976,6 +965,24 @@ class HelloTriangleApplication {
         .storeOp     = vk::AttachmentStoreOp::eStore,
         .clearValue  = vk::ClearDepthStencilValue(1.0F, 0),
     };
+
+    if (swap_chain_.msaa_sample_count() != vk::SampleCountFlagBits::e1) {
+      // When multisampling is enabled use the color attachment buffer
+
+      transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
+          .frame_index     = frame_index,
+          .old_layout      = vk::ImageLayout::eUndefined,
+          .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
+          .src_access_mask = {},
+          .dst_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+          .src_stage_mask  = vk::PipelineStageFlagBits2::eTopOfPipe,
+          .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+      });
+      color_buffer_attachment_info.imageView          = swap_chain_.color_attachment_image_view();
+      color_buffer_attachment_info.resolveMode        = vk::ResolveModeFlagBits::eAverage;
+      color_buffer_attachment_info.resolveImageView   = swap_chain_.image_views()[image_index];
+      color_buffer_attachment_info.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    }
 
     auto rendering_info = vk::RenderingInfo{
         // Defines the size of the render area

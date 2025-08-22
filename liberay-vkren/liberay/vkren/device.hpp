@@ -9,6 +9,7 @@
 #include <liberay/vkren/image_description.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_profiles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
@@ -38,6 +39,12 @@ class Device {
 
   struct CreateInfo {
     /**
+     * @brief Allow to request a profile properties.
+     *
+     */
+    VpProfileProperties profile_properties = {};
+
+    /**
      * @brief When empty, validation layers are completely disabled, otherwise "VK_EXT_debug_utils" global extension
      * will be automatically requested (no matter if specified in global_extensions explicitly).
      *
@@ -60,12 +67,6 @@ class Device {
     SurfaceCreator surface_creator;
 
     /**
-     * @brief If null, a default feature chain that enables dynamic rendering will be used.
-     *
-     */
-    const void* feature_chain;
-
-    /**
      * @brief Severity flags used for debug messenger.
      *
      * @note If validation layers are empty, no debug messenger will be set up.
@@ -79,9 +80,10 @@ class Device {
      * @brief `DesktopTemplate` provides default device configuration for desktop platforms.
      *
      */
-    struct DesktopTemplate {
+    struct DesktopProfile {
       /**
-       * @brief Returns `Device::CreateInfo` basing dedicated for generic desktop platforms.
+       * @brief Returns `Device::CreateInfo` basing dedicated for generic desktop platforms. Adds
+       * `"VK_LAYER_KHRONOS_validation"` in debug mode.
        *
        * @param surface_creator creates a SurfaceKHR, e.g. when using GLFW, this lambda would call
        * `glfwCreateWindowSurface`
@@ -92,8 +94,8 @@ class Device {
        *
        * @return CreateInfo
        */
-      [[nodiscard]] CreateInfo get(const SurfaceCreator& surface_creator_func,
-                                   std::span<const char* const> required_global_extensions) noexcept;
+      CreateInfo get(const SurfaceCreator& surface_creator_func,
+                     std::span<const char* const> required_global_extensions) noexcept;
 
      private:
       std::vector<const char*> validation_layers_;
@@ -101,9 +103,6 @@ class Device {
       std::vector<const char*> device_extensions_;
 
       SurfaceCreator surface_creator_;
-      vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
-                         vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
-          feature_chain_;
     };
   };
 

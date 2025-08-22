@@ -12,21 +12,26 @@ class ErrorCode {
   struct VulkanObjectCreationFailure {};
   struct NoSuitableMemoryTypeFailure {};
   struct MemoryAllocationFailure {};
-  struct ExtensionNotSupportedFailure {
+  struct ExtensionNotSupported {
     std::string extension;
   };
-  struct ValidationLayerNotSupportedFailure {};
+  struct ProfileNotSupported {
+    std::string name;
+    uint32_t version;
+  };
+  struct ValidationLayerNotSupported {};
   struct PhysicalDeviceNotSufficient {};
   struct SurfaceCreationFailure {};
 
-  using Enum = std::variant<               //
-      VulkanObjectCreationFailure,         //
-      NoSuitableMemoryTypeFailure,         //
-      MemoryAllocationFailure,             //
-      ExtensionNotSupportedFailure,        //
-      ValidationLayerNotSupportedFailure,  //
-      PhysicalDeviceNotSufficient,         //
-      SurfaceCreationFailure               //
+  using Enum = std::variant<        //
+      VulkanObjectCreationFailure,  //
+      NoSuitableMemoryTypeFailure,  //
+      MemoryAllocationFailure,      //
+      ExtensionNotSupported,        //
+      ValidationLayerNotSupported,  //
+      ProfileNotSupported,          //
+      PhysicalDeviceNotSufficient,  //
+      SurfaceCreationFailure        //
       >;
 };
 

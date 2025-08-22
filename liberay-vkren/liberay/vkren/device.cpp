@@ -1,3 +1,5 @@
+#include <vulkan/vulkan_core.h>
+
 #include <algorithm>
 #include <expected>
 #include <liberay/util/logger.hpp>
@@ -9,64 +11,52 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_profiles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
-Device::CreateInfo Device::CreateInfo::DesktopTemplate::get(
+Device::CreateInfo Device::CreateInfo::DesktopProfile::get(
     const SurfaceCreator& surface_creator_func, std::span<const char* const> required_global_extensions) noexcept {
-  // == Validation Layers ============================================================================================
+  // == Validation Layers ==============================================================================================
   validation_layers_.clear();
 #ifndef NDEBUG
   validation_layers_.emplace_back("VK_LAYER_KHRONOS_validation");
 #endif
 
-  // == Global Extensions ============================================================================================
+  // == Global Extensions ==============================================================================================
   global_extensions_.clear();
   global_extensions_.resize(required_global_extensions.size());
   std::ranges::copy(required_global_extensions.begin(), required_global_extensions.end(), global_extensions_.begin());
-  // vk::EXTDebugUtilsExtensionName is added automatically if validation layers are not empty
+  // Note: vk::EXTDebugUtilsExtensionName is added automatically if validation layers are not empty
 
-  // == Device Extensions ============================================================================================
+  // == Device Extensions ==============================================================================================
   device_extensions_.clear();
   device_extensions_ = {
-      vk::KHRSwapchainExtensionName,             // requires Surface Instance Extension
-      vk::KHRSpirv14ExtensionName,               //
-      vk::KHRShaderDrawParametersExtensionName,  // BaseInstance, BaseVertex, DrawIndex
-      vk::KHRSynchronization2ExtensionName,      //
-      vk::KHRCreateRenderpass2ExtensionName      //
+      vk::KHRSwapchainExtensionName,         // requires Surface Instance Extension
+      vk::KHRSpirv14ExtensionName,           //
+      vk::KHRSynchronization2ExtensionName,  //
+      vk::KHRCreateRenderpass2ExtensionName  //
   };
 
-  // == Feature Chain ================================================================================================
-  feature_chain_ = vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
-                                      vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>{
-      {
-          .features =
-              vk::PhysicalDeviceFeatures{
-                  .sampleRateShading = vk::True,
-                  .samplerAnisotropy = vk::True,
-              },
-      },                                                             // vk::PhysicalDeviceFeatures2
-      {.synchronization2 = vk::True, .dynamicRendering = vk::True},  // Enable dynamic rendering from Vulkan 1.3
-      {.extendedDynamicState = vk::True}                             // Enable extended dynamic state from the extension
-  };
+  // feature chains are defined by the profile only
 
-  // == App info =====================================================================================================
+  // == App info =======================================================================================================
   auto app_create_info = vk::ApplicationInfo{
       .pApplicationName   = "Vulkan Application",
-      .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+      .applicationVersion = VK_MAKE_VERSION(1, 0, 0),  // NOLINT
       .pEngineName        = "No Engine",
-      .engineVersion      = VK_MAKE_VERSION(1, 0, 0),
-      .apiVersion         = vk::ApiVersion14  //
+      .engineVersion      = VK_MAKE_VERSION(1, 0, 0),  // NOLINT
+      .apiVersion         = vk::ApiVersion14           //
   };
 
   return CreateInfo{
-      .validation_layers = validation_layers_,
-      .global_extensions = global_extensions_,
-      .device_extensions = device_extensions_,
-      .surface_creator   = surface_creator_func,
-      .feature_chain     = feature_chain_.get<vk::PhysicalDeviceFeatures2, 0>(),
+      .profile_properties = {VP_KHR_ROADMAP_2022_NAME, VP_KHR_ROADMAP_2022_SPEC_VERSION},
+      .validation_layers  = validation_layers_,
+      .global_extensions  = global_extensions_,
+      .device_extensions  = device_extensions_,
+      .surface_creator    = surface_creator_func,
       .severity_flags =
           vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
       .app_info = std::move(app_create_info),
@@ -94,9 +84,24 @@ Result<Device, Error> Device::create(vk::raii::Context& ctx, const CreateInfo& i
 }
 
 Result<void, Error> Device::create_instance(vk::raii::Context& ctx, const CreateInfo& info) noexcept {
-  auto extensions_props = ctx.enumerateInstanceExtensionProperties();
+  // == Vulkan Profiles ================================================================================================
+  auto supported = vk::False;
+  vpGetInstanceProfileSupport(nullptr, &info.profile_properties, &supported);
+  if (!supported) {
+    return std::unexpected(Error{
+        .msg = "KHR_ROADMAP_2022 is required but not supported",
+        .code =
+            ErrorCode::ProfileNotSupported{
+                .name    = std::string(info.profile_properties.profileName),
+                .version = info.profile_properties.specVersion,
+            },
+    });
+  }
+
+  // == Additional extensions ==========================================================================================
 
   // Check if the requested extensions are supported by the Vulkan implementation.
+  auto extensions_props  = ctx.enumerateInstanceExtensionProperties();
   auto global_extensions = get_global_extensions(info);
   for (const auto& ext : global_extensions) {
     if (std::ranges::none_of(extensions_props, [ext_name = std::string_view(ext)](const auto& prop) {
@@ -105,10 +110,12 @@ Result<void, Error> Device::create_instance(vk::raii::Context& ctx, const Create
       eray::util::Logger::err("Failed to create a Vulkan Instance. Requested extension {} is not supported", ext);
       return std::unexpected(Error{
           .msg  = std::format("Extension {} is not supported", ext),
-          .code = ErrorCode::ExtensionNotSupportedFailure{.extension = ext},
+          .code = ErrorCode::ExtensionNotSupported{.extension = ext},
       });
     }
   }
+
+  // == Validation layers ==============================================================================================
 
   // Check if the requested validation layers are supported by the Vulkan implementation.
   auto layer_props = ctx.enumerateInstanceLayerProperties();
@@ -120,32 +127,36 @@ Result<void, Error> Device::create_instance(vk::raii::Context& ctx, const Create
     eray::util::Logger::err("Failed to create a Vulkan Instance. Use of unsupported validation layer(s).");
     return std::unexpected(Error{
         .msg  = "Unsupported validation layer(s) provided",
-        .code = ErrorCode::ValidationLayerNotSupportedFailure{},
+        .code = ErrorCode::ValidationLayerNotSupported{},
     });
   }
 
+  // == Instance Creation ==============================================================================================
   auto instance_info = vk::InstanceCreateInfo{
-      // app info
-      .pApplicationInfo = &info.app_info,
-      // validation layers
-      .enabledLayerCount   = static_cast<uint32_t>(info.validation_layers.size()),
-      .ppEnabledLayerNames = info.validation_layers.data(),
-      // global extensions
+      .pApplicationInfo        = &info.app_info,
+      .enabledLayerCount       = static_cast<uint32_t>(info.validation_layers.size()),
+      .ppEnabledLayerNames     = info.validation_layers.data(),
       .enabledExtensionCount   = static_cast<uint32_t>(global_extensions.size()),
-      .ppEnabledExtensionNames = global_extensions.data(),  //
+      .ppEnabledExtensionNames = global_extensions.data(),
   };
 
-  if (auto result = ctx.createInstance(instance_info)) {
-    instance_ = std::move(*result);
-  } else {
-    eray::util::Logger::err("Failed to create a Vulkan Instance. Error type: {}", vk::to_string(result.error()));
+  auto vp_instance_info                    = VpInstanceCreateInfo{};
+  vp_instance_info.pCreateInfo             = reinterpret_cast<const VkInstanceCreateInfo*>(&instance_info);
+  vp_instance_info.enabledFullProfileCount = 1;
+  vp_instance_info.pEnabledFullProfiles    = &info.profile_properties;
+
+  VkInstance vp_instance = nullptr;
+  if (auto result = vk::Result(vpCreateInstance(&vp_instance_info, nullptr, &vp_instance));
+      result != vk::Result::eSuccess) {
+    eray::util::Logger::err("Failed to create a Vulkan Instance. Error type: {}", vk::to_string(result));
     return std::unexpected(Error{
         .msg     = "Vulkan Instance Creation error",
         .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = result.error(),
+        .vk_code = result,
     });
   }
-
+  auto instance = vk::Instance{vp_instance};
+  instance_     = vk::raii::Instance{ctx, instance};
   eray::util::Logger::succ("Successfully created a Vulkan Instance");
 
   return {};
@@ -204,15 +215,14 @@ Result<void, Error> Device::pick_physical_device(const CreateInfo& info) noexcep
 
   // Ordered map for automatic sorting by device score
   auto candidates = std::multimap<uint32_t, vk::raii::PhysicalDevice>();
-
   for (const auto& device : devices) {
-    auto props    = device.getProperties();  // name, type, supported Vulkan version
-    auto features = device.getFeatures();    // optional features like texture compression, 64-bit floats, multi-view
-                                             // port rendering (VR)
+    auto props          = device.getProperties();  // name, type, supported Vulkan version
     auto queue_families = device.getQueueFamilyProperties();
     auto extensions     = device.enumerateDeviceExtensionProperties();
 
-    if (!features.geometryShader || !features.tessellationShader || !features.samplerAnisotropy) {
+    auto supported = vk::False;
+    vpGetPhysicalDeviceProfileSupport(*instance_, *device, &info.profile_properties, &supported);
+    if (!supported) {
       util::Logger::info("Physical device with name {} is not suitable. This device will not be considered.",
                          std::string_view(props.deviceName));
       continue;
@@ -360,26 +370,30 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
 
   // == Logical Device Creation ========================================================================================
 
-  auto default_feature_chain = get_default_feature_chain();
-  auto device_create_info    = vk::DeviceCreateInfo{
-         .pNext =
-          info.feature_chain ? info.feature_chain : default_feature_chain.get<vk::PhysicalDeviceFeatures2, 0>(),  //
-         .queueCreateInfoCount    = 1,                                                                               //
-         .pQueueCreateInfos       = &device_queue_create_info,                                                       //
-         .enabledExtensionCount   = static_cast<uint32_t>(info.device_extensions.size()),
-         .ppEnabledExtensionNames = info.device_extensions.data(),
+  auto device_create_info = vk::DeviceCreateInfo{
+      .queueCreateInfoCount    = 1,
+      .pQueueCreateInfos       = &device_queue_create_info,
+      .enabledExtensionCount   = static_cast<uint32_t>(info.device_extensions.size()),
+      .ppEnabledExtensionNames = info.device_extensions.data(),
   };
 
-  if (auto result = physical_device_.createDevice(device_create_info)) {
-    device_ = std::move(*result);
-  } else {
-    eray::util::Logger::err("Failed to create a logical device. {}", vk::to_string(result.error()));
+  auto vp_device_create_info                    = VpDeviceCreateInfo{};
+  vp_device_create_info.pCreateInfo             = reinterpret_cast<const VkDeviceCreateInfo*>(&device_create_info);
+  vp_device_create_info.enabledFullProfileCount = 1;
+  vp_device_create_info.pEnabledFullProfiles    = &info.profile_properties;
+
+  VkDevice vp_device = nullptr;
+  if (auto result = vk::Result(vpCreateDevice(*physical_device_, &vp_device_create_info, nullptr, &vp_device));
+      result != vk::Result::eSuccess) {
+    eray::util::Logger::err("Failed to create a logical device. {}", vk::to_string(result));
     return std::unexpected(Error{
         .msg     = "Vulkan Logical Device creation failure",
         .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = result.error(),
+        .vk_code = result,
     });
   }
+  auto device = vk::Device{vp_device};
+  device_     = vk::raii::Device{physical_device_, device};
 
   // ==  Queues Creation ===============================================================================================
 
