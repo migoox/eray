@@ -112,10 +112,6 @@ class HelloTriangleApplication {
 
   void create_device() {
     // == Global Extensions ============================================================================================
-    if (!glfwVulkanSupported()) {
-      eray::util::panic("GLFW could not load Vulkan");
-    }
-
     auto required_global_extensions = std::vector<const char*>();
     {
       uint32_t glfw_extensions_count = 0;
@@ -139,7 +135,7 @@ class HelloTriangleApplication {
     };
 
     // == Device Creation ==============================================================================================
-    auto desktop_template                 = vkren::Device::CreateInfo::DesktopProfile();
+    auto desktop_template                 = vkren::Device::CreateInfo::DesktopProfile{};
     auto device_info                      = desktop_template.get(surface_creator, required_global_extensions);
     device_info.app_info.pApplicationName = "VkTriangle";
     device_ = vkren::Device::create(context_, device_info).or_panic("Could not create a logical device wrapper");
@@ -147,6 +143,10 @@ class HelloTriangleApplication {
 
   std::expected<void, GLFWWindowCreationFailure> initWindow() {
     glfwInit();
+
+    if (!glfwVulkanSupported()) {
+      eray::util::panic("GLFW could not load Vulkan");
+    }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
