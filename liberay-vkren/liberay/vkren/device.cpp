@@ -319,7 +319,7 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
     auto queue_family_prop_it =
         std::ranges::find_if(indexed_queue_family_props, [&pd = physical_device_, &surf = surface_](auto&& pair) {
           auto&& [index, prop] = pair;
-          return ((prop.queueFlags & vk::QueueFlagBits::eGraphics & vk::QueueFlagBits::eCompute) !=
+          return ((prop.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)) !=
                   static_cast<vk::QueueFlags>(0)) &&
                  pd.getSurfaceSupportKHR(static_cast<uint32_t>(index), surf);
         });
@@ -328,8 +328,8 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
       // There is no a queue that supports both graphics and presentation queue families. We need separate queue
       // family.
       auto graphics_queue_family_prop_it = std::ranges::find_if(queue_family_props, [](const auto& prop) {
-        return (prop.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0) &&
-               (prop.queueFlags & vk::QueueFlagBits::eCompute) != static_cast<vk::QueueFlags>(0);
+        return (prop.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)) !=
+               static_cast<vk::QueueFlags>(0);
       });
 
       if (graphics_queue_family_prop_it == queue_family_props.end()) {
