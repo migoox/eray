@@ -2,6 +2,7 @@
 
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
+#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 namespace eray::vkren {
@@ -14,6 +15,8 @@ namespace eray::vkren {
  * should not be used frequently. Moreover since each buffer has it's own DeviceMemory in this scheme, there can be
  * up to 4096 ExclusiveBufferResources in your app.
  *
+ * @warning Lifetime is bound by the device lifetime.
+ *
  */
 struct ExclusiveBufferResource {
   vk::raii::Buffer buffer       = nullptr;
@@ -21,6 +24,7 @@ struct ExclusiveBufferResource {
   vk::DeviceSize mem_size_in_bytes;
   vk::BufferUsageFlags usage;
   vk::MemoryPropertyFlags mem_properties;
+  observer_ptr<const Device> p_device = nullptr;
 
   struct CreateInfo {
     vk::DeviceSize size_in_bytes;
@@ -51,7 +55,7 @@ struct ExclusiveBufferResource {
    *
    * @param src_buff
    */
-  void copy_from(const Device& device, const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const;
+  void copy_from(const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const;
 };
 
 }  // namespace eray::vkren

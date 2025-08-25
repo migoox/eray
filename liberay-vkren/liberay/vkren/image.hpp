@@ -19,6 +19,8 @@ namespace eray::vkren {
  * should not be used frequently. Moreover since each image has it's own DeviceMemory in this scheme, there can be
  * up to 4096 ExclusiveImageResources in your app.
  *
+ * @warning Lifetime is bound by the device lifetime.
+ *
  */
 struct ExclusiveImage2DResource {
   vk::raii::Image image         = nullptr;
@@ -27,6 +29,7 @@ struct ExclusiveImage2DResource {
   vk::ImageUsageFlags image_usage;
   vk::MemoryPropertyFlags mem_properties;
   ImageDescription desc;
+  observer_ptr<const Device> p_device = nullptr;
 
   struct CreateInfo {
     vk::DeviceSize size_in_bytes;
@@ -85,15 +88,14 @@ struct ExclusiveImage2DResource {
    *
    * @param src_buff
    */
-  void copy_from(const Device& device, const vk::raii::Buffer& src_buff) const;
+  void copy_from(const vk::raii::Buffer& src_buff) const;
 
   Result<vk::raii::ImageView, Error> create_image_view(
-      const Device& device, vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlagBits::eColor);
+      vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlagBits::eColor);
 
  private:
-  static Result<ExclusiveImage2DResource, Error> copy_mip_maps_data(const Device& device,
-                                                                    const ExclusiveImage2DResource& image,
-                                                                    const void* data, vk::DeviceSize size_in_bytes);
+  static Result<void, Error> copy_mip_maps_data(const Device& device, const ExclusiveImage2DResource& image,
+                                                const void* data, vk::DeviceSize size_in_bytes);
 };
 
 }  // namespace eray::vkren

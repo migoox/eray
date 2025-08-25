@@ -211,7 +211,7 @@ class Device {
    * creation is not.
    * - On Linux with Wayland you need "VK_KHR_wayland_surface" and on windows you need
    * "VK_KHR_win32_surface" instance extension. Luckily the GLFW's `glfwGetRequiredInstanceExtensions` properly
-   * returns the platform specific Vulkan extensions.
+   * returns the platform specific Vulkan extensions. For this reason SurfaceCreator is mandatory.
    * - Each extension provides different platform-specific createInfo structures, e.g. `VkWin32SurfaceCreateInfoKHR`.
    * - GLFW provides `glfwCreateWindowSurface` handle platform-specific surface creation for us.
    *

@@ -618,7 +618,7 @@ class HelloTriangleApplication {
                   .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
               })
               .or_panic();
-      vert_buffer_.copy_from(device_, staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
+      vert_buffer_.copy_from(staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
     }
 
     // Index buffer
@@ -641,7 +641,7 @@ class HelloTriangleApplication {
                             .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
                         })
                         .or_panic();
-      ind_buffer_.copy_from(device_, staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
+      ind_buffer_.copy_from(staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
     }
 
     // Copying to uniform buffer each frame means that staging buffer makes no sense.
@@ -742,7 +742,7 @@ class HelloTriangleApplication {
                      .or_panic("Could not create a texture image");
 
     // Image View
-    txt_view_ = txt_image_.create_image_view(device_).or_panic("Could not create the image view");
+    txt_view_ = txt_image_.create_image_view().or_panic("Could not create the image view");
 
     // Image Sampler
     auto pdev_props   = device_.physical_device().getProperties();

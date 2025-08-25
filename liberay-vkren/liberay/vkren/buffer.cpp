@@ -62,6 +62,7 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create(const Dev
       .mem_size_in_bytes = info.size_in_bytes,
       .usage             = info.buff_usage,
       .mem_properties    = info.mem_properties,
+      .p_device          = &device,
   };
 }
 
@@ -82,11 +83,10 @@ void ExclusiveBufferResource::fill_data(const void* src_data, vk::DeviceSize off
   // tells us that it is guaranteed to be complete as of the next call to vkQueueSubmit
 }
 
-void ExclusiveBufferResource::copy_from(const Device& device, const vk::raii::Buffer& src_buff,
-                                        vk::BufferCopy cpy_info) const {
-  auto cmd_cpy_buff = device.begin_single_time_commands();
+void ExclusiveBufferResource::copy_from(const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const {
+  auto cmd_cpy_buff = p_device->begin_single_time_commands();
   cmd_cpy_buff.copyBuffer(src_buff, buffer, cpy_info);
-  device.end_single_time_commands(cmd_cpy_buff);
+  p_device->end_single_time_commands(cmd_cpy_buff);
 }
 
 }  // namespace eray::vkren

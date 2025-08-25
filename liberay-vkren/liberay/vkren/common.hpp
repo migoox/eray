@@ -55,4 +55,7 @@ constexpr bool has_flag(TFlags lhs, TFlagBits rhs) {
   return (lhs & rhs) == rhs;
 }
 
+template <typename T>
+using observer_ptr = T*;
+
 }  // namespace eray::vkren
