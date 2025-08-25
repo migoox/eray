@@ -127,6 +127,10 @@ class Device {
   vk::raii::Queue& graphics_queue() noexcept { return graphics_queue_; }
   const vk::raii::Queue& graphics_queue() const noexcept { return graphics_queue_; }
 
+  uint32_t compute_queue_family() const { return compute_queue_family_; }
+  vk::raii::Queue& compute_queue() noexcept { return compute_queue_; }
+  const vk::raii::Queue& compute_queue() const noexcept { return compute_queue_; }
+
   uint32_t presentation_queue_family() const { return presentation_queue_family_; }
   vk::raii::Queue& presentation_queue() noexcept { return presentation_queue_; }
   const vk::raii::Queue& presentation_queue() const noexcept { return presentation_queue_; }
@@ -239,6 +243,8 @@ class Device {
   // TODO(migoox): allow for creation of multiple queues
   vk::raii::Queue graphics_queue_ = nullptr;
   uint32_t graphics_queue_family_{};
+  vk::raii::Queue compute_queue_ = nullptr;
+  uint32_t compute_queue_family_{};
   vk::raii::Queue presentation_queue_ = nullptr;
   uint32_t presentation_queue_family_{};
 };

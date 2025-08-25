@@ -314,10 +314,13 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
     auto indexed_queue_family_props = std::views::enumerate(queue_family_props);
 
     // Try to find a queue family that supports both presentation and graphics families.
+    // Note: Vulkan requires an implementation which supports graphics operations to have at least one queue family that
+    // supports both graphics and compute operations.
     auto queue_family_prop_it =
         std::ranges::find_if(indexed_queue_family_props, [&pd = physical_device_, &surf = surface_](auto&& pair) {
           auto&& [index, prop] = pair;
-          return ((prop.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0)) &&
+          return ((prop.queueFlags & vk::QueueFlagBits::eGraphics & vk::QueueFlagBits::eCompute) !=
+                  static_cast<vk::QueueFlags>(0)) &&
                  pd.getSurfaceSupportKHR(static_cast<uint32_t>(index), surf);
         });
 
@@ -325,7 +328,8 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
       // There is no a queue that supports both graphics and presentation queue families. We need separate queue
       // family.
       auto graphics_queue_family_prop_it = std::ranges::find_if(queue_family_props, [](const auto& prop) {
-        return (prop.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);
+        return (prop.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0) &&
+               (prop.queueFlags & vk::QueueFlagBits::eCompute) != static_cast<vk::QueueFlags>(0);
       });
 
       if (graphics_queue_family_prop_it == queue_family_props.end()) {
@@ -336,7 +340,7 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
         });
       }
 
-      graphics_queue_family_ =
+      compute_queue_family_ = graphics_queue_family_ =
           static_cast<uint32_t>(std::distance(queue_family_props.begin(), graphics_queue_family_prop_it));
 
       auto surface_queue_family_prop_it =
@@ -356,7 +360,7 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
       presentation_queue_family_ =
           static_cast<uint32_t>(std::distance(indexed_queue_family_props.begin(), surface_queue_family_prop_it));
     } else {
-      graphics_queue_family_ = presentation_queue_family_ =
+      compute_queue_family_ = graphics_queue_family_ = presentation_queue_family_ =
           static_cast<uint32_t>(std::distance(indexed_queue_family_props.begin(), queue_family_prop_it));
     }
   }
@@ -403,6 +407,17 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
     eray::util::Logger::err("Failed to create a graphics queue. {}", vk::to_string(result.error()));
     return std::unexpected(Error{
         .msg     = "Vulkan Graphics Queue creation failure",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = result.error(),
+    });
+  }
+
+  if (auto result = device_.getQueue(compute_queue_family_, 0)) {
+    compute_queue_ = std::move(*result);
+  } else {
+    eray::util::Logger::err("Failed to create a compute queue. {}", vk::to_string(result.error()));
+    return std::unexpected(Error{
+        .msg     = "Vulkan Compute Queue creation failure",
         .code    = ErrorCode::VulkanObjectCreationFailure{},
         .vk_code = result.error(),
     });

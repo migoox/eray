@@ -1,3 +1,4 @@
+#include <expected>
 #include <liberay/util/logger.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/error.hpp>
@@ -64,6 +65,35 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create(const Dev
       .mem_properties    = info.mem_properties,
       .p_device          = &device,
   };
+}
+Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_staging_buffer(const Device& device,
+                                                                                      const void* src_data,
+                                                                                      vk::DeviceSize size_in_bytes) {
+  auto staging_buff_opt =
+      vkren::ExclusiveBufferResource::create(device, vkren::ExclusiveBufferResource::CreateInfo{
+                                                         .size_in_bytes = size_in_bytes,
+                                                         .buff_usage    = vk::BufferUsageFlagBits::eTransferSrc,
+                                                     });
+  if (!staging_buff_opt) {
+    util::Logger::err("Could not create a staging buffer");
+    return std::unexpected(staging_buff_opt.error());
+  }
+  staging_buff_opt->fill_data(src_data, 0, size_in_bytes);
+  return std::move(*staging_buff_opt);
+}
+
+Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_and_upload_via_staging_buffer(
+    const Device& device, const CreateInfo& info, const void* src_data) {
+  auto staging_buffer = vkren::ExclusiveBufferResource::create_staging_buffer(device, src_data, info.size_in_bytes)
+                            .or_panic("Staging buffer creation failed");
+  auto new_info = info;
+  new_info.buff_usage |= vk::BufferUsageFlagBits::eTransferDst;
+  auto result = vkren::ExclusiveBufferResource::create(device, new_info);
+  if (!result) {
+    return std::unexpected(result.error());
+  }
+  result->copy_from(staging_buffer.buffer, vk::BufferCopy(0, 0, info.size_in_bytes));
+  return std::move(*result);
 }
 
 void ExclusiveBufferResource::fill_data(const void* src_data, vk::DeviceSize offset_in_bytes,

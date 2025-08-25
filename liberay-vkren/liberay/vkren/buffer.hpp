@@ -33,7 +33,23 @@ struct ExclusiveBufferResource {
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
   };
 
-  static Result<ExclusiveBufferResource, Error> create(const Device& device, const CreateInfo& info);
+  [[nodiscard]] static Result<ExclusiveBufferResource, Error> create(const Device& device, const CreateInfo& info);
+
+  /**
+   * @brief Creates a buffer and uploads provided `src_data` to it via temporary staging buffer.
+   * VK_BUFFER_USAGE_TRANSFER_DST_BIT is automatically appended to the info.buff_usage.
+   *
+   * @param device
+   * @param info
+   * @param src_data
+   * @return Result<ExclusiveBufferResource, Error>
+   */
+  [[nodiscard]] static Result<ExclusiveBufferResource, Error> create_and_upload_via_staging_buffer(
+      const Device& device, const CreateInfo& info, const void* src_data);
+
+  [[nodiscard]] static Result<ExclusiveBufferResource, Error> create_staging_buffer(const Device& device,
+                                                                                    const void* src_data,
+                                                                                    vk::DeviceSize size_in_bytes);
 
   /**
    * @brief Copies CPU `src_data` to GPU memory. Creates vk::SharingMode::eExclusive buffer. Uses map to achieve

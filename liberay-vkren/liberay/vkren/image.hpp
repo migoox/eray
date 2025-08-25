@@ -40,7 +40,7 @@ struct ExclusiveImage2DResource {
     vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1;
   };
 
-  static Result<ExclusiveImage2DResource, Error> create(const Device& device, const CreateInfo& info);
+  [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create(const Device& device, const CreateInfo& info);
 
   /**
    * @brief If desc.mip_levels > 1 than the mipmaps will be generated with Vulkan Blitting.
@@ -51,8 +51,9 @@ struct ExclusiveImage2DResource {
    * @param size_in_bytes
    * @return Result<ExclusiveImage2DResource, Error>
    */
-  static Result<ExclusiveImage2DResource, Error> create_texture(const Device& device, ImageDescription desc,
-                                                                const void* data, vk::DeviceSize size_in_bytes);
+  [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create_texture(const Device& device,
+                                                                              ImageDescription desc, const void* data,
+                                                                              vk::DeviceSize size_in_bytes);
 
   /**
    * @brief Creates texture from CPU image representation. Generates mipmaps with Vulkan Blitting. If Vulkan Blitting is
@@ -63,8 +64,9 @@ struct ExclusiveImage2DResource {
    * @param generate_mipmaps
    * @return Result<ExclusiveImage2DResource, Error>
    */
-  static Result<ExclusiveImage2DResource, Error> create_texture(const Device& device, const res::Image& image,
-                                                                bool generate_mipmaps = true);
+  [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create_texture(const Device& device,
+                                                                              const res::Image& image,
+                                                                              bool generate_mipmaps = true);
 
   /**
    * @brief Expects a buffer containing packed images with LOD ranging 0 to mip levels - 1.
@@ -75,10 +77,8 @@ struct ExclusiveImage2DResource {
    * @param size_in_bytes
    * @return Result<ExclusiveImage2DResource, Error>
    */
-  static Result<ExclusiveImage2DResource, Error> create_texture_from_mipmaps_buffer(const Device& device,
-                                                                                    ImageDescription desc,
-                                                                                    const void* mipmaps_buffer,
-                                                                                    vk::DeviceSize size_in_bytes);
+  [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create_texture_from_mipmaps_buffer(
+      const Device& device, ImageDescription desc, const void* mipmaps_buffer, vk::DeviceSize size_in_bytes);
 
   /**
    * @brief Blocks the program execution and copies GPU `src_buff` data to the other GPU buffer.
