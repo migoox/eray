@@ -22,7 +22,9 @@ endif()
 
 # Shader targets configuration
 add_slang_shader_target(main_sh SOURCES "sandbox/main.slang" ENTRY_POINTS mainVert mainFrag)
+add_slang_shader_target(particle_sh SOURCES "sandbox/particle.slang" ENTRY_POINTS mainComp)
 add_dependencies(${PROJECT_NAME} main_sh)
+add_dependencies(${PROJECT_NAME} particle_sh)
 
 # Copy assets folder to build directory
 if(EXISTS "${PROJECT_SOURCE_DIR}/assets")

@@ -12,7 +12,7 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create(const Dev
   // == Create Buffer Object ===========================================================================================
 
   auto buffer_info = vk::BufferCreateInfo{
-      .size        = info.size_in_bytes,
+      .size        = info.size_bytes,
       .usage       = info.buff_usage,
       .sharingMode = vk::SharingMode::eExclusive,
   };
@@ -58,33 +58,33 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create(const Dev
   buffer_opt->bindMemory(*buffer_mem_opt, 0);
 
   return ExclusiveBufferResource{
-      .buffer            = std::move(*buffer_opt),
-      .memory            = std::move(*buffer_mem_opt),
-      .mem_size_in_bytes = info.size_in_bytes,
-      .usage             = info.buff_usage,
-      .mem_properties    = info.mem_properties,
-      .p_device          = &device,
+      .buffer         = std::move(*buffer_opt),
+      .memory         = std::move(*buffer_mem_opt),
+      .mem_size_bytes = info.size_bytes,
+      .usage          = info.buff_usage,
+      .mem_properties = info.mem_properties,
+      .p_device       = &device,
   };
 }
 Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_staging_buffer(const Device& device,
                                                                                       const void* src_data,
-                                                                                      vk::DeviceSize size_in_bytes) {
+                                                                                      vk::DeviceSize size_bytes) {
   auto staging_buff_opt =
       vkren::ExclusiveBufferResource::create(device, vkren::ExclusiveBufferResource::CreateInfo{
-                                                         .size_in_bytes = size_in_bytes,
-                                                         .buff_usage    = vk::BufferUsageFlagBits::eTransferSrc,
+                                                         .size_bytes = size_bytes,
+                                                         .buff_usage = vk::BufferUsageFlagBits::eTransferSrc,
                                                      });
   if (!staging_buff_opt) {
     util::Logger::err("Could not create a staging buffer");
     return std::unexpected(staging_buff_opt.error());
   }
-  staging_buff_opt->fill_data(src_data, 0, size_in_bytes);
+  staging_buff_opt->fill_data(src_data, 0, size_bytes);
   return std::move(*staging_buff_opt);
 }
 
 Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_and_upload_via_staging_buffer(
     const Device& device, const CreateInfo& info, const void* src_data) {
-  auto staging_buffer = vkren::ExclusiveBufferResource::create_staging_buffer(device, src_data, info.size_in_bytes)
+  auto staging_buffer = vkren::ExclusiveBufferResource::create_staging_buffer(device, src_data, info.size_bytes)
                             .or_panic("Staging buffer creation failed");
   auto new_info = info;
   new_info.buff_usage |= vk::BufferUsageFlagBits::eTransferDst;
@@ -92,14 +92,14 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_and_uploa
   if (!result) {
     return std::unexpected(result.error());
   }
-  result->copy_from(staging_buffer.buffer, vk::BufferCopy(0, 0, info.size_in_bytes));
+  result->copy_from(staging_buffer.buffer, vk::BufferCopy(0, 0, info.size_bytes));
   return std::move(*result);
 }
 
 void ExclusiveBufferResource::fill_data(const void* src_data, vk::DeviceSize offset_in_bytes,
-                                        vk::DeviceSize size_in_bytes) const {
-  void* dst = memory.mapMemory(offset_in_bytes, size_in_bytes);
-  memcpy(dst, src_data, size_in_bytes);
+                                        vk::DeviceSize size_bytes) const {
+  void* dst = memory.mapMemory(offset_in_bytes, size_bytes);
+  memcpy(dst, src_data, size_bytes);
   memory.unmapMemory();
 
   // Unfortunately, the driver may not immediately copy the data into the buffer memory, for example, because of

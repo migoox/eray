@@ -78,10 +78,15 @@ class Image {
 
   uint32_t width() const { return width_; }
   uint32_t height() const { return height_; }
-  size_t size_in_bytes() const { return width_ * height_ * sizeof(uint32_t); }
+  size_t size_bytes() const { return width_ * height_ * sizeof(uint32_t); }
 
   const ColorU32* raw() const { return data_.data(); }
   const ColorComponentU8* raw_bytes() const { return reinterpret_cast<const ColorComponentU8*>(data_.data()); }
+
+  std::span<const ColorU32> data() const { return data_; }
+  std::span<const ColorComponentU8> data_bytes() const {
+    return std::span{reinterpret_cast<const ColorComponentU8*>(data_.data()), size_bytes()};
+  }
 
   /**
    * @brief Calculates the number of mip levels basing on height and width of the image.
@@ -116,7 +121,7 @@ struct MipMappedImage {
   uint32_t mip_levels;
   uint8_t bpp = 4;
 
-  size_t size_in_bytes() const { return data.size() * sizeof(uint32_t); }
+  size_t size_bytes() const { return data.size() * sizeof(uint32_t); }
   const ColorU32* raw() const { return data.data(); }
   const ColorComponentU8* raw_bytes() const { return reinterpret_cast<const ColorComponentU8*>(data.data()); }
 };

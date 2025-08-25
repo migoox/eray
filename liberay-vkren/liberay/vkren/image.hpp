@@ -25,14 +25,14 @@ namespace eray::vkren {
 struct ExclusiveImage2DResource {
   vk::raii::Image image         = nullptr;
   vk::raii::DeviceMemory memory = nullptr;
-  vk::DeviceSize mem_size_in_bytes;
+  vk::DeviceSize mem_size_bytes;
   vk::ImageUsageFlags image_usage;
   vk::MemoryPropertyFlags mem_properties;
   ImageDescription desc;
   observer_ptr<const Device> p_device = nullptr;
 
   struct CreateInfo {
-    vk::DeviceSize size_in_bytes;
+    vk::DeviceSize size_bytes;
     vk::ImageUsageFlags image_usage;
     ImageDescription desc;
     vk::ImageTiling tiling = vk::ImageTiling::eOptimal;
@@ -48,12 +48,12 @@ struct ExclusiveImage2DResource {
    * @param device
    * @param desc
    * @param data
-   * @param size_in_bytes
+   * @param size_bytes
    * @return Result<ExclusiveImage2DResource, Error>
    */
   [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create_texture(const Device& device,
                                                                               ImageDescription desc, const void* data,
-                                                                              vk::DeviceSize size_in_bytes);
+                                                                              vk::DeviceSize size_bytes);
 
   /**
    * @brief Creates texture from CPU image representation. Generates mipmaps with Vulkan Blitting. If Vulkan Blitting is
@@ -74,11 +74,11 @@ struct ExclusiveImage2DResource {
    * @param device
    * @param desc
    * @param mipmaps_buffer
-   * @param size_in_bytes
+   * @param size_bytes
    * @return Result<ExclusiveImage2DResource, Error>
    */
   [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create_texture_from_mipmaps_buffer(
-      const Device& device, ImageDescription desc, const void* mipmaps_buffer, vk::DeviceSize size_in_bytes);
+      const Device& device, ImageDescription desc, const void* mipmaps_buffer, vk::DeviceSize size_bytes);
 
   /**
    * @brief Blocks the program execution and copies GPU `src_buff` data to the other GPU buffer.
@@ -95,7 +95,7 @@ struct ExclusiveImage2DResource {
 
  private:
   static Result<void, Error> copy_mip_maps_data(const Device& device, const ExclusiveImage2DResource& image,
-                                                const void* data, vk::DeviceSize size_in_bytes);
+                                                const void* data, vk::DeviceSize size_bytes);
 };
 
 }  // namespace eray::vkren

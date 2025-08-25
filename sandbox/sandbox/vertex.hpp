@@ -92,7 +92,7 @@ struct VertexBuffer {
         .flags = {},
 
         // Specifies size of the buffer in bytes
-        .size = vertices_size_in_bytes(),
+        .size = vertices_size_bytes(),
 
         .usage = vk::BufferUsageFlagBits::eVertexBuffer,
 
@@ -102,8 +102,8 @@ struct VertexBuffer {
     };
   }
 
-  uint32_t vertices_size_in_bytes() const { return static_cast<uint32_t>(sizeof(Vertex) * vertices.size()); }
-  uint32_t indices_size_in_bytes() const { return static_cast<uint32_t>(sizeof(uint16_t) * indices.size()); }
+  uint32_t vertices_size_bytes() const { return static_cast<uint32_t>(sizeof(Vertex) * vertices.size()); }
+  uint32_t indices_size_bytes() const { return static_cast<uint32_t>(sizeof(uint16_t) * indices.size()); }
 
   std::vector<Vertex> vertices;
   std::vector<uint16_t> indices;

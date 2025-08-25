@@ -1064,8 +1064,8 @@ class HelloTriangleApplication {
 
     // == 3. Fill Vertex Buffer ========================================================================================
 
-    void* data = vertex_buffer_mem_.mapMemory(0, vb.size_in_bytes());
-    memcpy(data, vb.vertices.data(), vb.size_in_bytes());
+    void* data = vertex_buffer_mem_.mapMemory(0, vb.size_bytes());
+    memcpy(data, vb.vertices.data(), vb.size_bytes());
     vertex_buffer_mem_.unmapMemory();
 
     // Unfortunately, the driver may not immediately copy the data into the buffer memory, for example, because of

@@ -10,6 +10,7 @@
 #include <liberay/math/vec_fwd.hpp>
 #include <liberay/os/system.hpp>
 #include <liberay/res/image.hpp>
+#include <liberay/res/shader.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
@@ -18,8 +19,10 @@
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/image.hpp>
+#include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <ranges>
+#include <sandbox/particle.hpp>
 #include <sandbox/vertex.hpp>
 #include <variant>
 #include <vector>
@@ -98,7 +101,8 @@ class HelloTriangleApplication {
     create_device();
     create_swap_chain();
     create_descriptor_set_layout();
-    TRY(create_graphics_pipeline())
+    create_graphics_pipeline();
+    create_compute_pipeline();
     TRY(create_command_pool())
     TRY(create_buffers())
     TRY(create_command_buffers())
@@ -106,6 +110,7 @@ class HelloTriangleApplication {
     create_descriptor_pool();
     create_descriptor_sets();
     TRY(create_sync_objs())
+    create_ssbufers();
 
     return {};
   }
@@ -349,24 +354,18 @@ class HelloTriangleApplication {
     return {};
   }
 
-  std::expected<void, VulkanInitError> create_graphics_pipeline() {
-    auto common_err = [](auto&& err) -> VulkanInitError { return std::forward<decltype(err)>(err); };
-
+  void create_graphics_pipeline() {
     // == 1. Shader stage ==============================================================================================
-    auto shader_module_opt = read_binary(eray::os::System::executable_dir() / "shaders" / "main_sh.spv")
-                                 .transform_error(common_err)
-                                 .and_then([this, common_err](const auto& bytecode) {
-                                   return create_shader_module(bytecode).transform_error(common_err);
-                                 });
 
-    if (!shader_module_opt) {
-      return std::unexpected(std::move(shader_module_opt.error()));
-    }
-    auto shader_module = std::move(*shader_module_opt);
+    auto main_binary =
+        eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main_sh.spv")
+            .or_panic("Could not find main_sh.spv");
+    auto main_shader_module =
+        vkren::ShaderModule::create(device_, main_binary).or_panic("Could not create a main shader module");
 
     auto vert_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
         .stage  = vk::ShaderStageFlagBits::eVertex,  //
-        .module = shader_module,                     //
+        .module = main_shader_module.shader_module,  //
         .pName  = kVertexShaderEntryPoint.c_str(),   // entry point name
 
         // Optional: pSpecializationInfo allows to specify values for shader constants. This allows for compiler
@@ -375,7 +374,7 @@ class HelloTriangleApplication {
 
     auto frag_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
         .stage  = vk::ShaderStageFlagBits::eFragment,
-        .module = shader_module,
+        .module = main_shader_module.shader_module,
         .pName  = kFragmentShaderEntryPoint.c_str(),
     };
 
@@ -504,14 +503,8 @@ class HelloTriangleApplication {
         .pushConstantRangeCount = 0,
     };
 
-    if (auto result = device_->createPipelineLayout(pipeline_layout_info)) {
-      pipeline_layout_ = std::move(*result);
-    } else {
-      eray::util::Logger::info("Could not create a pipeline layout. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanObjectCreationError{
-          .result = result.error(),
-      });
-    }
+    pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
+                           .or_panic("Could not create a pipeline layout");
 
     // == 9. Graphics Pipeline  ========================================================================================
 
@@ -551,16 +544,16 @@ class HelloTriangleApplication {
     // Pipeline cache (set to nullptr) can be used to store and reuse data relevant to pipeline creation across
     // multiple calls to vk::CreateGraphicsPipelines and even across program executions if the cache is stored to a
     // file.
-    if (auto result = device_->createGraphicsPipeline(nullptr, pipeline_info)) {
-      graphics_pipeline_ = std::move(*result);
-    } else {
-      eray::util::Logger::err("Could not create a graphics pipeline. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanObjectCreationError{
-          .result = result.error(),
-      });
-    }
+    graphics_pipeline_ = vkren::Result(device_->createGraphicsPipeline(nullptr, pipeline_info))
+                             .or_panic("Could not create a graphics pipeline.");
+  }
 
-    return {};
+  void create_compute_pipeline() {
+    // auto particle_binary =
+    //     eray::res::ShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "particle_sh.spv")
+    //         .or_panic("Could not find particle_sh.spv");
+    // auto particle_shader_module = vkren::ShaderModule::create(device_, particle_binary.span())
+    //                                   .or_panic("Could not create a particle shader module");
   }
 
   std::expected<void, VulkanInitError> create_command_pool() {
@@ -594,55 +587,25 @@ class HelloTriangleApplication {
   std::expected<void, VulkanInitError> create_buffers() {
     auto vb = VertexBuffer::create_triangle();
 
-    // Vertex buffer
-    {
-      vk::DeviceSize buffer_size = vb.vertices_size_in_bytes();
-      auto staging_buffer        = vkren::ExclusiveBufferResource::create(  //
-                                device_,
-                                vkren::ExclusiveBufferResource::CreateInfo{
-                                           .size_in_bytes = buffer_size,
-                                           .buff_usage    = vk::BufferUsageFlagBits::eTransferSrc,
-                                })
-                                       .or_panic();
-      staging_buffer.fill_data(vb.vertices.data(), 0, vb.vertices_size_in_bytes());
+    vert_buffer_ = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
+                       device_,
+                       vkren::ExclusiveBufferResource::CreateInfo{
+                           .size_bytes = vb.vertices_size_bytes(),
+                           .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                           .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                       },
+                       vb.vertices.data())
+                       .or_panic("Could not create a Vertex Buffer");
 
-      vert_buffer_ =
-          vkren::ExclusiveBufferResource::create(  //
-              device_,
-              vkren::ExclusiveBufferResource::CreateInfo{
-                  .size_in_bytes = buffer_size,
-                  .buff_usage    = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-
-                  // VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT bit specifies that memory allocated with this type is
-                  // the most efficient for device access. The memory mapping is not allowed!
-                  .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-              })
-              .or_panic();
-      vert_buffer_.copy_from(staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
-    }
-
-    // Index buffer
-    {
-      vk::DeviceSize buffer_size = vb.indices_size_in_bytes();
-      auto staging_buffer        = vkren::ExclusiveBufferResource::create(  //
-                                device_,
-                                vkren::ExclusiveBufferResource::CreateInfo{
-                                           .size_in_bytes = buffer_size,
-                                           .buff_usage    = vk::BufferUsageFlagBits::eTransferSrc,
-                                })
-                                       .or_panic();
-      staging_buffer.fill_data(vb.indices.data(), 0, vb.indices_size_in_bytes());
-
-      ind_buffer_ = vkren::ExclusiveBufferResource::create(  //
-                        device_,
-                        vkren::ExclusiveBufferResource::CreateInfo{
-                            .size_in_bytes = buffer_size,
-                            .buff_usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                            .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                        })
-                        .or_panic();
-      ind_buffer_.copy_from(staging_buffer.buffer, vk::BufferCopy(0, 0, buffer_size));
-    }
+    ind_buffer_ = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
+                      device_,
+                      vkren::ExclusiveBufferResource::CreateInfo{
+                          .size_bytes = vb.indices_size_bytes(),
+                          .buff_usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                          .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                      },
+                      vb.indices.data())
+                      .or_panic("Could not create an Index Buffer");
 
     // Copying to uniform buffer each frame means that staging buffer makes no sense.
     // We should have multiple buffers, because multiple frames may be in flight at the same time and
@@ -657,8 +620,8 @@ class HelloTriangleApplication {
         auto ubo = vkren::ExclusiveBufferResource::create(  //
                        device_,
                        vkren::ExclusiveBufferResource::CreateInfo{
-                           .size_in_bytes = buffer_size,
-                           .buff_usage    = vk::BufferUsageFlagBits::eUniformBuffer,
+                           .size_bytes = buffer_size,
+                           .buff_usage = vk::BufferUsageFlagBits::eUniformBuffer,
                            .mem_properties =
                                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
                        })
@@ -732,6 +695,22 @@ class HelloTriangleApplication {
     }
 
     return {};
+  }
+
+  void create_ssbufers() {
+    auto p                    = ParticleSystem::create();
+    vk::DeviceSize size_bytes = p.particles.size() * sizeof(Particle);
+    auto temp                 = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(
+                    device_,
+                    vkren::ExclusiveBufferResource::CreateInfo{
+                                        .size_bytes = size_bytes,
+                                        .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst |
+                                      vk::BufferUsageFlagBits::eStorageBuffer,
+                                        .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                    },
+                    p.particles.data())
+                    .or_panic("Could not create a Staging Buffer");
+    ssbuffers_.emplace_back(std::move(temp));
   }
 
   void create_txt_img() {
@@ -1168,52 +1147,6 @@ class HelloTriangleApplication {
     };
   }
 
-  static std::expected<std::vector<char>, FileError> read_binary(const std::filesystem::path& path) {
-    if (!std::filesystem::exists(path)) {
-      eray::util::Logger::err("File {} does not exist", path.string());
-      return std::unexpected(FileError{.kind = FileDoesNotExistError{}, .path = path});
-    }
-    auto file = std::ifstream(path, std::ios::ate | std::ios::binary);
-    if (!file.is_open()) {
-      eray::util::Logger::err("Unable to open a stream for file {}", path.string());
-      return std::unexpected(FileError{.kind = FileStreamOpenFailure{}, .path = path});
-    }
-
-    auto bytes  = static_cast<size_t>(file.tellg());
-    auto buffer = std::vector<char>(bytes, 0);
-    file.seekg(0, std::ios::beg);
-    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-    file.close();
-    if (file.bad()) {
-      eray::util::Logger::warn("File {} was not closed properly", path.string());
-    }
-
-    eray::util::Logger::info("Read {} bytes from {}", bytes, path.string());
-
-    return buffer;
-  }
-
-  [[nodiscard]] std::expected<vk::raii::ShaderModule, VulkanObjectCreationError> create_shader_module(
-      const std::vector<char>& bytecode) {
-    // The size of the bytecode is specified in bytes, but the bytecode pointer is a `uint32_t` pointer. The data is
-    // stored in an `std::vector` where the default allocator already ensures that the data satisfies the worst case
-    // alignment requirements, so the data will satisfy the `uint32_t` alignment requirements.
-    auto module_info = vk::ShaderModuleCreateInfo{
-        .codeSize = bytecode.size() * sizeof(char),                     //
-        .pCode    = reinterpret_cast<const uint32_t*>(bytecode.data())  //
-    };
-
-    // Shader modules are a thin wrapper around the shader bytecode.
-    auto result = device_->createShaderModule(module_info);
-    if (result) {
-      return std::move(*result);
-    }
-    eray::util::Logger::err("Failed to create a shader module");
-    return std::unexpected(VulkanObjectCreationError{
-        .result = result.error(),
-    });
-  }
-
  private:
   /**
    * @brief Responsible for dynamic loading of the Vulkan library, it's a starting point for creating other RAII-based
@@ -1291,6 +1224,8 @@ class HelloTriangleApplication {
   vk::raii::ImageView txt_view_  = nullptr;
   vk::raii::Sampler txt_sampler_ = nullptr;
 
+  std::vector<vkren::ExclusiveBufferResource> ssbuffers_;
+
   /**
    * @brief GLFW window pointer.
    *
@@ -1315,6 +1250,7 @@ class HelloTriangleApplication {
    *
    */
 
+  static constexpr eray::util::zstring_view kComputeShaderEntryPoint  = "mainComp";
   static constexpr eray::util::zstring_view kVertexShaderEntryPoint   = "mainVert";
   static constexpr eray::util::zstring_view kFragmentShaderEntryPoint = "mainFrag";
 };

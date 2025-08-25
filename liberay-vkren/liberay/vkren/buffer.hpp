@@ -21,13 +21,13 @@ namespace eray::vkren {
 struct ExclusiveBufferResource {
   vk::raii::Buffer buffer       = nullptr;
   vk::raii::DeviceMemory memory = nullptr;
-  vk::DeviceSize mem_size_in_bytes;
+  vk::DeviceSize mem_size_bytes;
   vk::BufferUsageFlags usage;
   vk::MemoryPropertyFlags mem_properties;
   observer_ptr<const Device> p_device = nullptr;
 
   struct CreateInfo {
-    vk::DeviceSize size_in_bytes;
+    vk::DeviceSize size_bytes;
     vk::BufferUsageFlags buff_usage;
     vk::MemoryPropertyFlags mem_properties =
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
@@ -49,7 +49,7 @@ struct ExclusiveBufferResource {
 
   [[nodiscard]] static Result<ExclusiveBufferResource, Error> create_staging_buffer(const Device& device,
                                                                                     const void* src_data,
-                                                                                    vk::DeviceSize size_in_bytes);
+                                                                                    vk::DeviceSize size_bytes);
 
   /**
    * @brief Copies CPU `src_data` to GPU memory. Creates vk::SharingMode::eExclusive buffer. Uses map to achieve
@@ -59,9 +59,9 @@ struct ExclusiveBufferResource {
    *
    * @param src_data
    * @param offset_in_bytes
-   * @param size_in_bytes
+   * @param size_bytes
    */
-  void fill_data(const void* src_data, vk::DeviceSize offset_in_bytes, vk::DeviceSize size_in_bytes) const;
+  void fill_data(const void* src_data, vk::DeviceSize offset_in_bytes, vk::DeviceSize size_bytes) const;
 
   /**
    * @brief Blocks the program execution and copies GPU `src_buff` data to the other GPU buffer.

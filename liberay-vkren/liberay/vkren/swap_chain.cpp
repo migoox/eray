@@ -217,8 +217,8 @@ Result<void, Error> SwapChain::create_image_views(const vkren::Device& device) n
 
 Result<void, Error> SwapChain::create_color_buffer(const vkren::Device& device) noexcept {
   auto img_info = vkren::ExclusiveImage2DResource::CreateInfo{
-      .size_in_bytes = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
-      .image_usage   = vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
+      .size_bytes  = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
+      .image_usage = vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
       .desc =
           ImageDescription{
               .format     = format_,
@@ -258,8 +258,8 @@ Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& 
   depth_stencil_format_ = *format_opt;
 
   auto img_info = vkren::ExclusiveImage2DResource::CreateInfo{
-      .size_in_bytes = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
-      .image_usage   = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+      .size_bytes  = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
+      .image_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
       .desc =
           ImageDescription{
               .format     = depth_stencil_format_,
