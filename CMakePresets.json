@@ -12,6 +12,7 @@
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "BUILD_SANDBOX": "ON",
+        "BUILD_EXAMPLES": "ON",
         "BUILD_TESTS": "ON",
         "USE_SYSTEM_INCLUDE": "OFF",
         "TRACY_ENABLE": "ON"

@@ -15,6 +15,7 @@ set(CMAKE_CXX_STANDARD 23)
 option(GENERATE_CLANGD_FILE
   "Generate the .clangd file for the host operating system" ON)
 option(BUILD_SANDBOX "Build liberay sandbox executable" OFF)
+option(BUILD_EXAMPLES "Build liberay example executables" OFF)
 option(ENABLE_TRACY "Fetches and uses tracy for frame profiling" OFF)
 
 set(VERSION_SUFFIX "")
@@ -56,6 +57,11 @@ add_subdirectory(liberay-res)
 add_subdirectory(liberay-os)
 add_subdirectory(liberay-driver)
 add_subdirectory(liberay-vkren)
+
 if(BUILD_SANDBOX) 
     add_subdirectory(sandbox)
+endif()
+
+if(BUILD_EXAMPLES) 
+    add_subdirectory(examples/depth_buffer)
 endif()
