@@ -8,6 +8,8 @@
 #include <liberay/util/ruleof.hpp>
 #include <vector>
 
+#include "liberay/util/memory_region.hpp"
+
 namespace eray::res {
 
 using ColorU32         = uint32_t;
@@ -88,6 +90,8 @@ class Image {
     return std::span{reinterpret_cast<const ColorComponentU8*>(data_.data()), size_bytes()};
   }
 
+  util::MemoryRegion memory_region() const { return util::MemoryRegion(data_.data(), size_bytes()); }
+
   /**
    * @brief Calculates the number of mip levels basing on height and width of the image.
    *
@@ -121,8 +125,10 @@ struct MipMappedImage {
   uint32_t mip_levels;
   uint8_t bpp = 4;
 
+  size_t size() const { return data.size(); }
   size_t size_bytes() const { return data.size() * sizeof(uint32_t); }
   const ColorU32* raw() const { return data.data(); }
   const ColorComponentU8* raw_bytes() const { return reinterpret_cast<const ColorComponentU8*>(data.data()); }
+  util::MemoryRegion memory_region() const { return util::MemoryRegion{data.data(), size_bytes()}; }
 };
 }  // namespace eray::res

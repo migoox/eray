@@ -34,6 +34,8 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
+#include "liberay/util/memory_region.hpp"
+
 struct GLFWWindowCreationFailure {};
 
 namespace vkren = eray::vkren;
@@ -587,25 +589,27 @@ class HelloTriangleApplication {
   std::expected<void, VulkanInitError> create_buffers() {
     auto vb = VertexBuffer::create_triangle();
 
-    vert_buffer_ = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
+    auto vertices_region = eray::util::MemoryRegion{vb.vertices.data(), vb.vertices_size_bytes()};
+    vert_buffer_         = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
                        device_,
                        vkren::ExclusiveBufferResource::CreateInfo{
-                           .size_bytes = vb.vertices_size_bytes(),
-                           .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                           .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                                   .size_bytes = vb.vertices_size_bytes(),
+                                   .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                                   .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
                        },
-                       vb.vertices.data())
-                       .or_panic("Could not create a Vertex Buffer");
+                       vertices_region)
+                               .or_panic("Could not create a Vertex Buffer");
 
-    ind_buffer_ = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
+    auto indices_region = eray::util::MemoryRegion{vb.indices.data(), vb.indices_size_bytes()};
+    ind_buffer_         = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
                       device_,
                       vkren::ExclusiveBufferResource::CreateInfo{
-                          .size_bytes = vb.indices_size_bytes(),
-                          .buff_usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                          .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                                  .size_bytes = vb.indices_size_bytes(),
+                                  .buff_usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                                  .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
                       },
-                      vb.indices.data())
-                      .or_panic("Could not create an Index Buffer");
+                      indices_region)
+                              .or_panic("Could not create an Index Buffer");
 
     // Copying to uniform buffer each frame means that staging buffer makes no sense.
     // We should have multiple buffers, because multiple frames may be in flight at the same time and
@@ -698,17 +702,10 @@ class HelloTriangleApplication {
   }
 
   void create_ssbufers() {
-    auto p                    = ParticleSystem::create();
-    vk::DeviceSize size_bytes = p.particles.size() * sizeof(Particle);
-    auto temp                 = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(
-                    device_,
-                    vkren::ExclusiveBufferResource::CreateInfo{
-                                        .size_bytes = size_bytes,
-                                        .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst |
-                                      vk::BufferUsageFlagBits::eStorageBuffer,
-                                        .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                    },
-                    p.particles.data())
+    auto p      = ParticleSystem::create();
+    auto region = eray::util::MemoryRegion{p.particles.data(), p.particles.size() * sizeof(Particle)};
+
+    auto temp = vkren::ExclusiveBufferResource::create_staging_buffer(device_, region)
                     .or_panic("Could not create a Staging Buffer");
     ssbuffers_.emplace_back(std::move(temp));
   }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <liberay/res/image.hpp>
+#include <liberay/util/memory_region.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/error.hpp>
@@ -52,8 +53,8 @@ struct ExclusiveImage2DResource {
    * @return Result<ExclusiveImage2DResource, Error>
    */
   [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create_texture(const Device& device,
-                                                                              ImageDescription desc, const void* data,
-                                                                              vk::DeviceSize size_bytes);
+                                                                              ImageDescription desc,
+                                                                              util::MemoryRegion region);
 
   /**
    * @brief Creates texture from CPU image representation. Generates mipmaps with Vulkan Blitting. If Vulkan Blitting is
@@ -78,7 +79,7 @@ struct ExclusiveImage2DResource {
    * @return Result<ExclusiveImage2DResource, Error>
    */
   [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create_texture_from_mipmaps_buffer(
-      const Device& device, ImageDescription desc, const void* mipmaps_buffer, vk::DeviceSize size_bytes);
+      const Device& device, ImageDescription desc, util::MemoryRegion mipmaps_region);
 
   /**
    * @brief Blocks the program execution and copies GPU `src_buff` data to the other GPU buffer.
@@ -95,7 +96,7 @@ struct ExclusiveImage2DResource {
 
  private:
   static Result<void, Error> copy_mip_maps_data(const Device& device, const ExclusiveImage2DResource& image,
-                                                const void* data, vk::DeviceSize size_bytes);
+                                                util::MemoryRegion mipmaps_region);
 };
 
 }  // namespace eray::vkren

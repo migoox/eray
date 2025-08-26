@@ -1,5 +1,6 @@
 #pragma once
 
+#include <liberay/util/memory_region.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <vulkan/vulkan.hpp>
@@ -39,17 +40,13 @@ struct ExclusiveBufferResource {
    * @brief Creates a buffer and uploads provided `src_data` to it via temporary staging buffer.
    * VK_BUFFER_USAGE_TRANSFER_DST_BIT is automatically appended to the info.buff_usage.
    *
-   * @param device
-   * @param info
-   * @param src_data
    * @return Result<ExclusiveBufferResource, Error>
    */
   [[nodiscard]] static Result<ExclusiveBufferResource, Error> create_and_upload_via_staging_buffer(
-      const Device& device, const CreateInfo& info, const void* src_data);
+      const Device& device, const CreateInfo& info, util::MemoryRegion src_region);
 
   [[nodiscard]] static Result<ExclusiveBufferResource, Error> create_staging_buffer(const Device& device,
-                                                                                    const void* src_data,
-                                                                                    vk::DeviceSize size_bytes);
+                                                                                    util::MemoryRegion src_region);
 
   /**
    * @brief Copies CPU `src_data` to GPU memory. Creates vk::SharingMode::eExclusive buffer. Uses map to achieve
@@ -57,11 +54,11 @@ struct ExclusiveBufferResource {
    *
    * @warning This call might require flushing the if VK_MEMORY_PROPERTY_HOST_COHERENT_BIT is not set.
    *
-   * @param src_data
-   * @param offset_in_bytes
-   * @param size_bytes
+   * @param src_region
+   * @param offset_bytes
+   *
    */
-  void fill_data(const void* src_data, vk::DeviceSize offset_in_bytes, vk::DeviceSize size_bytes) const;
+  void fill_data(util::MemoryRegion src_region, vk::DeviceSize offset_bytes = 0) const;
 
   /**
    * @brief Blocks the program execution and copies GPU `src_buff` data to the other GPU buffer.
@@ -70,6 +67,7 @@ struct ExclusiveBufferResource {
    * have VK_BUFFER_USAGE_TRANSFER_DST_BIT set.
    *
    * @param src_buff
+   * @param cpy_info
    */
   void copy_from(const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const;
 };

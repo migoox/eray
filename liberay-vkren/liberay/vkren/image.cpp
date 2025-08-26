@@ -12,19 +12,19 @@ namespace eray::vkren {
 
 Result<void, Error> ExclusiveImage2DResource::copy_mip_maps_data(const Device& device,
                                                                  const ExclusiveImage2DResource& image,
-                                                                 const void* data, vk::DeviceSize size_bytes) {
+                                                                 util::MemoryRegion mipmaps_region) {
   // Staging buffer
   auto staging_buffer = vkren::ExclusiveBufferResource::create(  //
       device,
       vkren::ExclusiveBufferResource::CreateInfo{
-          .size_bytes     = size_bytes,
+          .size_bytes     = mipmaps_region.size_bytes(),
           .buff_usage     = vk::BufferUsageFlagBits::eTransferSrc,
           .mem_properties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
       });
   if (!staging_buffer) {
     return std::unexpected(staging_buffer.error());
   }
-  staging_buffer->fill_data(data, 0, size_bytes);
+  staging_buffer->fill_data(mipmaps_region);
 
   // Copy mip maps data
   auto cmd_buff    = device.begin_single_time_commands();
@@ -73,11 +73,11 @@ Result<void, Error> ExclusiveImage2DResource::copy_mip_maps_data(const Device& d
 }
 
 Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture_from_mipmaps_buffer(
-    const Device& device, ImageDescription desc, const void* mipmaps_buffer, vk::DeviceSize size_bytes) {
+    const Device& device, ImageDescription desc, util::MemoryRegion mipmaps_region) {
   // Image object
   auto txt_image = vkren::ExclusiveImage2DResource::create(
       device, vkren::ExclusiveImage2DResource::CreateInfo{
-                  .size_bytes = size_bytes,
+                  .size_bytes = mipmaps_region.size_bytes(),
 
                   // We want to sample the image in the fragment shader
                   // transfer src for mipmap generation
@@ -96,7 +96,7 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture
   }
   device.transition_image_layout(txt_image->image, txt_image->desc, vk::ImageLayout::eUndefined,
                                  vk::ImageLayout::eTransferDstOptimal);
-  if (auto result = copy_mip_maps_data(device, *txt_image, mipmaps_buffer, size_bytes); !result) {
+  if (auto result = copy_mip_maps_data(device, *txt_image, mipmaps_region); !result) {
     std::unexpected(result.error());
   }
   return txt_image;
@@ -104,13 +104,12 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture
 
 Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture(const Device& device,
                                                                                  ImageDescription desc,
-                                                                                 const void* data,
-                                                                                 vk::DeviceSize size_bytes) {
+                                                                                 util::MemoryRegion mipmaps_region) {
   // Staging buffer
   auto staging_buffer = vkren::ExclusiveBufferResource::create(  //
       device,
       vkren::ExclusiveBufferResource::CreateInfo{
-          .size_bytes     = size_bytes,
+          .size_bytes     = mipmaps_region.size_bytes(),
           .buff_usage     = vk::BufferUsageFlagBits::eTransferSrc,
           .mem_properties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
       });
@@ -118,12 +117,12 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture
     return std::unexpected(staging_buffer.error());
   }
 
-  staging_buffer->fill_data(data, 0, size_bytes);
+  staging_buffer->fill_data(mipmaps_region);
 
   // Image object
   auto txt_image = vkren::ExclusiveImage2DResource::create(
       device, vkren::ExclusiveImage2DResource::CreateInfo{
-                  .size_bytes = size_bytes,
+                  .size_bytes = mipmaps_region.size_bytes(),
 
                   // We want to sample the image in the fragment shader
                   // transfer src for mipmap generation
@@ -170,8 +169,7 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture
   if (!staging_buffer) {
     return std::unexpected(staging_buffer.error());
   }
-
-  staging_buffer->fill_data(image.raw(), 0, image.size_bytes());
+  staging_buffer->fill_data(image.memory_region());
 
   // Image object
   auto txt_image = vkren::ExclusiveImage2DResource::create(
@@ -207,7 +205,7 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture
     if (auto result = device.generate_mipmaps(txt_image->image, txt_image->desc); !result) {
       if (result.error().has_code<ErrorCode::PhysicalDeviceNotSufficient>()) {
         auto buff = image.generate_mipmaps_buffer();
-        if (auto cpy_result = copy_mip_maps_data(device, *txt_image, buff.raw(), buff.size_bytes()); !cpy_result) {
+        if (auto cpy_result = copy_mip_maps_data(device, *txt_image, buff.memory_region()); !cpy_result) {
           std::unexpected(cpy_result.error());
         }
       } else {

@@ -6,6 +6,8 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
+#include "liberay/util/panic.hpp"
+
 namespace eray::vkren {
 
 Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create(const Device& device, const CreateInfo& info) {
@@ -67,24 +69,27 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create(const Dev
   };
 }
 Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_staging_buffer(const Device& device,
-                                                                                      const void* src_data,
-                                                                                      vk::DeviceSize size_bytes) {
+                                                                                      util::MemoryRegion src_region) {
   auto staging_buff_opt =
       vkren::ExclusiveBufferResource::create(device, vkren::ExclusiveBufferResource::CreateInfo{
-                                                         .size_bytes = size_bytes,
+                                                         .size_bytes = src_region.size_bytes(),
                                                          .buff_usage = vk::BufferUsageFlagBits::eTransferSrc,
                                                      });
   if (!staging_buff_opt) {
     util::Logger::err("Could not create a staging buffer");
     return std::unexpected(staging_buff_opt.error());
   }
-  staging_buff_opt->fill_data(src_data, 0, size_bytes);
+  staging_buff_opt->fill_data(src_region, 0);
   return std::move(*staging_buff_opt);
 }
 
 Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_and_upload_via_staging_buffer(
-    const Device& device, const CreateInfo& info, const void* src_data) {
-  auto staging_buffer = vkren::ExclusiveBufferResource::create_staging_buffer(device, src_data, info.size_bytes)
+    const Device& device, const CreateInfo& info, util::MemoryRegion src_region) {
+  if (src_region.size_bytes() != info.size_bytes) {
+    util::panic("Region size and creation info size mismatch");
+  }
+
+  auto staging_buffer = vkren::ExclusiveBufferResource::create_staging_buffer(device, src_region)
                             .or_panic("Staging buffer creation failed");
   auto new_info = info;
   new_info.buff_usage |= vk::BufferUsageFlagBits::eTransferDst;
@@ -96,10 +101,9 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_and_uploa
   return std::move(*result);
 }
 
-void ExclusiveBufferResource::fill_data(const void* src_data, vk::DeviceSize offset_in_bytes,
-                                        vk::DeviceSize size_bytes) const {
-  void* dst = memory.mapMemory(offset_in_bytes, size_bytes);
-  memcpy(dst, src_data, size_bytes);
+void ExclusiveBufferResource::fill_data(util::MemoryRegion src_region, vk::DeviceSize offset_bytes) const {
+  void* dst = memory.mapMemory(offset_bytes, src_region.size_bytes());
+  memcpy(dst, src_region.data(), src_region.size_bytes());
   memory.unmapMemory();
 
   // Unfortunately, the driver may not immediately copy the data into the buffer memory, for example, because of
