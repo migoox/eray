@@ -502,8 +502,8 @@ class HelloTriangleApplication {
         .pushConstantRangeCount = 0,
     };
 
-    pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
-                           .or_panic("Could not create a pipeline layout");
+    graphics_pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
+                                    .or_panic("Could not create a pipeline layout");
 
     // == 9. Graphics Pipeline  ========================================================================================
 
@@ -531,7 +531,7 @@ class HelloTriangleApplication {
         .pDepthStencilState  = &depth_stencil_state_info,
         .pColorBlendState    = &color_blending_info,
         .pDynamicState       = &dynamic_state,
-        .layout              = pipeline_layout_,
+        .layout              = graphics_pipeline_layout_,
 
         .renderPass = nullptr,  // we are using dynamic rendering
 
@@ -987,7 +987,7 @@ class HelloTriangleApplication {
     // to specify if we want to bind descriptor sets to the graphics or compute pipeline. The next parameter is the
     // layout that the descriptors are based on. The next three parameters specify the index of the first descriptor
     // set, the number of sets to bind and the array of sets to bind.
-    command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout_, 0,
+    command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, graphics_pipeline_layout_, 0,
                                                      *descriptor_sets_[frame_index], nullptr);
     // Draw 3 vertices
     command_buffers_[frame_index].drawIndexed(12, 1, 0, 0, 0);
@@ -1148,7 +1148,7 @@ class HelloTriangleApplication {
    * @brief Describes the uniform buffers used in shaders.
    *
    */
-  vk::raii::PipelineLayout pipeline_layout_ = nullptr;
+  vk::raii::PipelineLayout graphics_pipeline_layout_ = nullptr;
 
   /**
    * @brief Descriptor set layout object is defined by an array of zero or more descriptor bindings. It's a way for

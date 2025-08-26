@@ -22,9 +22,7 @@
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
-#include <ranges>
 #include <sandbox/particle.hpp>
-#include <sandbox/vertex.hpp>
 #include <variant>
 #include <vector>
 #include <version/version.hpp>
@@ -85,9 +83,9 @@ using DrawFrameError = std::variant<SwapchainRecreationFailure, SwapChainImageAc
 
 class HelloTriangleApplication {
  public:
-  std::expected<void, AppError> run() {
+  std::expected<void, GLFWWindowCreationFailure> run() {
     TRY(initWindow());
-    TRY(init_vk())
+    init_vk();
     mainLoop();
     cleanup();
 
@@ -98,7 +96,7 @@ class HelloTriangleApplication {
   static constexpr uint32_t kWinHeight = 600;
 
  private:
-  std::expected<void, VulkanInitError> init_vk() {
+  void init_vk() {
     create_device();
     create_swap_chain();
     create_descriptor_set_layout();
@@ -106,13 +104,11 @@ class HelloTriangleApplication {
     create_compute_pipeline();
     create_command_pool();
     create_buffers();
-    TRY(create_command_buffers())
+    create_command_buffers();
     create_txt_img();
     create_descriptor_pool();
     create_descriptor_sets();
-    TRY(create_sync_objs())
-
-    return {};
+    create_sync_objs();
   }
 
   void create_device() {
@@ -318,7 +314,7 @@ class HelloTriangleApplication {
 
     auto main_binary =
         eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
-            .or_panic("Could not find main_sh.spv");
+            .or_panic("Could not find main graphics shader");
     auto main_shader_module =
         vkren::ShaderModule::create(device_, main_binary).or_panic("Could not create a main shader module");
 
@@ -366,8 +362,8 @@ class HelloTriangleApplication {
     // - Bindings: spacing between data and whether the data is per-vertex or per-instance,
     // - Attribute descriptions: type of the attributes passed to the vertex shader, which binding to load them from and
     // at which offset
-    auto binding_desc       = Vertex::get_binding_desc();
-    auto attribs_desc       = Vertex::get_attribs_desc();
+    auto binding_desc       = ParticleSystem::get_binding_desc();
+    auto attribs_desc       = ParticleSystem::get_attribs_desc();
     auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
         .vertexBindingDescriptionCount   = 1,
         .pVertexBindingDescriptions      = &binding_desc,  //
@@ -381,8 +377,8 @@ class HelloTriangleApplication {
     // - whether primitive restart should be enabled, when set to VK_TRUE, it's possible to break up lines and triangles
     //   in the _STRIP topology modes by using a special index of 0xFFFF or 0xFFFFFFFF
     auto input_assembly = vk::PipelineInputAssemblyStateCreateInfo{
-        .topology               = vk::PrimitiveTopology::eTriangleList,  //
-        .primitiveRestartEnable = vk::False,                             //
+        .topology               = vk::PrimitiveTopology::ePointList,  //
+        .primitiveRestartEnable = vk::False,                          //
     };
 
     // == 4. Rasterizer ================================================================================================
@@ -457,13 +453,12 @@ class HelloTriangleApplication {
     // You can use uniform values in shaders, which are globals that can be changed at drawing time after the behavior
     // of your shaders without having to recreate. The uniform variables must be specified during the pipeline creation.
     auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
-        .setLayoutCount         = 1,
-        .pSetLayouts            = &*descriptor_set_layout_,
+        .setLayoutCount         = 0,
         .pushConstantRangeCount = 0,
     };
 
-    pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
-                           .or_panic("Could not create a pipeline layout");
+    graphics_pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
+                                    .or_panic("Could not create a pipeline layout");
 
     // == 9. Graphics Pipeline  ========================================================================================
 
@@ -491,7 +486,7 @@ class HelloTriangleApplication {
         .pDepthStencilState  = &depth_stencil_state_info,
         .pColorBlendState    = &color_blending_info,
         .pDynamicState       = &dynamic_state,
-        .layout              = pipeline_layout_,
+        .layout              = graphics_pipeline_layout_,
 
         .renderPass = nullptr,  // we are using dynamic rendering
 
@@ -508,11 +503,36 @@ class HelloTriangleApplication {
   }
 
   void create_compute_pipeline() {
-    // auto particle_binary =
-    //     eray::res::ShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "particle.spv")
-    //         .or_panic("Could not find particle_sh.spv");
-    // auto particle_shader_module = vkren::ShaderModule::create(device_, particle_binary.span())
-    //                                   .or_panic("Could not create a particle shader module");
+    // == 1. Shader stage ==============================================================================================
+    auto particle_binary =
+        eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "particle.spv")
+            .or_panic("Could not find particle compute shader");
+    auto particle_shader_module =
+        vkren::ShaderModule::create(device_, particle_binary).or_panic("Could not create a main shader module");
+
+    auto compute_shader_stage = vk::PipelineShaderStageCreateInfo{
+        .stage  = vk::ShaderStageFlagBits::eCompute,     //
+        .module = particle_shader_module.shader_module,  //
+        .pName  = kComputeShaderEntryPoint.c_str(),      // entry point name
+    };
+
+    // == 2. Layout creation ===========================================================================================
+    auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
+        .setLayoutCount         = 1,
+        .pSetLayouts            = &*descriptor_set_layout_,
+        .pushConstantRangeCount = 0,
+    };
+
+    compute_pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
+                                   .or_panic("Could not create a pipeline layout");
+
+    // == 3. Compute Pipeline  =========================================================================================
+    auto pipeline_info = vk::ComputePipelineCreateInfo{
+        .stage  = compute_shader_stage,
+        .layout = compute_pipeline_layout_,
+    };
+    compute_pipeline_ = vkren::Result(device_->createComputePipeline(nullptr, pipeline_info))
+                            .or_panic("Could not create a graphics pipeline.");
   }
 
   void create_command_pool() {
@@ -562,7 +582,7 @@ class HelloTriangleApplication {
     }
   }
 
-  std::expected<void, VulkanInitError> create_command_buffers() {
+  void create_command_buffers() {
     auto alloc_info = vk::CommandBufferAllocateInfo{
         .commandPool = command_pool_,  //
 
@@ -575,20 +595,11 @@ class HelloTriangleApplication {
         .level              = vk::CommandBufferLevel::ePrimary,  //
         .commandBufferCount = kMaxFramesInFlight,                //
     };
-
-    if (auto result = device_->allocateCommandBuffers(alloc_info)) {
-      std::ranges::move(*result | std::views::take(kMaxFramesInFlight), command_buffers_.begin());
-    } else {
-      eray::util::Logger::err("Command buffer allocation failure. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanObjectCreationError{
-          .result = result.error(),
-      });
-    }
-
-    return {};
+    auto result =
+        vkren::Result(device_->allocateCommandBuffers(alloc_info)).or_panic("Command buffer allocation failure.");
   }
 
-  std::expected<void, VulkanInitError> create_sync_objs() {
+  void create_sync_objs() {
     present_complete_semaphores_.clear();
     render_finished_semaphores_.clear();
 
@@ -596,8 +607,7 @@ class HelloTriangleApplication {
       if (auto result = device_->createSemaphore(vk::SemaphoreCreateInfo{})) {
         present_complete_semaphores_.emplace_back(std::move(*result));
       } else {
-        eray::util::Logger::err("Failed to create a  sempahore. {}", vk::to_string(result.error()));
-        return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+        eray::util::panic("Failed to create a sempahore");
       }
     }
 
@@ -605,8 +615,7 @@ class HelloTriangleApplication {
       if (auto result = device_->createSemaphore(vk::SemaphoreCreateInfo{})) {
         render_finished_semaphores_.emplace_back(std::move(*result));
       } else {
-        eray::util::Logger::err("Failed to create a sempahore. {}", vk::to_string(result.error()));
-        return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+        eray::util::panic("Failed to create a sempahore");
       }
     }
 
@@ -614,12 +623,9 @@ class HelloTriangleApplication {
       if (auto result = device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled})) {
         in_flight_fences_[i] = std::move(*result);
       } else {
-        eray::util::Logger::err("Failed to create a fence. {}", vk::to_string(result.error()));
-        return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+        eray::util::panic("Failed to create a fence");
       }
     }
-
-    return {};
   }
 
   void create_txt_img() {
@@ -911,10 +917,10 @@ class HelloTriangleApplication {
     // to specify if we want to bind descriptor sets to the graphics or compute pipeline. The next parameter is the
     // layout that the descriptors are based on. The next three parameters specify the index of the first descriptor
     // set, the number of sets to bind and the array of sets to bind.
-    command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout_, 0,
+    command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, graphics_pipeline_layout_, 0,
                                                      *descriptor_sets_[frame_index], nullptr);
     // Draw 3 vertices
-    command_buffers_[frame_index].drawIndexed(12, 1, 0, 0, 0);
+    // command_buffers_[frame_index].drawIndexed(12, 1, 0, 0, 0);
 
     command_buffers_[frame_index].endRendering();
 
@@ -1114,7 +1120,8 @@ class HelloTriangleApplication {
    * @brief Describes the uniform buffers used in shaders.
    *
    */
-  vk::raii::PipelineLayout pipeline_layout_ = nullptr;
+  vk::raii::PipelineLayout graphics_pipeline_layout_ = nullptr;
+  vk::raii::PipelineLayout compute_pipeline_layout_  = nullptr;
 
   /**
    * @brief Descriptor set layout object is defined by an array of zero or more descriptor bindings. It's a way for
@@ -1128,6 +1135,7 @@ class HelloTriangleApplication {
    *
    */
   vk::raii::Pipeline graphics_pipeline_ = nullptr;
+  vk::raii::Pipeline compute_pipeline_  = nullptr;
 
   /**
    * @brief Command pools manage the memory that is used to store the buffers and command buffers are allocated from
