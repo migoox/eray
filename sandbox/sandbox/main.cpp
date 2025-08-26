@@ -360,7 +360,7 @@ class HelloTriangleApplication {
     // == 1. Shader stage ==============================================================================================
 
     auto main_binary =
-        eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main_sh.spv")
+        eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
             .or_panic("Could not find main_sh.spv");
     auto main_shader_module =
         vkren::ShaderModule::create(device_, main_binary).or_panic("Could not create a main shader module");
@@ -552,7 +552,7 @@ class HelloTriangleApplication {
 
   void create_compute_pipeline() {
     // auto particle_binary =
-    //     eray::res::ShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "particle_sh.spv")
+    //     eray::res::ShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "particle.spv")
     //         .or_panic("Could not find particle_sh.spv");
     // auto particle_shader_module = vkren::ShaderModule::create(device_, particle_binary.span())
     //                                   .or_panic("Could not create a particle shader module");

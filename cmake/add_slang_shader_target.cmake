@@ -3,8 +3,8 @@ include_guard()
 # Use relative paths for sources
 function(add_slang_shader_target TARGET)
     set(multiValueArgs SOURCES ENTRY_POINTS)
-    set(singleValueArgs SHADERS_DIR)
-    cmake_parse_arguments(ARGS "SHADER" ${singleValueARgs} ${multiValueArgs} ${ARGN})
+    set(singleValueArgs SHADERS_DIR OUT_BINARY_NAME)
+    cmake_parse_arguments(ARGS "SHADER" "${singleValueArgs}" "${multiValueArgs}" ${ARGN})
 
     if (NOT ARGS_ENTRY_POINTS)
         message(FATAL_ERROR "No shader entry points provided for shader with name ${TARGET}")
@@ -27,7 +27,13 @@ function(add_slang_shader_target TARGET)
     elseif()
         set (SHADERS_DIR ${ARGS_SHADERS_DIR})
     endif()
-    message(STATUS "Target ${TARGET} path: ${SHADERS_DIR}/${TARGET}.spv")
+
+    if(NOT ARGS_OUT_BINARY_NAME)
+        set(OUT_BINARY_NAME "${TARGET}")
+    else()
+        set(OUT_BINARY_NAME "${ARGS_OUT_BINARY_NAME}")
+    endif()
+    set(OUT_BINARY "${SHADERS_DIR}/${OUT_BINARY_NAME}.spv")
 
     set(ENTRY_POINTS_SLANGC_ARGS "")
     foreach(ENTRY_POINT ${ARGS_ENTRY_POINTS})
@@ -41,16 +47,16 @@ function(add_slang_shader_target TARGET)
     )
 
     add_custom_command (
-          OUTPUT  "${SHADERS_DIR}/${TARGET}.spv"
-          COMMAND ${SLANGC_EXECUTABLE} ${SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS_SLANGC_ARGS} -o ${TARGET}.spv
+          OUTPUT  "${OUT_BINARY}"
+          COMMAND ${SLANGC_EXECUTABLE} ${SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS_SLANGC_ARGS} -o ${OUT_BINARY_NAME}.spv
           WORKING_DIRECTORY ${SHADERS_DIR}
           DEPENDS ${SHADERS_DIR} ${SOURCES}
           COMMENT "Compiling Slang Shaders"
           VERBATIM
     )
 
-    add_custom_target(${TARGET} DEPENDS "${SHADERS_DIR}/${TARGET}.spv")
+    add_custom_target(${TARGET} DEPENDS "${OUT_BINARY}")
     
-    message(STATUS "Shader with name ${TARGET} and entry points ${ARGS_ENTRY_POINTS} added")
+    message(STATUS "Shader target ${TARGET} and entry points ${ARGS_ENTRY_POINTS} added. Shader output: ${OUT_BINARY}")
 
 endfunction()
