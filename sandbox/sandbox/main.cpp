@@ -702,12 +702,31 @@ class HelloTriangleApplication {
   }
 
   void create_ssbufers() {
-    auto p      = ParticleSystem::create();
-    auto region = eray::util::MemoryRegion{p.particles.data(), p.particles.size() * sizeof(Particle)};
+    auto particle_system =
+        ParticleSystem::create_on_circle(static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight));
+    auto region =
+        eray::util::MemoryRegion{particle_system.particles.data(), particle_system.particles.size() * sizeof(Particle)};
+    auto staging_buff = vkren::ExclusiveBufferResource::create_staging_buffer(device_, region)
+                            .or_panic("Could not create a Staging Buffer");
 
-    auto temp = vkren::ExclusiveBufferResource::create_staging_buffer(device_, region)
-                    .or_panic("Could not create a Staging Buffer");
-    ssbuffers_.emplace_back(std::move(temp));
+    for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
+      auto temp = vkren::ExclusiveBufferResource::create(
+                      device_,
+                      vkren::ExclusiveBufferResource::CreateInfo{
+                          .size_bytes = region.size_bytes(),
+                          .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer |
+                                        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                          .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                      })
+                      .or_panic("Could not create a Storage Buffer");
+
+      temp.copy_from(staging_buff.buffer, vk::BufferCopy{
+                                              .srcOffset = 0,
+                                              .dstOffset = 0,
+                                              .size      = region.size_bytes(),
+                                          });
+      ssbuffers_.emplace_back(std::move(temp));
+    }
   }
 
   void create_txt_img() {

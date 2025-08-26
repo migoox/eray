@@ -1,12 +1,12 @@
 #include <expected>
 #include <liberay/util/logger.hpp>
+#include <liberay/util/panic.hpp>
 #include <liberay/vkren/buffer.hpp>
+#include <liberay/vkren/common.hpp>
 #include <liberay/vkren/error.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
-
-#include "liberay/util/panic.hpp"
 
 namespace eray::vkren {
 
@@ -118,6 +118,10 @@ void ExclusiveBufferResource::fill_data(util::MemoryRegion src_region, vk::Devic
 }
 
 void ExclusiveBufferResource::copy_from(const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const {
+  if (!has_flag(usage, vk::BufferUsageFlagBits::eTransferDst)) {
+    util::panic("Assertion failed! Buffer must be a transfer destination (VK_BUFFER_USAGE_TRANSFER_DST_BIT)");
+  }
+
   auto cmd_cpy_buff = p_device->begin_single_time_commands();
   cmd_cpy_buff.copyBuffer(src_buff, buffer, cpy_info);
   p_device->end_single_time_commands(cmd_cpy_buff);

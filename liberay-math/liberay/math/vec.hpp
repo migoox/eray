@@ -5,6 +5,7 @@
 #include <liberay/math/types.hpp>
 #include <liberay/math/vec_fwd.hpp>
 #include <numbers>
+#include <type_traits>
 #include <utility>
 
 #ifdef _MSC_VER
@@ -402,6 +403,20 @@ constexpr void max_base(std::index_sequence<Is...>, T* data, const T* vec1_data,
 }
 
 template <std::size_t... Is, CPrimitive T>
+constexpr void mod_base(std::index_sequence<Is...>, T* x, T y) {
+  if constexpr (CFloatingPoint<T>) {
+    ((x[Is] - y * floor(x[Is] / y)), ...);
+  } else {
+    ((x[Is] % y), ...);
+  }
+}
+
+template <std::size_t... Is, CFloatingPoint T>
+constexpr void mix_base(std::index_sequence<Is...>, T* x, const T* y, T a) {
+  ((x[Is] * (static_cast<T>(1) - a) + y[Is] * a), ...);
+}
+
+template <std::size_t... Is, CPrimitive T>
 constexpr bool all_components_less_than(std::index_sequence<Is...>, T* data, const T value) {
   bool result = true;
   ((data[Is] = result && (data[Is] < value)), ...);
@@ -490,6 +505,37 @@ constexpr auto length(const Vec<N, T>& vec) {
 template <std::size_t N, CPrimitive T>
 constexpr auto abs(const Vec<N, T>& vec) {
   return vec.abs();
+}
+
+/**
+ * @brief Compute value of one parameter modulo another.
+ *
+ * @tparam N
+ * @tparam T
+ * @param x
+ * @param y
+ * @return constexpr auto
+ */
+template <std::size_t N, CPrimitive T>
+constexpr auto mod(const Vec<N, T>& x, const T y) {
+  auto result = Vec<N, T>(x);
+  internal::mod_base(std::make_index_sequence<N>(), result.data, y);
+  return result;
+}
+
+/**
+ * @brief .
+ *
+ * @tparam N
+ * @tparam T
+ * @param vec
+ * @return constexpr auto
+ */
+template <std::size_t N, CPrimitive T>
+constexpr auto mix(const Vec<N, T>& x, const Vec<N, T>& y, T a) {
+  auto result = Vec<N, T>(x);
+  internal::mix_base(std::make_index_sequence<N>(), result.data, y.data, a);
+  return result;
 }
 
 /**
