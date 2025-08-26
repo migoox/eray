@@ -12,6 +12,7 @@
 #include <liberay/res/image.hpp>
 #include <liberay/res/shader.hpp>
 #include <liberay/util/logger.hpp>
+#include <liberay/util/memory_region.hpp>
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
 #include <liberay/util/zstring_view.hpp>
@@ -33,8 +34,6 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
-
-#include "liberay/util/memory_region.hpp"
 
 struct GLFWWindowCreationFailure {};
 
@@ -105,14 +104,13 @@ class HelloTriangleApplication {
     create_descriptor_set_layout();
     create_graphics_pipeline();
     create_compute_pipeline();
-    TRY(create_command_pool())
-    TRY(create_buffers())
+    create_command_pool();
+    create_buffers();
     TRY(create_command_buffers())
     create_txt_img();
     create_descriptor_pool();
     create_descriptor_sets();
     TRY(create_sync_objs())
-    create_ssbufers();
 
     return {};
   }
@@ -267,55 +265,14 @@ class HelloTriangleApplication {
     return {};
   }
 
-  void create_descriptor_set_layout() {
-    auto bindings = std::array{
-        // Uniform buffer
-        vk::DescriptorSetLayoutBinding{
-            .binding        = 0,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
-
-            // Single uniform buffer contains one MVP
-            .descriptorCount = 1,
-
-            // We only reference the descriptor from the vertex shader
-            .stageFlags = vk::ShaderStageFlagBits::eVertex,
-
-            // The descriptor is not related to image sampling
-            .pImmutableSamplers = nullptr,
-        },
-
-        // Sampler
-        vk::DescriptorSetLayoutBinding{
-            .binding            = 1,
-            .descriptorType     = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount    = 1,
-            .stageFlags         = vk::ShaderStageFlagBits::eFragment,
-            .pImmutableSamplers = nullptr,
-        },
-    };
-    auto layout_info = vk::DescriptorSetLayoutCreateInfo{
-        .bindingCount = bindings.size(),
-        .pBindings    = bindings.data(),
-    };
-    descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
-  }
-
   void update_ubo(uint32_t image_index) {
-    // static auto start_time = std::chrono::high_resolution_clock::now();
+    static auto start_time = std::chrono::high_resolution_clock::now();
 
-    // auto curr_time = std::chrono::high_resolution_clock::now();
-    // float time     = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - start_time).count();
+    auto curr_time = std::chrono::high_resolution_clock::now();
+    float time     = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - start_time).count();
 
     UniformBufferObject ubo{};
-
-    // right-handed, depth [0, 1]
-    ubo.model = eray::math::translation(eray::math::Vec3f(0.F, 0.F, 0.F)) *
-                eray::math::rotation_axis(eray::math::radians(45.0F), eray::math::Vec3f(0.F, 0.F, 1.F)) *
-                eray::math::rotation_axis(eray::math::radians(-50.0F), eray::math::Vec3f(1.F, 0.F, 0.F));
-    ubo.view = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -4.F));
-    ubo.proj = eray::math::perspective_vk_rh(
-        eray::math::radians(80.0F), static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight), 0.01F, 10.F);
-
+    ubo.delta_time = time;
     memcpy(uniform_buffers_mapped_[image_index], &ubo, sizeof(ubo));
   }
 
@@ -558,7 +515,7 @@ class HelloTriangleApplication {
     //                                   .or_panic("Could not create a particle shader module");
   }
 
-  std::expected<void, VulkanInitError> create_command_pool() {
+  void create_command_pool() {
     auto command_pool_info = vk::CommandPoolCreateInfo{
         // There are two possible flags for command pools:
         // - VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: Hint that command buffers are rerecorded with new commands very often
@@ -573,72 +530,36 @@ class HelloTriangleApplication {
         .queueFamilyIndex = device_.graphics_queue_family(),
     };
 
-    if (auto result = device_->createCommandPool(command_pool_info)) {
-      command_pool_ = std::move(*result);
-    } else {
-      eray::util::Logger::err("Could not create a command pool. {}", vk::to_string(result.error()));
-
-      return std::unexpected(VulkanObjectCreationError{
-          .result = result.error(),
-      });
-    }
-
-    return {};
+    command_pool_ =
+        vkren::Result(device_->createCommandPool(command_pool_info)).or_panic("Could not create a command pool.");
   }
 
-  std::expected<void, VulkanInitError> create_buffers() {
-    auto vb = VertexBuffer::create_triangle();
+  void create_buffers() {
+    auto particle_system =
+        ParticleSystem::create_on_circle(static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight));
+    auto region =
+        eray::util::MemoryRegion{particle_system.particles.data(), particle_system.particles.size() * sizeof(Particle)};
+    auto staging_buff = vkren::ExclusiveBufferResource::create_staging_buffer(device_, region)
+                            .or_panic("Could not create a Staging Buffer");
 
-    auto vertices_region = eray::util::MemoryRegion{vb.vertices.data(), vb.vertices_size_bytes()};
-    vert_buffer_         = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
-                       device_,
-                       vkren::ExclusiveBufferResource::CreateInfo{
-                                   .size_bytes = vb.vertices_size_bytes(),
-                                   .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                                   .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                       },
-                       vertices_region)
-                               .or_panic("Could not create a Vertex Buffer");
-
-    auto indices_region = eray::util::MemoryRegion{vb.indices.data(), vb.indices_size_bytes()};
-    ind_buffer_         = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
+    for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
+      auto temp = vkren::ExclusiveBufferResource::create(
                       device_,
                       vkren::ExclusiveBufferResource::CreateInfo{
-                                  .size_bytes = vb.indices_size_bytes(),
-                                  .buff_usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                                  .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                      },
-                      indices_region)
-                              .or_panic("Could not create an Index Buffer");
+                          .size_bytes = region.size_bytes(),
+                          .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer |
+                                        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                          .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                      })
+                      .or_panic("Could not create a Storage Buffer");
 
-    // Copying to uniform buffer each frame means that staging buffer makes no sense.
-    // We should have multiple buffers, because multiple frames may be in flight at the same time and
-    // we don’t want to update the buffer in preparation of the next frame while a previous one is still reading
-    // from it!
-
-    uniform_buffers_.clear();
-    uniform_buffers_mapped_.clear();
-    {
-      vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
-      for (auto i = 0; i < kMaxFramesInFlight; ++i) {
-        auto ubo = vkren::ExclusiveBufferResource::create(  //
-                       device_,
-                       vkren::ExclusiveBufferResource::CreateInfo{
-                           .size_bytes = buffer_size,
-                           .buff_usage = vk::BufferUsageFlagBits::eUniformBuffer,
-                           .mem_properties =
-                               vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                       })
-                       .or_panic();
-
-        // This technique is called persistent mapping, the buffer stays mapped for the application's whole life-time.
-        // It increases performance as the mapping process is not free.
-        uniform_buffers_mapped_.emplace_back(ubo.memory.mapMemory(0, buffer_size));
-        uniform_buffers_.emplace_back(std::move(ubo));
-      }
+      temp.copy_from(staging_buff.buffer, vk::BufferCopy{
+                                              .srcOffset = 0,
+                                              .dstOffset = 0,
+                                              .size      = region.size_bytes(),
+                                          });
+      ssbuffers_.emplace_back(std::move(temp));
     }
-
-    return {};
   }
 
   std::expected<void, VulkanInitError> create_command_buffers() {
@@ -699,34 +620,6 @@ class HelloTriangleApplication {
     }
 
     return {};
-  }
-
-  void create_ssbufers() {
-    auto particle_system =
-        ParticleSystem::create_on_circle(static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight));
-    auto region =
-        eray::util::MemoryRegion{particle_system.particles.data(), particle_system.particles.size() * sizeof(Particle)};
-    auto staging_buff = vkren::ExclusiveBufferResource::create_staging_buffer(device_, region)
-                            .or_panic("Could not create a Staging Buffer");
-
-    for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
-      auto temp = vkren::ExclusiveBufferResource::create(
-                      device_,
-                      vkren::ExclusiveBufferResource::CreateInfo{
-                          .size_bytes = region.size_bytes(),
-                          .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer |
-                                        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                          .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                      })
-                      .or_panic("Could not create a Storage Buffer");
-
-      temp.copy_from(staging_buff.buffer, vk::BufferCopy{
-                                              .srcOffset = 0,
-                                              .dstOffset = 0,
-                                              .size      = region.size_bytes(),
-                                          });
-      ssbuffers_.emplace_back(std::move(temp));
-    }
   }
 
   void create_txt_img() {
@@ -1043,7 +936,7 @@ class HelloTriangleApplication {
   void create_descriptor_pool() {
     auto pool_size = std::array{
         vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, kMaxFramesInFlight),
-        vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, kMaxFramesInFlight),
+        vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, kMaxFramesInFlight * 2),
     };
     auto pool_info = vk::DescriptorPoolCreateInfo{
         .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -1055,57 +948,99 @@ class HelloTriangleApplication {
         vkren::Result(device_->createDescriptorPool(pool_info)).or_panic("Could not create descriptor pool");
   }
 
+  void create_descriptor_set_layout() {
+    auto bindings = std::array{
+        vk::DescriptorSetLayoutBinding{
+            .binding            = 0,
+            .descriptorType     = vk::DescriptorType::eUniformBuffer,
+            .descriptorCount    = 1,
+            .stageFlags         = vk::ShaderStageFlagBits::eCompute,
+            .pImmutableSamplers = nullptr,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding            = 1,
+            .descriptorType     = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount    = 1,
+            .stageFlags         = vk::ShaderStageFlagBits::eCompute,
+            .pImmutableSamplers = nullptr,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding            = 2,
+            .descriptorType     = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount    = 1,
+            .stageFlags         = vk::ShaderStageFlagBits::eCompute,
+            .pImmutableSamplers = nullptr,
+        },
+    };
+    auto layout_info = vk::DescriptorSetLayoutCreateInfo{
+        .bindingCount = bindings.size(),
+        .pBindings    = bindings.data(),
+    };
+    descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
+  }
+
   void create_descriptor_sets() {
-    auto layouts                   = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, *descriptor_set_layout_);
-    auto descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo{
+    auto layouts         = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, descriptor_set_layout_);
+    auto desc_alloc_info = vk::DescriptorSetAllocateInfo{
         .descriptorPool     = descriptor_pool_,
-        .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+        .descriptorSetCount = kMaxFramesInFlight,
         .pSetLayouts        = layouts.data(),
     };
     descriptor_sets_.clear();
-    descriptor_sets_ = vkren::Result(device_->allocateDescriptorSets(descriptor_set_alloc_info))
-                           .or_panic("Could not create descriptor sets");
+    descriptor_sets_ =
+        vkren::Result(device_->allocateDescriptorSets(desc_alloc_info)).or_panic("Could not allocate descriptor sets");
 
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
       auto buffer_info = vk::DescriptorBufferInfo{
           .buffer = uniform_buffers_[i].buffer,
           .offset = 0,
-          .range  = sizeof(UniformBufferObject),  // It's also possible to use vk::WholeSize
-      };
-      auto image_info = vk::DescriptorImageInfo{
-          .sampler     = txt_sampler_,
-          .imageView   = txt_view_,
-          .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+          .range  = sizeof(UniformBufferObject),
       };
 
-      auto descriptor_write = std::array{
+      auto last_frame_ss_info = vk::DescriptorBufferInfo{
+          .buffer = ssbuffers_[(i - 1) % kMaxFramesInFlight].buffer,
+          .offset = 0,
+          .range  = sizeof(Particle) * ParticleSystem::kParticleCount,
+      };
+      auto current_frame_ss_info = vk::DescriptorBufferInfo{
+          .buffer = ssbuffers_[i].buffer,
+          .offset = 0,
+          .range  = sizeof(Particle) * ParticleSystem::kParticleCount,
+      };
+
+      auto desc_writes = std::array{
           vk::WriteDescriptorSet{
-              // Specifies the descriptor set to update
-              .dstSet = descriptor_sets_[i],
-
-              // Specifies the binding of the descriptor set to update
-              .dstBinding = 0,
-
-              // It's possible to update multiple descriptors at once in an array, starting at index dstArrayElement
-              .dstArrayElement = 0,
-
-              // Specifies how many descriptor arrays we want to update
-              .descriptorCount = 1,
-
-              .descriptorType = vk::DescriptorType::eUniformBuffer,
-              .pBufferInfo    = &buffer_info,
+              .dstSet           = *descriptor_sets_[i],
+              .dstBinding       = 0,
+              .dstArrayElement  = 0,
+              .descriptorCount  = 1,
+              .descriptorType   = vk::DescriptorType::eUniformBuffer,
+              .pImageInfo       = nullptr,
+              .pBufferInfo      = &buffer_info,
+              .pTexelBufferView = nullptr,
           },
           vk::WriteDescriptorSet{
-              .dstSet          = descriptor_sets_[i],
-              .dstBinding      = 1,
-              .dstArrayElement = 0,
-              .descriptorCount = 1,
-              .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
-              .pImageInfo      = &image_info,
+              .dstSet           = *descriptor_sets_[i],
+              .dstBinding       = 1,
+              .dstArrayElement  = 0,
+              .descriptorCount  = 1,
+              .descriptorType   = vk::DescriptorType::eStorageBuffer,
+              .pImageInfo       = nullptr,
+              .pBufferInfo      = &last_frame_ss_info,
+              .pTexelBufferView = nullptr,
+          },
+          vk::WriteDescriptorSet{
+              .dstSet           = *descriptor_sets_[i],
+              .dstBinding       = 2,
+              .dstArrayElement  = 0,
+              .descriptorCount  = 1,
+              .descriptorType   = vk::DescriptorType::eStorageBuffer,
+              .pImageInfo       = nullptr,
+              .pBufferInfo      = &current_frame_ss_info,
+              .pTexelBufferView = nullptr,
           },
       };
-
-      device_->updateDescriptorSets(descriptor_write, {});
+      device_->updateDescriptorSets(desc_writes, {});
     }
   }
 

@@ -3,6 +3,10 @@
 #include <liberay/math/vec.hpp>
 #include <vector>
 
+struct UniformBufferObject {
+  float delta_time;
+};
+
 struct Particle {
   using Vec2 = eray::math::Vec2f;
   using Vec3 = eray::math::Vec3f;
