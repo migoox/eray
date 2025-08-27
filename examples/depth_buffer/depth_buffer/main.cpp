@@ -193,8 +193,7 @@ class HelloTriangleApplication {
     //
     // A fence is used on CPU. Unlike the semaphores the vkWaitForFence is blocking the host.
 
-    while (vk::Result::eTimeout ==
-           device_->waitForFences(*graphics_in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
+    while (vk::Result::eTimeout == device_->waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
       ;
     }
 
@@ -217,7 +216,7 @@ class HelloTriangleApplication {
     }
     update_ubo(current_frame_);
 
-    device_->resetFences(*graphics_in_flight_fences_[current_frame_]);
+    device_->resetFences(*in_flight_fences_[current_frame_]);
     graphics_command_buffers_[current_frame_].reset();
     record_graphics_command_buffer(current_frame_, image_index);
 
@@ -238,7 +237,7 @@ class HelloTriangleApplication {
     //
     // When the rendering finishes, the finished render finished semaphore is signaled.
     //
-    device_.graphics_queue().submit(submit_info, *graphics_in_flight_fences_[current_frame_]);
+    device_.graphics_queue().submit(submit_info, *in_flight_fences_[current_frame_]);
 
     // The image will not be presented until the render finished semaphore is signaled by the submit call.
     const auto present_info = vk::PresentInfoKHR{
@@ -689,7 +688,7 @@ class HelloTriangleApplication {
 
     for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
       if (auto result = device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled})) {
-        graphics_in_flight_fences_[i] = std::move(*result);
+        in_flight_fences_[i] = std::move(*result);
       } else {
         eray::util::Logger::err("Failed to create a fence. {}", vk::to_string(result.error()));
         return std::unexpected(VulkanObjectCreationError{.result = result.error()});
@@ -1196,7 +1195,7 @@ class HelloTriangleApplication {
    * @brief Fences are used to block GPU until the frame is presented.
    *
    */
-  std::array<vk::raii::Fence, kMaxFramesInFlight> graphics_in_flight_fences_ = {nullptr, nullptr};
+  std::array<vk::raii::Fence, kMaxFramesInFlight> in_flight_fences_ = {nullptr, nullptr};
 
   eray::vkren::ExclusiveBufferResource vert_buffer_ = vkren::ExclusiveBufferResource(nullptr);
   eray::vkren::ExclusiveBufferResource ind_buffer_  = vkren::ExclusiveBufferResource(nullptr);

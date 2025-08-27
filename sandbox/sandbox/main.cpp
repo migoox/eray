@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -189,35 +190,43 @@ class HelloTriangleApplication {
   }
 
   std::expected<void, DrawFrameError> draw_frame() {
+    auto [result, image_index] = swap_chain_->acquireNextImage(UINT64_MAX, nullptr, *in_flight_fences_[current_frame_]);
+    while (vk::Result::eTimeout == device_->waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
+    }
+    device_->resetFences(*in_flight_fences_[current_frame_]);
+
+    uint64_t compute_wait_value    = timeline_value_;
+    uint64_t compute_signal_value  = ++timeline_value_;
+    uint64_t graphics_wait_value   = compute_signal_value;
+    uint64_t graphics_signal_value = ++timeline_value_;
+
     // == Compute Submission ===========================================================================================
     {
-      while (vk::Result::eTimeout ==
-             device_->waitForFences(*compute_in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
-      }
-      device_->resetFences(*compute_in_flight_fences_[current_frame_]);
-
       update_ubo(current_frame_);
       record_compute_command_buffer(current_frame_);
 
-      const auto submit_info = vk::SubmitInfo{
-          .commandBufferCount   = 1,
-          .pCommandBuffers      = &*compute_command_buffers_[current_frame_],
-          .signalSemaphoreCount = 1,
-          .pSignalSemaphores    = &*compute_finished_semaphores_[current_frame_],
+      const auto timeline_info = vk::TimelineSemaphoreSubmitInfo{
+          .waitSemaphoreValueCount   = 1,
+          .pWaitSemaphoreValues      = &compute_wait_value,
+          .signalSemaphoreValueCount = 1,
+          .pSignalSemaphoreValues    = &compute_signal_value,
       };
-      device_.compute_queue().submit(submit_info, *compute_in_flight_fences_[current_frame_]);
+      vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eComputeShader};
+      const auto submit_info               = vk::SubmitInfo{
+                        .pNext                = &timeline_info,
+                        .waitSemaphoreCount   = 1,
+                        .pWaitSemaphores      = &*timeline_semaphore_,
+                        .pWaitDstStageMask    = wait_stages,
+                        .commandBufferCount   = 1,
+                        .pCommandBuffers      = &*compute_command_buffers_[current_frame_],
+                        .signalSemaphoreCount = 1,
+                        .pSignalSemaphores    = &*timeline_semaphore_,
+      };
+      device_.compute_queue().submit(submit_info, nullptr);
     }
 
     // == Graphics Submission ==========================================================================================
     {
-      while (vk::Result::eTimeout ==
-             device_->waitForFences(*graphics_in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
-      }
-      device_->resetFences(*graphics_in_flight_fences_[current_frame_]);
-
-      auto [result, image_index] =
-          swap_chain_->acquireNextImage(UINT64_MAX, *present_finished_semaphores_[current_frame_], nullptr);
-
       if (result == vk::Result::eErrorOutOfDateKHR) {
         // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
         // happens after window resize.
@@ -236,28 +245,41 @@ class HelloTriangleApplication {
 
       vk::PipelineStageFlags wait_destination_stage_mask[] = {vk::PipelineStageFlagBits::eVertexInput,
                                                               vk::PipelineStageFlagBits::eColorAttachmentOutput};
-      auto wait_semaphores                                 = std::array{
-          *present_finished_semaphores_[current_frame_],
-          *compute_finished_semaphores_[current_frame_],
+
+      const auto timeline_info = vk::TimelineSemaphoreSubmitInfo{
+          .waitSemaphoreValueCount   = 1,
+          .pWaitSemaphoreValues      = &graphics_wait_value,
+          .signalSemaphoreValueCount = 1,
+          .pSignalSemaphoreValues    = &graphics_signal_value,
       };
       const auto submit_info = vk::SubmitInfo{
-          .waitSemaphoreCount   = wait_semaphores.size(),
-          .pWaitSemaphores      = wait_semaphores.data(),
+          .pNext                = &timeline_info,
+          .waitSemaphoreCount   = 1,
+          .pWaitSemaphores      = &*timeline_semaphore_,
           .pWaitDstStageMask    = wait_destination_stage_mask,
           .commandBufferCount   = 1,
           .pCommandBuffers      = &*graphics_command_buffers_[current_frame_],
           .signalSemaphoreCount = 1,
-          .pSignalSemaphores    = &*render_finished_semaphores_[image_index],  //
+          .pSignalSemaphores    = &*timeline_semaphore_,  //
       };
-      device_.graphics_queue().submit(submit_info, *graphics_in_flight_fences_[current_frame_]);
+      device_.graphics_queue().submit(submit_info, nullptr);
+
+      auto wait_info = vk::SemaphoreWaitInfo{
+          .semaphoreCount = 1,
+          .pSemaphores    = &*timeline_semaphore_,
+          .pValues        = &graphics_signal_value,
+      };
+
+      // Block the CPU until the graphics and compute are ready for presentation
+      while (vk::Result::eTimeout == device_->waitSemaphores(wait_info, UINT64_MAX)) {
+      }
 
       const auto present_info = vk::PresentInfoKHR{
-          .waitSemaphoreCount = 1,
-          .pWaitSemaphores    = &*render_finished_semaphores_[image_index],
+          .waitSemaphoreCount = 0,
+          .pWaitSemaphores    = nullptr,
           .swapchainCount     = 1,
           .pSwapchains        = &**swap_chain_,
           .pImageIndices      = &image_index,
-          .pResults           = nullptr,
       };
       result = device_.presentation_queue().presentKHR(present_info);
 
@@ -590,28 +612,20 @@ class HelloTriangleApplication {
   }
 
   void create_sync_objs() {
-    present_finished_semaphores_.clear();
-    render_finished_semaphores_.clear();
-    compute_finished_semaphores_.clear();
-
-    for (size_t i = 0; i < swap_chain_.images().size(); ++i) {
-      present_finished_semaphores_.emplace_back(
-          vkren::Result(device_->createSemaphore(vk::SemaphoreCreateInfo{})).or_panic("Could not create a semaphore"));
-      render_finished_semaphores_.emplace_back(
-          vkren::Result(device_->createSemaphore(vk::SemaphoreCreateInfo{})).or_panic("Could not create a semaphore"));
-      compute_finished_semaphores_.emplace_back(
-          vkren::Result(device_->createSemaphore(vk::SemaphoreCreateInfo{})).or_panic("Could not create a semaphore"));
-    }
-
-    graphics_in_flight_fences_.clear();
-    compute_in_flight_fences_.clear();
+    auto semaphore_info = vk::SemaphoreTypeCreateInfo{
+        .semaphoreType = vk::SemaphoreType::eTimeline,
+        .initialValue  = 0,
+    };
+    timeline_semaphore_ = vkren::Result(device_->createSemaphore(vk::SemaphoreCreateInfo{.pNext = &semaphore_info}))
+                              .or_panic("Could not create a semaphore");
+    timeline_value_ = 0;
+    in_flight_fences_.clear();
     for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
-      graphics_in_flight_fences_.emplace_back(
+      in_flight_fences_.emplace_back(
           vkren::Result(device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled}))
               .or_panic("Could not create a fence"));
-      compute_in_flight_fences_.emplace_back(
-          vkren::Result(device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled}))
-              .or_panic("Could not create a fence"));
+
+      device_->resetFences(*in_flight_fences_.back());
     }
   }
 
@@ -1098,16 +1112,14 @@ class HelloTriangleApplication {
    * @brief Semaphores are used to assert on GPU that a process e.g. rendering is finished.
    *
    */
-  std::vector<vk::raii::Semaphore> present_finished_semaphores_;
-  std::vector<vk::raii::Semaphore> render_finished_semaphores_;
-  std::vector<vk::raii::Semaphore> compute_finished_semaphores_;
+  vk::raii::Semaphore timeline_semaphore_ = nullptr;
+  uint64_t timeline_value_{0};
 
   /**
    * @brief Fences are used to block GPU until the frame is presented.
    *
    */
-  std::vector<vk::raii::Fence> graphics_in_flight_fences_;
-  std::vector<vk::raii::Fence> compute_in_flight_fences_;
+  std::vector<vk::raii::Fence> in_flight_fences_;
 
   std::vector<eray::vkren::ExclusiveBufferResource> uniform_buffers_;
   std::vector<void*> uniform_buffers_mapped_;
@@ -1154,8 +1166,6 @@ class HelloTriangleApplication {
 int main() {
   eray::util::Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
   eray::util::Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
-  auto t = eray::math::Vec2<float>{};
-  eray::util::Logger::info("{}", sizeof(t));
 
   auto app = HelloTriangleApplication();
   if (auto result = app.run(); !result) {
