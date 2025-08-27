@@ -59,14 +59,8 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create(const Dev
   }
   buffer_opt->bindMemory(*buffer_mem_opt, 0);
 
-  return ExclusiveBufferResource{
-      .buffer         = std::move(*buffer_opt),
-      .memory         = std::move(*buffer_mem_opt),
-      .mem_size_bytes = info.size_bytes,
-      .usage          = info.buff_usage,
-      .mem_properties = info.mem_properties,
-      .p_device       = &device,
-  };
+  return ExclusiveBufferResource(std::move(*buffer_opt), std::move(*buffer_mem_opt), info.size_bytes, info.buff_usage,
+                                 info.mem_properties, &device);
 }
 Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_staging_buffer(const Device& device,
                                                                                       util::MemoryRegion src_region) {
@@ -97,14 +91,14 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_and_uploa
   if (!result) {
     return std::unexpected(result.error());
   }
-  result->copy_from(staging_buffer.buffer, vk::BufferCopy(0, 0, info.size_bytes));
+  result->copy_from(staging_buffer.buffer_, vk::BufferCopy(0, 0, info.size_bytes));
   return std::move(*result);
 }
 
 void ExclusiveBufferResource::fill_data(util::MemoryRegion src_region, vk::DeviceSize offset_bytes) const {
-  void* dst = memory.mapMemory(offset_bytes, src_region.size_bytes());
+  void* dst = memory_.mapMemory(offset_bytes, src_region.size_bytes());
   memcpy(dst, src_region.data(), src_region.size_bytes());
-  memory.unmapMemory();
+  memory_.unmapMemory();
 
   // Unfortunately, the driver may not immediately copy the data into the buffer memory, for example, because of
   // caching. It is also possible that writes to the buffer are not visible in the mapped memory yet. That's why
@@ -118,13 +112,13 @@ void ExclusiveBufferResource::fill_data(util::MemoryRegion src_region, vk::Devic
 }
 
 void ExclusiveBufferResource::copy_from(const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const {
-  if (!has_flag(usage, vk::BufferUsageFlagBits::eTransferDst)) {
+  if (!has_flag(usage_, vk::BufferUsageFlagBits::eTransferDst)) {
     util::panic("Assertion failed! Buffer must be a transfer destination (VK_BUFFER_USAGE_TRANSFER_DST_BIT)");
   }
 
-  auto cmd_cpy_buff = p_device->begin_single_time_commands();
-  cmd_cpy_buff.copyBuffer(src_buff, buffer, cpy_info);
-  p_device->end_single_time_commands(cmd_cpy_buff);
+  auto cmd_cpy_buff = p_device_->begin_single_time_commands();
+  cmd_cpy_buff.copyBuffer(src_buff, buffer_, cpy_info);
+  p_device_->end_single_time_commands(cmd_cpy_buff);
 }
 
 }  // namespace eray::vkren

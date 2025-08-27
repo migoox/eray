@@ -20,7 +20,7 @@ struct Particle {
 };
 
 struct ParticleSystem {
-  static constexpr size_t kParticleCount = 1000;
+  static constexpr size_t kParticleCount = 8192;
 
   static ParticleSystem create_on_circle(float aspect_ratio = 1.F);
 
@@ -42,12 +42,6 @@ struct ParticleSystem {
         },
         vk::VertexInputAttributeDescription{
             .location = 1,
-            .binding  = 0,
-            .format   = vk::Format::eR32G32Sfloat,
-            .offset   = offsetof(Particle, velocity),
-        },
-        vk::VertexInputAttributeDescription{
-            .location = 2,
             .binding  = 0,
             .format   = vk::Format::eR32G32B32A32Sfloat,
             .offset   = offsetof(Particle, color),

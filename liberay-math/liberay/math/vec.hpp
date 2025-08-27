@@ -25,21 +25,28 @@ struct Empty {};
 template <std::size_t N, CPrimitive T>
   requires(N >= 1)
 struct Vec {
-  union {
-    T data[N];
-    struct {
-      ERAY_NO_UNIQUE_ADDRESS std::conditional_t<(N >= 1), T, internal::Empty> x;
-      ERAY_NO_UNIQUE_ADDRESS std::conditional_t<(N >= 2), T, internal::Empty> y;
-      ERAY_NO_UNIQUE_ADDRESS std::conditional_t<(N >= 3), T, internal::Empty> z;
-      ERAY_NO_UNIQUE_ADDRESS std::conditional_t<(N >= 4), T, internal::Empty> w;
-    };
-    struct {
-      ERAY_NO_UNIQUE_ADDRESS std::conditional_t<(N >= 3 && N <= 4), T, internal::Empty> r;
-      ERAY_NO_UNIQUE_ADDRESS std::conditional_t<(N >= 3 && N <= 4), T, internal::Empty> g;
-      ERAY_NO_UNIQUE_ADDRESS std::conditional_t<(N >= 3 && N <= 4), T, internal::Empty> b;
-      ERAY_NO_UNIQUE_ADDRESS std::conditional_t<(N == 4), T, internal::Empty> a;
-    };
-  };
+  T data[N];
+
+  auto x() const
+    requires(N >= 1)
+  {
+    return data[1];
+  }
+  auto y() const
+    requires(N >= 2)
+  {
+    return data[1];
+  }
+  auto z() const
+    requires(N >= 3)
+  {
+    return data[2];
+  }
+  auto w() const
+    requires(N >= 4)
+  {
+    return data[3];
+  }
 
   /**
    * @brief Default constructor that sets all components of a vector to 0

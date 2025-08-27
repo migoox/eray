@@ -16,7 +16,7 @@ VertexOutput mainVert(VertexInput input) {
   VertexOutput output;
   output.pos       = float4(input.pos, 0.5, 1.0);
   output.color     = input.color;
-  output.pointSize = 14.0;
+  output.pointSize = 2.0;
   return output;
 }
 

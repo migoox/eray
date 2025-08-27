@@ -2,6 +2,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -86,7 +87,7 @@ class HelloTriangleApplication {
   std::expected<void, GLFWWindowCreationFailure> run() {
     TRY(initWindow());
     init_vk();
-    mainLoop();
+    main_loop();
     cleanup();
 
     return {};
@@ -105,7 +106,6 @@ class HelloTriangleApplication {
     create_command_pool();
     create_buffers();
     create_command_buffers();
-    create_txt_img();
     create_descriptor_pool();
     create_descriptor_sets();
     create_sync_objs();
@@ -169,13 +169,18 @@ class HelloTriangleApplication {
     return {};
   }
 
-  void mainLoop() {
+  void main_loop() {
+    static auto prev_time = std::chrono::high_resolution_clock::now();
+
     while (!glfwWindowShouldClose(window_)) {
       glfwPollEvents();
       if (!draw_frame()) {
         eray::util::Logger::err("Closing window: Failed to draw a frame");
         break;
       }
+      auto curr_time   = std::chrono::high_resolution_clock::now();
+      last_frame_time_ = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - prev_time).count();
+      prev_time        = curr_time;
     }
 
     // Since draw frame operations are async, when the main loop ends the drawing operations may still be going on.
@@ -184,92 +189,97 @@ class HelloTriangleApplication {
   }
 
   std::expected<void, DrawFrameError> draw_frame() {
-    // A binary (there is also a timeline semaphore) semaphore is used to add order between queue operations (work
-    // submitted to the queue). Semaphores are used for both -- to order work inside the same queue and between
-    // different queues. The waiting happens on GPU only, the host (CPU) is not blocked.
-    //
-    // A fence is used on CPU. Unlike the semaphores the vkWaitForFence is blocking the host.
+    // == Compute Submission ===========================================================================================
+    {
+      while (vk::Result::eTimeout ==
+             device_->waitForFences(*compute_in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
+      }
+      device_->resetFences(*compute_in_flight_fences_[current_frame_]);
 
-    while (vk::Result::eTimeout == device_->waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
-      ;
-    }
+      update_ubo(current_frame_);
+      record_compute_command_buffer(current_frame_);
 
-    // Get the image from the swap chain. When the image will be ready the present semaphore will be signaled.
-    auto [result, image_index] =
-        swap_chain_->acquireNextImage(UINT64_MAX, *present_complete_semaphores_[current_semaphore_], nullptr);
-
-    if (result == vk::Result::eErrorOutOfDateKHR) {
-      // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
-      // happens after window resize.
-      TRY(recreate_swap_chain());
-      return {};
-    }
-
-    if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
-      // The swap chain cannot be used even if we accept that the surface properties are no longer matched exactly
-      // (eSuboptimalKHR).
-      eray::util::Logger::err("Failed to present swap chain image");
-      return std::unexpected(SwapChainImageAcquireFailure{});
-    }
-    update_ubo(current_frame_);
-
-    device_->resetFences(*in_flight_fences_[current_frame_]);
-    command_buffers_[current_frame_].reset();
-    record_command_buffer(current_frame_, image_index);
-
-    auto wait_dst_stage_mask = vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput);
-    const auto submit_info   = vk::SubmitInfo{
-          .waitSemaphoreCount   = 1,
-          .pWaitSemaphores      = &*present_complete_semaphores_[current_semaphore_],
-          .pWaitDstStageMask    = &wait_dst_stage_mask,
+      const auto submit_info = vk::SubmitInfo{
           .commandBufferCount   = 1,
-          .pCommandBuffers      = &*command_buffers_[current_frame_],
+          .pCommandBuffers      = &*compute_command_buffers_[current_frame_],
+          .signalSemaphoreCount = 1,
+          .pSignalSemaphores    = &*compute_finished_semaphores_[current_frame_],
+      };
+      device_.compute_queue().submit(submit_info, *compute_in_flight_fences_[current_frame_]);
+    }
+
+    // == Graphics Submission ==========================================================================================
+    {
+      while (vk::Result::eTimeout ==
+             device_->waitForFences(*graphics_in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
+      }
+      device_->resetFences(*graphics_in_flight_fences_[current_frame_]);
+
+      auto [result, image_index] =
+          swap_chain_->acquireNextImage(UINT64_MAX, *present_finished_semaphores_[current_frame_], nullptr);
+
+      if (result == vk::Result::eErrorOutOfDateKHR) {
+        // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
+        // happens after window resize.
+        TRY(recreate_swap_chain());
+        return {};
+      }
+
+      if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
+        // The swap chain cannot be used even if we accept that the surface properties are no longer matched exactly
+        // (eSuboptimalKHR).
+        eray::util::Logger::err("Failed to present swap chain image");
+        return std::unexpected(SwapChainImageAcquireFailure{});
+      }
+
+      record_graphics_command_buffer(current_frame_, image_index);
+
+      vk::PipelineStageFlags wait_destination_stage_mask[] = {vk::PipelineStageFlagBits::eVertexInput,
+                                                              vk::PipelineStageFlagBits::eColorAttachmentOutput};
+      auto wait_semaphores                                 = std::array{
+          *present_finished_semaphores_[current_frame_],
+          *compute_finished_semaphores_[current_frame_],
+      };
+      const auto submit_info = vk::SubmitInfo{
+          .waitSemaphoreCount   = wait_semaphores.size(),
+          .pWaitSemaphores      = wait_semaphores.data(),
+          .pWaitDstStageMask    = wait_destination_stage_mask,
+          .commandBufferCount   = 1,
+          .pCommandBuffers      = &*graphics_command_buffers_[current_frame_],
           .signalSemaphoreCount = 1,
           .pSignalSemaphores    = &*render_finished_semaphores_[image_index],  //
-    };
+      };
+      device_.graphics_queue().submit(submit_info, *graphics_in_flight_fences_[current_frame_]);
 
-    // Submits the provided commands to the queue. The vkWaitForFences blocks the execution until all
-    // of the commands will be submitted. The submitting will begin after the present semaphore
-    // receives the signal from acquire next image.
-    //
-    // When the rendering finishes, the finished render finished semaphore is signaled.
-    //
-    device_.graphics_queue().submit(submit_info, *in_flight_fences_[current_frame_]);
+      const auto present_info = vk::PresentInfoKHR{
+          .waitSemaphoreCount = 1,
+          .pWaitSemaphores    = &*render_finished_semaphores_[image_index],
+          .swapchainCount     = 1,
+          .pSwapchains        = &**swap_chain_,
+          .pImageIndices      = &image_index,
+          .pResults           = nullptr,
+      };
+      result = device_.presentation_queue().presentKHR(present_info);
 
-    // The image will not be presented until the render finished semaphore is signaled by the submit call.
-    const auto present_info = vk::PresentInfoKHR{
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores    = &*render_finished_semaphores_[image_index],
-        .swapchainCount     = 1,
-        .pSwapchains        = &**swap_chain_,
-        .pImageIndices      = &image_index,
-        .pResults           = nullptr,
-    };
-
-    result = device_.presentation_queue().presentKHR(present_info);
-    if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebuffer_resized_) {
-      framebuffer_resized_ = false;
-      TRY(recreate_swap_chain());
-    } else if (result != vk::Result::eSuccess) {
-      eray::util::Logger::err("Failed to present swap chain image");
-      return std::unexpected(SwapChainImageAcquireFailure{});
+      if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebuffer_resized_) {
+        framebuffer_resized_ = false;
+        TRY(recreate_swap_chain());
+      } else if (result != vk::Result::eSuccess) {
+        eray::util::Logger::err("Failed to present swap chain image");
+        return std::unexpected(SwapChainImageAcquireFailure{});
+      }
     }
 
-    current_semaphore_ = (current_semaphore_ + 1) % present_complete_semaphores_.size();
-    current_frame_     = (current_frame_ + 1) % kMaxFramesInFlight;
+    current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
 
     return {};
   }
 
-  void update_ubo(uint32_t image_index) {
-    static auto start_time = std::chrono::high_resolution_clock::now();
-
-    auto curr_time = std::chrono::high_resolution_clock::now();
-    float time     = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - start_time).count();
-
-    UniformBufferObject ubo{};
-    ubo.delta_time = time;
-    memcpy(uniform_buffers_mapped_[image_index], &ubo, sizeof(ubo));
+  void update_ubo(uint32_t frame_index) {
+    auto ubo = UniformBufferObject{
+        .delta_time = last_frame_time_,
+    };
+    memcpy(uniform_buffers_mapped_[frame_index], &ubo, sizeof(ubo));
   }
 
   void cleanup() {
@@ -311,7 +321,6 @@ class HelloTriangleApplication {
 
   void create_graphics_pipeline() {
     // == 1. Shader stage ==============================================================================================
-
     auto main_binary =
         eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
             .or_panic("Could not find main graphics shader");
@@ -319,12 +328,9 @@ class HelloTriangleApplication {
         vkren::ShaderModule::create(device_, main_binary).or_panic("Could not create a main shader module");
 
     auto vert_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
-        .stage  = vk::ShaderStageFlagBits::eVertex,  //
-        .module = main_shader_module.shader_module,  //
-        .pName  = kVertexShaderEntryPoint.c_str(),   // entry point name
-
-        // Optional: pSpecializationInfo allows to specify values for shader constants. This allows for compiler
-        // optimizations like eliminating if statements that depend on the const values.
+        .stage  = vk::ShaderStageFlagBits::eVertex,
+        .module = main_shader_module.shader_module,
+        .pName  = kVertexShaderEntryPoint.c_str(),
     };
 
     auto frag_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
@@ -337,71 +343,40 @@ class HelloTriangleApplication {
                                                                           frag_shader_stage_pipeline_info};
 
     // == 2. Dynamic state =============================================================================================
-
-    // Most of the pipeline state needs to be baked into the pipeline state. For example changing the size of a
-    // viewport, line width and blend constants can be changed dynamically without the full pipeline recreation.
-    //
-    // Note: This will cause the configuration of these values to be ignored, and you will be able (and required)
-    // to specify the data at drawing time.
     auto dynamic_states = std::vector{
-        vk::DynamicState::eViewport,  //
-        vk::DynamicState::eScissor    //
+        vk::DynamicState::eViewport,
+        vk::DynamicState::eScissor,
     };
-
     auto dynamic_state = vk::PipelineDynamicStateCreateInfo{
-        .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),  //
-        .pDynamicStates    = dynamic_states.data(),                         //
+        .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),
+        .pDynamicStates    = dynamic_states.data(),
     };
-
-    // With dynamic state only the count is necessary.
     auto viewport_state_info = vk::PipelineViewportStateCreateInfo{.viewportCount = 1, .scissorCount = 1};
 
     // == 3. Input assembly ============================================================================================
-
-    // Describes the format of the vertex data that will be passed to the vertex shader:
-    // - Bindings: spacing between data and whether the data is per-vertex or per-instance,
-    // - Attribute descriptions: type of the attributes passed to the vertex shader, which binding to load them from and
-    // at which offset
     auto binding_desc       = ParticleSystem::get_binding_desc();
     auto attribs_desc       = ParticleSystem::get_attribs_desc();
     auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
         .vertexBindingDescriptionCount   = 1,
-        .pVertexBindingDescriptions      = &binding_desc,  //
+        .pVertexBindingDescriptions      = &binding_desc,
         .vertexAttributeDescriptionCount = attribs_desc.size(),
-        .pVertexAttributeDescriptions    = attribs_desc.data(),  //
+        .pVertexAttributeDescriptions    = attribs_desc.data(),
     };
-
-    // Describes:
-    // - what kind of geometry will be drawn
-    //   VK_PRIMITIVE_TOPOLOGY_(POINT_LIST|LINE_LIST|LINE_STRIP|TRIANGLE_LIST|TRIANGLE_STRIP)
-    // - whether primitive restart should be enabled, when set to VK_TRUE, it's possible to break up lines and triangles
-    //   in the _STRIP topology modes by using a special index of 0xFFFF or 0xFFFFFFFF
     auto input_assembly = vk::PipelineInputAssemblyStateCreateInfo{
-        .topology               = vk::PrimitiveTopology::ePointList,  //
-        .primitiveRestartEnable = vk::False,                          //
+        .topology               = vk::PrimitiveTopology::ePointList,
+        .primitiveRestartEnable = vk::False,
     };
 
     // == 4. Rasterizer ================================================================================================
-
-    // The Rasterizer takes as it's input geometry and turns it into fragments to be colored by the fragment shader.
-    // It also performs face culling, depth testing and the scissor test. It also allows for wireframe rendering.
-
     auto rasterization_state_info = vk::PipelineRasterizationStateCreateInfo{
-        .depthClampEnable =
-            vk::False,  // whether fragment depths should be clamped to [minDepth, maxDepth] (to near and far planes)
-        .polygonMode = vk::PolygonMode::eFill,  // you can use eLine for wireframes
-        .cullMode    = vk::CullModeFlagBits::eBack,
-        .frontFace   = vk::FrontFace::eClockwise,
-
-        // Polygons that are coplanar in 3D space can be made to appear as if they are not coplanar by adding a z-bias
-        // (or depth bias) to each one. This is a technique commonly used to ensure that shadows in a scene are
-        // displayed properly. For instance, a shadow on a wall will likely have the same depth value as the wall. If an
-        // application renders a wall first and then a shadow, the shadow might not be visible, or depth artifacts might
-        // be visible.
+        .depthClampEnable     = vk::False,
+        .polygonMode          = vk::PolygonMode::eFill,
+        .cullMode             = vk::CullModeFlagBits::eBack,
+        .frontFace            = vk::FrontFace::eClockwise,
         .depthBiasEnable      = vk::False,
         .depthBiasSlopeFactor = 1.0F,
 
-        // NOTE: The maximum line width that is supported dependson the hardware and any lin thicker
+        // NOTE: The maximum line width that is supported depends on the hardware and any lin thicker
         // than 1.0F requires to enable the wideLines GPU feature.
         .lineWidth = 1.0F,
     };
@@ -409,17 +384,12 @@ class HelloTriangleApplication {
     // == 5. Multisampling =============================================================================================
     auto multisampling_state_info = vk::PipelineMultisampleStateCreateInfo{
         .rasterizationSamples = swap_chain_.msaa_sample_count(),
-        // If sampling shading is enabled, an implementation must invoke the fragment shader at least
-        // minSampleShading*rasterizationSamples times per fragment
-        //
-        // VkPipelineMultisampleStateCreateInfo::rasterizationSamples ⌉, 1) times per fragment .sampleShadingEnable  =
-        // vk::True, .minSampleShading     = .2F,
     };
 
     // == 6. Depth and Stencil Testing =================================================================================
     auto depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo{
-        .depthTestEnable       = vk::True,
-        .depthWriteEnable      = vk::True,
+        .depthTestEnable       = vk::False,
+        .depthWriteEnable      = vk::False,
         .depthCompareOp        = vk::CompareOp::eLess,
         .depthBoundsTestEnable = vk::False,
         .stencilTestEnable     = vk::False,
@@ -449,9 +419,6 @@ class HelloTriangleApplication {
     };
 
     // == 8. Pipeline Layout creation ==================================================================================
-
-    // You can use uniform values in shaders, which are globals that can be changed at drawing time after the behavior
-    // of your shaders without having to recreate. The uniform variables must be specified during the pipeline creation.
     auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
         .setLayoutCount         = 0,
         .pushConstantRangeCount = 0,
@@ -495,9 +462,6 @@ class HelloTriangleApplication {
         .basePipelineIndex  = -1,
     };
 
-    // Pipeline cache (set to nullptr) can be used to store and reuse data relevant to pipeline creation across
-    // multiple calls to vk::CreateGraphicsPipelines and even across program executions if the cache is stored to a
-    // file.
     graphics_pipeline_ = vkren::Result(device_->createGraphicsPipeline(nullptr, pipeline_info))
                              .or_panic("Could not create a graphics pipeline.");
   }
@@ -519,7 +483,7 @@ class HelloTriangleApplication {
     // == 2. Layout creation ===========================================================================================
     auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
         .setLayoutCount         = 1,
-        .pSetLayouts            = &*descriptor_set_layout_,
+        .pSetLayouts            = &*compute_descriptor_set_layout_,
         .pushConstantRangeCount = 0,
     };
 
@@ -536,17 +500,12 @@ class HelloTriangleApplication {
   }
 
   void create_command_pool() {
+    if (device_.graphics_queue_family() != device_.compute_queue_family()) {
+      eray::util::panic("Expected graphics queue and compute queue to be the same");
+    }
+
     auto command_pool_info = vk::CommandPoolCreateInfo{
-        // There are two possible flags for command pools:
-        // - VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: Hint that command buffers are rerecorded with new commands very often
-        //   (may change memory allocation behavior).
-        // - VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT: Allow command buffers to be rerecorded individually,
-        //   without this flag they all have to be reset together. (Reset and rerecord over it in every frame)
-
-        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-
-        // Each command pool can only allocate command buffers that are submitted on a single type of queue.
-        // We setup commands for drawing, and thus we've chosen the graphics queue family.
+        .flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         .queueFamilyIndex = device_.graphics_queue_family(),
     };
 
@@ -555,6 +514,7 @@ class HelloTriangleApplication {
   }
 
   void create_buffers() {
+    // == Storage Buffers ==============================================================================================
     auto particle_system =
         ParticleSystem::create_on_circle(static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight));
     auto region =
@@ -573,89 +533,86 @@ class HelloTriangleApplication {
                       })
                       .or_panic("Could not create a Storage Buffer");
 
-      temp.copy_from(staging_buff.buffer, vk::BufferCopy{
-                                              .srcOffset = 0,
-                                              .dstOffset = 0,
-                                              .size      = region.size_bytes(),
-                                          });
+      temp.copy_from(staging_buff.buffer(), vk::BufferCopy{
+                                                .srcOffset = 0,
+                                                .dstOffset = 0,
+                                                .size      = region.size_bytes(),
+                                            });
       ssbuffers_.emplace_back(std::move(temp));
+    }
+
+    // == Uniform Buffers ==============================================================================================
+    uniform_buffers_.clear();
+    uniform_buffers_mapped_.clear();
+    {
+      vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
+      for (auto i = 0; i < kMaxFramesInFlight; ++i) {
+        auto ubo = vkren::ExclusiveBufferResource::create(  //
+                       device_,
+                       vkren::ExclusiveBufferResource::CreateInfo{
+                           .size_bytes = buffer_size,
+                           .buff_usage = vk::BufferUsageFlagBits::eUniformBuffer,
+                           .mem_properties =
+                               vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                       })
+                       .or_panic();
+
+        // This technique is called persistent mapping, the buffer stays mapped for the application's whole life-time.
+        // It increases performance as the mapping process is not free.
+        uniform_buffers_mapped_.emplace_back(ubo.memory().mapMemory(0, buffer_size));
+        uniform_buffers_.emplace_back(std::move(ubo));
+      }
     }
   }
 
   void create_command_buffers() {
-    auto alloc_info = vk::CommandBufferAllocateInfo{
-        .commandPool = command_pool_,  //
+    {
+      auto alloc_info = vk::CommandBufferAllocateInfo{
+          .commandPool        = command_pool_,
+          .level              = vk::CommandBufferLevel::ePrimary,  //
+          .commandBufferCount = kMaxFramesInFlight,                //
+      };
 
-        // Specifies if the allocated command buffers are primary or secondary command buffers:
-        // - VK_COMMAND_BUFFER_LEVEL_PRIMARY: Can be submitted to a queue for execution, but cannot be called from
-        // other
-        //   command buffers.
-        // - VK_COMMAND_BUFFER_LEVEL_SECONDARY: Cannot be submitted directly, but can be called from primary command
-        //   buffers.
-        .level              = vk::CommandBufferLevel::ePrimary,  //
-        .commandBufferCount = kMaxFramesInFlight,                //
-    };
-    auto result =
-        vkren::Result(device_->allocateCommandBuffers(alloc_info)).or_panic("Command buffer allocation failure.");
+      graphics_command_buffers_ =
+          vkren::Result(device_->allocateCommandBuffers(alloc_info)).or_panic("Command buffer allocation failure.");
+    }
+
+    {
+      auto alloc_info = vk::CommandBufferAllocateInfo{
+          .commandPool        = command_pool_,
+          .level              = vk::CommandBufferLevel::ePrimary,  //
+          .commandBufferCount = kMaxFramesInFlight,                //
+      };
+
+      compute_command_buffers_ =
+          vkren::Result(device_->allocateCommandBuffers(alloc_info)).or_panic("Command buffer allocation failure.");
+    }
   }
 
   void create_sync_objs() {
-    present_complete_semaphores_.clear();
+    present_finished_semaphores_.clear();
     render_finished_semaphores_.clear();
+    compute_finished_semaphores_.clear();
 
     for (size_t i = 0; i < swap_chain_.images().size(); ++i) {
-      if (auto result = device_->createSemaphore(vk::SemaphoreCreateInfo{})) {
-        present_complete_semaphores_.emplace_back(std::move(*result));
-      } else {
-        eray::util::panic("Failed to create a sempahore");
-      }
+      present_finished_semaphores_.emplace_back(
+          vkren::Result(device_->createSemaphore(vk::SemaphoreCreateInfo{})).or_panic("Could not create a semaphore"));
+      render_finished_semaphores_.emplace_back(
+          vkren::Result(device_->createSemaphore(vk::SemaphoreCreateInfo{})).or_panic("Could not create a semaphore"));
+      compute_finished_semaphores_.emplace_back(
+          vkren::Result(device_->createSemaphore(vk::SemaphoreCreateInfo{})).or_panic("Could not create a semaphore"));
     }
 
-    for (size_t i = 0; i < swap_chain_.images().size(); ++i) {
-      if (auto result = device_->createSemaphore(vk::SemaphoreCreateInfo{})) {
-        render_finished_semaphores_.emplace_back(std::move(*result));
-      } else {
-        eray::util::panic("Failed to create a sempahore");
-      }
-    }
-
+    graphics_in_flight_fences_.clear();
+    compute_in_flight_fences_.clear();
     for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
-      if (auto result = device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled})) {
-        in_flight_fences_[i] = std::move(*result);
-      } else {
-        eray::util::panic("Failed to create a fence");
-      }
+      graphics_in_flight_fences_.emplace_back(
+          vkren::Result(device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled}))
+              .or_panic("Could not create a fence"));
+      compute_in_flight_fences_.emplace_back(
+          vkren::Result(device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled}))
+              .or_panic("Could not create a fence"));
     }
-  }
-
-  void create_txt_img() {
-    auto img = eray::res::Image::load_from_path(eray::os::System::executable_dir() / "assets" / "cad.jpeg")
-                   .or_panic("cad is not there :(");
-    // Image
-    txt_image_ = eray::vkren::ExclusiveImage2DResource::create_texture(device_, img)
-                     .or_panic("Could not create a texture image");
-
-    // Image View
-    txt_view_ = txt_image_.create_image_view().or_panic("Could not create the image view");
-
-    // Image Sampler
-    auto pdev_props   = device_.physical_device().getProperties();
-    auto sampler_info = vk::SamplerCreateInfo{
-        .magFilter        = vk::Filter::eLinear,
-        .minFilter        = vk::Filter::eLinear,
-        .mipmapMode       = vk::SamplerMipmapMode::eLinear,
-        .addressModeU     = vk::SamplerAddressMode::eRepeat,
-        .addressModeV     = vk::SamplerAddressMode::eRepeat,
-        .addressModeW     = vk::SamplerAddressMode::eRepeat,
-        .mipLodBias       = 0.0F,
-        .anisotropyEnable = vk::True,
-        .maxAnisotropy    = pdev_props.limits.maxSamplerAnisotropy,
-        .compareEnable    = vk::False,
-        .compareOp        = vk::CompareOp::eAlways,
-        .minLod           = 0.F,
-        .maxLod           = vk::LodClampNone,
-    };
-    txt_sampler_ = vkren::Result(device_->createSampler(sampler_info)).or_panic("Could not create the sampler");
   }
 
   struct TransitionSwapChainImageLayoutInfo {
@@ -711,7 +668,7 @@ class HelloTriangleApplication {
         .pImageMemoryBarriers    = &barrier,
     };
 
-    command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
+    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
   }
 
   struct TransitionDepthAttachmentLayoutInfo {
@@ -751,7 +708,7 @@ class HelloTriangleApplication {
         .pImageMemoryBarriers    = &barrier,
     };
 
-    command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
+    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
   }
 
   struct TransitionColorAttachmentLayoutInfo {
@@ -791,7 +748,7 @@ class HelloTriangleApplication {
         .pImageMemoryBarriers    = &barrier,
     };
 
-    command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
+    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
   }
 
   /**
@@ -799,18 +756,8 @@ class HelloTriangleApplication {
    *
    * @param image_index
    */
-  void record_command_buffer(size_t frame_index, uint32_t image_index) {
-    command_buffers_[frame_index].begin(vk::CommandBufferBeginInfo{
-        // The `flags` parameter specifies how we're going to use the command buffer:
-        // - VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT: The command buffer will be rerecorded right after executing
-        // it
-        //   once.
-        // - VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT: This is a secondary command buffer that will be
-        // entirely
-        //   within a single render pass.
-        // - WK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT: The command buffer can be resubmitted while it is also
-        //   already pending execution.
-    });
+  void record_graphics_command_buffer(size_t frame_index, uint32_t image_index) {
+    graphics_command_buffers_[frame_index].begin(vk::CommandBufferBeginInfo{});
 
     // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
     transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
@@ -837,19 +784,11 @@ class HelloTriangleApplication {
     });
 
     auto color_buffer_attachment_info = vk::RenderingAttachmentInfo{
-        // Specifies which image to render to
-        .imageView = swap_chain_.image_views()[image_index],
-
-        // Specifies the layout the image will be in during rendering
+        .imageView   = swap_chain_.image_views()[image_index],
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-
-        // Specifies what to do with the image before rendering
-        .loadOp = vk::AttachmentLoadOp::eClear,
-
-        // Specifies what to do with the image after rendering
-        .storeOp = vk::AttachmentStoreOp::eStore,
-
-        .clearValue = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F),
+        .loadOp      = vk::AttachmentLoadOp::eClear,
+        .storeOp     = vk::AttachmentStoreOp::eStore,
+        .clearValue  = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F),
     };
 
     auto depth_buffer_attachment_info = vk::RenderingAttachmentInfo{
@@ -889,15 +828,10 @@ class HelloTriangleApplication {
         .pColorAttachments    = &color_buffer_attachment_info,
         .pDepthAttachment     = &depth_buffer_attachment_info,
     };
-    command_buffers_[frame_index].beginRendering(rendering_info);
+    graphics_command_buffers_[frame_index].beginRendering(rendering_info);
 
-    // We can specify type of the pipeline
-    command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
-    command_buffers_[frame_index].bindVertexBuffers(0, *vert_buffer_.buffer, {0});
-    command_buffers_[frame_index].bindIndexBuffer(*ind_buffer_.buffer, 0, vk::IndexType::eUint16);
-
-    // Describes the region of framebuffer that the output will be rendered to
-    command_buffers_[frame_index].setViewport(
+    graphics_command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
+    graphics_command_buffers_[frame_index].setViewport(
         0, vk::Viewport{
                .x      = 0.0F,
                .y      = 0.0F,
@@ -907,22 +841,12 @@ class HelloTriangleApplication {
                .minDepth = 0.0F,
                .maxDepth = 1.0F  //
            });
-
-    // Scissor rectangle defines in which region pixels will actually be stored. The rasterizer will discard any
-    // pixels outside the scissored rectangle. We want to draw to entire framebuffer.
-    command_buffers_[frame_index].setScissor(
+    graphics_command_buffers_[frame_index].setScissor(
         0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_.extent()});
+    graphics_command_buffers_[frame_index].bindVertexBuffers(0, {ssbuffers_[current_frame_].buffer()}, {0});
+    graphics_command_buffers_[frame_index].draw(ParticleSystem::kParticleCount, 1, 0, 0);
 
-    // Unlike vertex and index buffers, descriptor sets are not unique to graphics pipelines. Therefore, we need
-    // to specify if we want to bind descriptor sets to the graphics or compute pipeline. The next parameter is the
-    // layout that the descriptors are based on. The next three parameters specify the index of the first descriptor
-    // set, the number of sets to bind and the array of sets to bind.
-    command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, graphics_pipeline_layout_, 0,
-                                                     *descriptor_sets_[frame_index], nullptr);
-    // Draw 3 vertices
-    // command_buffers_[frame_index].drawIndexed(12, 1, 0, 0, 0);
-
-    command_buffers_[frame_index].endRendering();
+    graphics_command_buffers_[frame_index].endRendering();
 
     // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
     transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
@@ -936,7 +860,17 @@ class HelloTriangleApplication {
         .dst_stage_mask  = vk::PipelineStageFlagBits2::eBottomOfPipe,
     });
 
-    command_buffers_[frame_index].end();
+    graphics_command_buffers_[frame_index].end();
+  }
+
+  void record_compute_command_buffer(size_t frame_index) {
+    compute_command_buffers_[frame_index].reset();
+    compute_command_buffers_[frame_index].begin({});
+    compute_command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eCompute, compute_pipeline_);
+    compute_command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eCompute, compute_pipeline_layout_,
+                                                             0, {compute_descriptor_sets_[frame_index]}, {});
+    compute_command_buffers_[frame_index].dispatch(ParticleSystem::kParticleCount / 256, 1, 1);
+    compute_command_buffers_[frame_index].end();
   }
 
   void create_descriptor_pool() {
@@ -982,41 +916,44 @@ class HelloTriangleApplication {
         .bindingCount = bindings.size(),
         .pBindings    = bindings.data(),
     };
-    descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
+    compute_descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
   }
 
   void create_descriptor_sets() {
-    auto layouts         = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, descriptor_set_layout_);
+    compute_descriptor_sets_.clear();
+
+    auto layouts         = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, compute_descriptor_set_layout_);
     auto desc_alloc_info = vk::DescriptorSetAllocateInfo{
         .descriptorPool     = descriptor_pool_,
         .descriptorSetCount = kMaxFramesInFlight,
         .pSetLayouts        = layouts.data(),
     };
-    descriptor_sets_.clear();
-    descriptor_sets_ =
+    compute_descriptor_sets_ =
         vkren::Result(device_->allocateDescriptorSets(desc_alloc_info)).or_panic("Could not allocate descriptor sets");
 
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
       auto buffer_info = vk::DescriptorBufferInfo{
-          .buffer = uniform_buffers_[i].buffer,
+          .buffer = uniform_buffers_[i].buffer(),
           .offset = 0,
           .range  = sizeof(UniformBufferObject),
       };
 
+      auto last_ind           = (i - 1) % kMaxFramesInFlight;
       auto last_frame_ss_info = vk::DescriptorBufferInfo{
-          .buffer = ssbuffers_[(i - 1) % kMaxFramesInFlight].buffer,
+          .buffer = ssbuffers_[last_ind].buffer(),
           .offset = 0,
           .range  = sizeof(Particle) * ParticleSystem::kParticleCount,
       };
+      auto curr_ind              = i;
       auto current_frame_ss_info = vk::DescriptorBufferInfo{
-          .buffer = ssbuffers_[i].buffer,
+          .buffer = ssbuffers_[curr_ind].buffer(),
           .offset = 0,
           .range  = sizeof(Particle) * ParticleSystem::kParticleCount,
       };
 
       auto desc_writes = std::array{
           vk::WriteDescriptorSet{
-              .dstSet           = *descriptor_sets_[i],
+              .dstSet           = *compute_descriptor_sets_[i],
               .dstBinding       = 0,
               .dstArrayElement  = 0,
               .descriptorCount  = 1,
@@ -1026,7 +963,7 @@ class HelloTriangleApplication {
               .pTexelBufferView = nullptr,
           },
           vk::WriteDescriptorSet{
-              .dstSet           = *descriptor_sets_[i],
+              .dstSet           = *compute_descriptor_sets_[i],
               .dstBinding       = 1,
               .dstArrayElement  = 0,
               .descriptorCount  = 1,
@@ -1036,7 +973,7 @@ class HelloTriangleApplication {
               .pTexelBufferView = nullptr,
           },
           vk::WriteDescriptorSet{
-              .dstSet           = *descriptor_sets_[i],
+              .dstSet           = *compute_descriptor_sets_[i],
               .dstBinding       = 2,
               .dstArrayElement  = 0,
               .descriptorCount  = 1,
@@ -1128,7 +1065,7 @@ class HelloTriangleApplication {
    * shaders to freely access resource like buffers and images
    *
    */
-  vk::raii::DescriptorSetLayout descriptor_set_layout_ = nullptr;
+  vk::raii::DescriptorSetLayout compute_descriptor_set_layout_ = nullptr;
 
   /**
    * @brief Describes the graphics pipeline, including shaders stages, input assembly, rasterization and more.
@@ -1144,8 +1081,7 @@ class HelloTriangleApplication {
    */
   vk::raii::CommandPool command_pool_ = nullptr;
 
-  uint32_t current_semaphore_ = 0;
-  uint32_t current_frame_     = 0;
+  uint32_t current_frame_ = 0;
 
   // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
   // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
@@ -1155,31 +1091,30 @@ class HelloTriangleApplication {
    * @brief Drawing operations are recorded in comand buffer objects.
    *
    */
-  std::array<vk::raii::CommandBuffer, kMaxFramesInFlight> command_buffers_ = {nullptr, nullptr};
+  std::vector<vk::raii::CommandBuffer> graphics_command_buffers_;
+  std::vector<vk::raii::CommandBuffer> compute_command_buffers_;
 
   /**
    * @brief Semaphores are used to assert on GPU that a process e.g. rendering is finished.
    *
    */
-  std::vector<vk::raii::Semaphore> present_complete_semaphores_;
+  std::vector<vk::raii::Semaphore> present_finished_semaphores_;
   std::vector<vk::raii::Semaphore> render_finished_semaphores_;
+  std::vector<vk::raii::Semaphore> compute_finished_semaphores_;
 
   /**
    * @brief Fences are used to block GPU until the frame is presented.
    *
    */
-  std::array<vk::raii::Fence, kMaxFramesInFlight> in_flight_fences_ = {nullptr, nullptr};
-
-  eray::vkren::ExclusiveBufferResource vert_buffer_;
-  eray::vkren::ExclusiveBufferResource ind_buffer_;
+  std::vector<vk::raii::Fence> graphics_in_flight_fences_;
+  std::vector<vk::raii::Fence> compute_in_flight_fences_;
 
   std::vector<eray::vkren::ExclusiveBufferResource> uniform_buffers_;
   std::vector<void*> uniform_buffers_mapped_;
 
   vk::raii::DescriptorPool descriptor_pool_ = nullptr;
-  std::vector<vk::raii::DescriptorSet> descriptor_sets_;
+  std::vector<vk::raii::DescriptorSet> compute_descriptor_sets_;
 
-  eray::vkren::ExclusiveImage2DResource txt_image_;
   vk::raii::ImageView txt_view_  = nullptr;
   vk::raii::Sampler txt_sampler_ = nullptr;
 
@@ -1197,6 +1132,8 @@ class HelloTriangleApplication {
    *
    */
   bool framebuffer_resized_ = false;
+
+  float last_frame_time_{};
 
   /**
    * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional
@@ -1217,6 +1154,8 @@ class HelloTriangleApplication {
 int main() {
   eray::util::Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
   eray::util::Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+  auto t = eray::math::Vec2<float>{};
+  eray::util::Logger::info("{}", sizeof(t));
 
   auto app = HelloTriangleApplication();
   if (auto result = app.run(); !result) {

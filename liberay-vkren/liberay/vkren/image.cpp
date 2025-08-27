@@ -49,25 +49,26 @@ Result<void, Error> ExclusiveImage2DResource::copy_mip_maps_data(const Device& d
       .imageOffset = vk::Offset3D{.x = 0, .y = 0, .z = 0},
       .imageExtent =
           vk::Extent3D{
-              .width  = image.desc.width,
-              .height = image.desc.height,
+              .width  = image.desc_.width,
+              .height = image.desc_.height,
               .depth  = 1,
           },
   };
 
-  auto mip_width  = static_cast<uint32_t>(image.desc.width);
-  auto mip_height = static_cast<uint32_t>(image.desc.height);
-  for (uint32_t i = 0; i < image.desc.mip_levels; ++i) {
+  auto mip_width  = static_cast<uint32_t>(image.desc_.width);
+  auto mip_height = static_cast<uint32_t>(image.desc_.height);
+  for (uint32_t i = 0; i < image.desc_.mip_levels; ++i) {
     copy_region.imageSubresource.mipLevel = i;
     copy_region.imageExtent               = vk::Extent3D{.width = mip_width, .height = mip_height, .depth = 1};
-    cmd_buff.copyBufferToImage(staging_buffer->buffer, image.image, vk::ImageLayout::eTransferDstOptimal, copy_region);
+    cmd_buff.copyBufferToImage(staging_buffer->buffer(), image.image_, vk::ImageLayout::eTransferDstOptimal,
+                               copy_region);
 
     copy_region.bufferOffset += mip_width * mip_height * 4;
     mip_width  = std::max(mip_width / 2U, 1U);
     mip_height = std::max(mip_height / 2U, 1U);
   }
   device.end_single_time_commands(cmd_buff);
-  device.transition_image_layout(image.image, image.desc, vk::ImageLayout::eTransferDstOptimal,
+  device.transition_image_layout(image.image_, image.desc_, vk::ImageLayout::eTransferDstOptimal,
                                  vk::ImageLayout::eShaderReadOnlyOptimal);
   return {};
 }
@@ -94,7 +95,7 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture
   if (!txt_image) {
     return std::unexpected(txt_image.error());
   }
-  device.transition_image_layout(txt_image->image, txt_image->desc, vk::ImageLayout::eUndefined,
+  device.transition_image_layout(txt_image->image_, txt_image->desc_, vk::ImageLayout::eUndefined,
                                  vk::ImageLayout::eTransferDstOptimal);
   if (auto result = copy_mip_maps_data(device, *txt_image, mipmaps_region); !result) {
     std::unexpected(result.error());
@@ -140,14 +141,14 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture
     return std::unexpected(txt_image.error());
   }
 
-  device.transition_image_layout(txt_image->image, txt_image->desc, vk::ImageLayout::eUndefined,
+  device.transition_image_layout(txt_image->image_, txt_image->desc_, vk::ImageLayout::eUndefined,
                                  vk::ImageLayout::eTransferDstOptimal);
-  txt_image->copy_from(staging_buffer->buffer);
+  txt_image->copy_from(staging_buffer->buffer());
   if (desc.mip_levels == 1) {
-    device.transition_image_layout(txt_image->image, txt_image->desc, vk::ImageLayout::eTransferDstOptimal,
+    device.transition_image_layout(txt_image->image_, txt_image->desc_, vk::ImageLayout::eTransferDstOptimal,
                                    vk::ImageLayout::eShaderReadOnlyOptimal);
   } else {
-    if (auto result = device.generate_mipmaps(txt_image->image, txt_image->desc); !result) {
+    if (auto result = device.generate_mipmaps(txt_image->image_, txt_image->desc_); !result) {
       return std::unexpected(result.error());
     }
   }
@@ -198,11 +199,11 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture
     return std::unexpected(txt_image.error());
   }
 
-  device.transition_image_layout(txt_image->image, txt_image->desc, vk::ImageLayout::eUndefined,
+  device.transition_image_layout(txt_image->image_, txt_image->desc_, vk::ImageLayout::eUndefined,
                                  vk::ImageLayout::eTransferDstOptimal);
-  txt_image->copy_from(staging_buffer->buffer);
+  txt_image->copy_from(staging_buffer->buffer());
   if (generate_mipmaps) {
-    if (auto result = device.generate_mipmaps(txt_image->image, txt_image->desc); !result) {
+    if (auto result = device.generate_mipmaps(txt_image->image_, txt_image->desc_); !result) {
       if (result.error().has_code<ErrorCode::PhysicalDeviceNotSufficient>()) {
         auto buff = image.generate_mipmaps_buffer();
         if (auto cpy_result = copy_mip_maps_data(device, *txt_image, buff.memory_region()); !cpy_result) {
@@ -213,7 +214,7 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture
       }
     }
   } else {
-    device.transition_image_layout(txt_image->image, txt_image->desc, vk::ImageLayout::eTransferDstOptimal,
+    device.transition_image_layout(txt_image->image_, txt_image->desc_, vk::ImageLayout::eTransferDstOptimal,
                                    vk::ImageLayout::eShaderReadOnlyOptimal);
   }
 
@@ -279,19 +280,12 @@ Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create(const D
   }
   image_opt->bindMemory(*image_mem_opt, 0);
 
-  return ExclusiveImage2DResource{
-      .image          = std::move(*image_opt),
-      .memory         = std::move(*image_mem_opt),
-      .mem_size_bytes = mem_requirements.size,
-      .image_usage    = info.image_usage,
-      .mem_properties = info.mem_properties,
-      .desc           = info.desc,
-      .p_device       = &device,
-  };
+  return ExclusiveImage2DResource(ImageDescription{info.desc}, std::move(*image_opt), std::move(*image_mem_opt),
+                                  &device, mem_requirements.size, info.image_usage, info.mem_properties);
 }
 
 void ExclusiveImage2DResource::copy_from(const vk::raii::Buffer& src_buff) const {
-  auto cmd_buff    = p_device->begin_single_time_commands();
+  auto cmd_buff    = p_device_->begin_single_time_commands();
   auto copy_region = vk::BufferImageCopy{
       .bufferOffset = 0,
 
@@ -313,20 +307,20 @@ void ExclusiveImage2DResource::copy_from(const vk::raii::Buffer& src_buff) const
       .imageOffset = vk::Offset3D{.x = 0, .y = 0, .z = 0},
       .imageExtent =
           vk::Extent3D{
-              .width  = desc.width,
-              .height = desc.height,
+              .width  = desc_.width,
+              .height = desc_.height,
               .depth  = 1,
           },
   };
-  cmd_buff.copyBufferToImage(src_buff, image, vk::ImageLayout::eTransferDstOptimal, copy_region);
-  p_device->end_single_time_commands(cmd_buff);
+  cmd_buff.copyBufferToImage(src_buff, image_, vk::ImageLayout::eTransferDstOptimal, copy_region);
+  p_device_->end_single_time_commands(cmd_buff);
 }
 
 Result<vk::raii::ImageView, Error> ExclusiveImage2DResource::create_image_view(vk::ImageAspectFlags aspect_mask) {
   auto img_create_info = vk::ImageViewCreateInfo{
-      .image    = image,
+      .image    = image_,
       .viewType = vk::ImageViewType::e2D,
-      .format   = desc.format,
+      .format   = desc_.format,
       .components =
           vk::ComponentMapping{
               .r = vk::ComponentSwizzle::eIdentity,
@@ -338,13 +332,13 @@ Result<vk::raii::ImageView, Error> ExclusiveImage2DResource::create_image_view(v
           vk::ImageSubresourceRange{
               .aspectMask     = aspect_mask,
               .baseMipLevel   = 0,
-              .levelCount     = desc.mip_levels,
+              .levelCount     = desc_.mip_levels,
               .baseArrayLayer = 0,
               .layerCount     = 1  //
           },
   };
 
-  auto img_view_opt = (*p_device)->createImageView(img_create_info);
+  auto img_view_opt = (*p_device_)->createImageView(img_create_info);
   if (!img_view_opt) {
     util::Logger::err("Could not create an image view: {}", vk::to_string(img_view_opt.error()));
     return std::unexpected(Error{

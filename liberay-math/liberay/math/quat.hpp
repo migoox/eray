@@ -19,7 +19,7 @@ struct Quat {
   constexpr explicit Quat(T real, const Vec<3, T>& imaginary)
       : w(real), x(imaginary.x), y(imaginary.y), z(imaginary.z) {}
   constexpr explicit Quat(const Vec<3, T>& imaginary)
-      : w(static_cast<T>(1)), x(imaginary.x), y(imaginary.y), z(imaginary.z) {}
+      : w(static_cast<T>(1)), x(imaginary.x()), y(imaginary.y()), z(imaginary.z()) {}
   constexpr explicit Quat(T val) : w(val), x(val), y(val), z(val) {}
   constexpr explicit Quat(T _w, T _x, T _y, T _z) : w(_w), x(_x), y(_y), z(_z) {}
   constexpr explicit Quat() : w(static_cast<T>(1)), x(static_cast<T>(0)), y(static_cast<T>(0)), z(static_cast<T>(0)) {}
@@ -38,9 +38,9 @@ struct Quat {
     T s = std::sin(rad_angle / static_cast<T>(2));
     return Quat{
         std::cos(rad_angle / static_cast<T>(2)),
-        axis.x * s,
-        axis.y * s,
-        axis.z * s,
+        axis.x() * s,
+        axis.y() * s,
+        axis.z() * s,
     };
   }
 
@@ -139,7 +139,7 @@ struct Quat {
    * @return constexpr Quat
    */
   constexpr static Quat from_euler_xyz(const Vec<3, T>& angles) {
-    return (rotation_z(angles.z) * rotation_y(angles.y) * rotation_x(angles.x)).normalize();
+    return (rotation_z(angles.z()) * rotation_y(angles.y()) * rotation_x(angles.x())).normalize();
   }
 
   /**

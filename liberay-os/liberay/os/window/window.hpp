@@ -33,7 +33,7 @@ class Window {
   util::zstring_view title() const { return props_.title; }
   virtual void set_title(util::zstring_view title) = 0;
 
-  math::Vec2i pos() const { return math::Vec2i(props_.pos.x, props_.pos.y); }
+  math::Vec2i pos() const { return math::Vec2i(props_.pos.x(), props_.pos.y()); }
   virtual void set_pos(math::Vec2i pos) = 0;
 
   math::Vec2i size() const { return props_.size; }

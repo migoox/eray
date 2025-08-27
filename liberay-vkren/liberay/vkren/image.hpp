@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <liberay/res/image.hpp>
 #include <liberay/util/memory_region.hpp>
 #include <liberay/vkren/common.hpp>
@@ -23,14 +24,10 @@ namespace eray::vkren {
  * @warning Lifetime is bound by the device lifetime.
  *
  */
-struct ExclusiveImage2DResource {
-  vk::raii::Image image         = nullptr;
-  vk::raii::DeviceMemory memory = nullptr;
-  vk::DeviceSize mem_size_bytes;
-  vk::ImageUsageFlags image_usage;
-  vk::MemoryPropertyFlags mem_properties;
-  ImageDescription desc;
-  observer_ptr<const Device> p_device = nullptr;
+class ExclusiveImage2DResource {
+ public:
+  ExclusiveImage2DResource() = delete;
+  explicit ExclusiveImage2DResource(std::nullptr_t) {}
 
   struct CreateInfo {
     vk::DeviceSize size_bytes;
@@ -94,9 +91,37 @@ struct ExclusiveImage2DResource {
   Result<vk::raii::ImageView, Error> create_image_view(
       vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlagBits::eColor);
 
+  const ImageDescription& desc() const { return desc_; }
+  const vk::raii::Image& image() const { return image_; }
+  const vk::raii::DeviceMemory& memory() const { return memory_; }
+  const Device& device() const { return *p_device_; }
+  vk::DeviceSize mem_size_bytes() const { return mem_size_bytes_; }
+  vk::ImageUsageFlags image_usage() const { return image_usage_; }
+  vk::MemoryPropertyFlags mem_properties() const { return mem_properties_; }
+
  private:
   static Result<void, Error> copy_mip_maps_data(const Device& device, const ExclusiveImage2DResource& image,
                                                 util::MemoryRegion mipmaps_region);
+
+ private:
+  ExclusiveImage2DResource(ImageDescription&& desc, vk::raii::Image&& image, vk::raii::DeviceMemory&& memory,
+                           const Device* p_device, vk::DeviceSize mem_size_bytes, vk::ImageUsageFlags image_usage,
+                           vk::MemoryPropertyFlags mem_properties)
+      : desc_(std::move(desc)),
+        image_(std::move(image)),
+        memory_(std::move(memory)),
+        p_device_(p_device),
+        mem_size_bytes_(mem_size_bytes),
+        image_usage_(image_usage),
+        mem_properties_(mem_properties) {}
+
+  ImageDescription desc_{};
+  vk::raii::Image image_               = nullptr;
+  vk::raii::DeviceMemory memory_       = nullptr;
+  observer_ptr<const Device> p_device_ = nullptr;
+  vk::DeviceSize mem_size_bytes_{};
+  vk::ImageUsageFlags image_usage_;
+  vk::MemoryPropertyFlags mem_properties_;
 };
 
 }  // namespace eray::vkren

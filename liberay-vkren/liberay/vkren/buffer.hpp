@@ -4,13 +4,14 @@
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 namespace eray::vkren {
-
 /**
- * @brief Represents a buffer with dedicated chunk of device memory. The buffer resource owns both -- buffer object and
- * the chunk of memory.
+ * @brief Represents a buffer with dedicated chunk of device memory. The buffer resource owns both -- buffer object
+ * and the chunk of memory.
  *
  * @note This buffer abstraction is trivial and according to https://developer.nvidia.com/vulkan-memory-management,
  * should not be used frequently. Moreover since each buffer has it's own DeviceMemory in this scheme, there can be
@@ -19,13 +20,10 @@ namespace eray::vkren {
  * @warning Lifetime is bound by the device lifetime.
  *
  */
-struct ExclusiveBufferResource {
-  vk::raii::Buffer buffer       = nullptr;
-  vk::raii::DeviceMemory memory = nullptr;
-  vk::DeviceSize mem_size_bytes;
-  vk::BufferUsageFlags usage;
-  vk::MemoryPropertyFlags mem_properties;
-  observer_ptr<const Device> p_device = nullptr;
+class ExclusiveBufferResource {
+ public:
+  ExclusiveBufferResource() = delete;
+  explicit ExclusiveBufferResource(std::nullptr_t) {}
 
   struct CreateInfo {
     vk::DeviceSize size_bytes;
@@ -70,6 +68,31 @@ struct ExclusiveBufferResource {
    * @param cpy_info
    */
   void copy_from(const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const;
+
+  const vk::raii::Buffer& buffer() const { return buffer_; }
+  const vk::raii::DeviceMemory& memory() const { return memory_; }
+  vk::DeviceSize memory_size_bytes() const { return mem_size_bytes_; }
+  vk::BufferUsageFlags usage() const { return usage_; }
+  vk::MemoryPropertyFlags memory_properties() const { return mem_properties_; }
+  const Device& device() const { return *p_device_; }
+
+ private:
+  ExclusiveBufferResource(vk::raii::Buffer&& buffer, vk::raii::DeviceMemory&& memory, vk::DeviceSize mem_size_bytes,
+                          vk::BufferUsageFlags usage, vk::MemoryPropertyFlags mem_properties,
+                          observer_ptr<const Device> p_device)
+      : buffer_(std::move(buffer)),
+        memory_(std::move(memory)),
+        p_device_(p_device),
+        mem_size_bytes_(mem_size_bytes),
+        usage_(usage),
+        mem_properties_(mem_properties) {}
+
+  vk::raii::Buffer buffer_             = nullptr;
+  vk::raii::DeviceMemory memory_       = nullptr;
+  observer_ptr<const Device> p_device_ = nullptr;
+  vk::DeviceSize mem_size_bytes_{};
+  vk::BufferUsageFlags usage_;
+  vk::MemoryPropertyFlags mem_properties_;
 };
 
 }  // namespace eray::vkren

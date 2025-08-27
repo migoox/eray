@@ -91,7 +91,7 @@ std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> GLFW
   }
 
   // TODO(migoox): Handle fullscreen
-  GLFWwindow* window_ptr = glfwCreateWindow(props.size.x, props.size.y, props.title.c_str(), nullptr, nullptr);
+  GLFWwindow* window_ptr = glfwCreateWindow(props.size.x(), props.size.y(), props.title.c_str(), nullptr, nullptr);
   if (driver_ == Driver::OpenGL) {
     if (!glfw::init_opengl_ctx(window_ptr)) {
       return std::unexpected(IWindowBackend::WindowCreationError::FailedToInitializeDriverContext);

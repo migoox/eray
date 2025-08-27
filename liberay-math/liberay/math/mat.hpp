@@ -310,7 +310,7 @@ constexpr Mat<N, M, T> transpose(const Mat<M, N, T>& mat) {
  */
 template <CFloatingPoint T>
 Mat<3, 3, T> scale(Vec<2, T> scale) {
-  return Mat<3, 3, T>{Vec<3, T>{scale.x, 0, 0}, Vec<3, T>{0, scale.y, 0}, Vec<3, T>{0, 0, 1}};
+  return Mat<3, 3, T>{Vec<3, T>{scale.x(), 0, 0}, Vec<3, T>{0, scale.y(), 0}, Vec<3, T>{0, 0, 1}};
 }
 
 /**
@@ -322,7 +322,7 @@ Mat<3, 3, T> scale(Vec<2, T> scale) {
  */
 template <CFloatingPoint T>
 Mat<4, 4, T> scale(Vec<3, T> scale) {
-  return Mat<4, 4, T>{Vec<4, T>{scale.x, 0, 0, 0}, Vec<4, T>{0, scale.y, 0, 0}, Vec<4, T>{0, 0, scale.z, 0},
+  return Mat<4, 4, T>{Vec<4, T>{scale.x(), 0, 0, 0}, Vec<4, T>{0, scale.y(), 0, 0}, Vec<4, T>{0, 0, scale.z(), 0},
                       Vec<4, T>{0, 0, 0, 1}};
 }
 
@@ -394,12 +394,12 @@ template <CFloatingPoint T>
 Mat<4, 4, T> rotation_axis(T rad_angle, Vec<3, T> axis) {
   float c = std::cos(rad_angle);
   float s = std::sin(rad_angle);
-  return Mat<4, 4, T>{Vec<4, T>{axis.x * axis.x * (1 - c) + c, axis.x * axis.y * (1 - c) + axis.z * s,
-                                axis.x * axis.z * (1 - c) - axis.y * s, 0},
-                      Vec<4, T>{axis.x * axis.y * (1 - c) - axis.z * s, axis.y * axis.y * (1 - c) + c,
-                                axis.y * axis.z * (1 - c) + axis.x * s, 0},
-                      Vec<4, T>{axis.x * axis.z * (1 - c) + axis.y * s, axis.y * axis.z * (1 - c) - axis.x * s,
-                                axis.z * axis.z * (1 - c) + c, 0},
+  return Mat<4, 4, T>{Vec<4, T>{axis.x() * axis.x() * (1 - c) + c, axis.x() * axis.y() * (1 - c) + axis.z() * s,
+                                axis.x() * axis.z() * (1 - c) - axis.y() * s, 0},
+                      Vec<4, T>{axis.x() * axis.y() * (1 - c) - axis.z() * s, axis.y() * axis.y() * (1 - c) + c,
+                                axis.y() * axis.z() * (1 - c) + axis.x() * s, 0},
+                      Vec<4, T>{axis.x() * axis.z() * (1 - c) + axis.y() * s,
+                                axis.y() * axis.z() * (1 - c) - axis.x() * s, axis.z() * axis.z() * (1 - c) + c, 0},
                       Vec<4, T>{0, 0, 0, 1}};
 }
 
@@ -425,7 +425,7 @@ Mat<3, 3, T> translation(Vec<2, T> vec) {
 template <CFloatingPoint T>
 Mat<4, 4, T> translation(Vec<3, T> vec) {
   return Mat<4, 4, T>{Vec<4, T>{1, 0, 0, 0}, Vec<4, T>{0, 1, 0, 0}, Vec<4, T>{0, 0, 1, 0},
-                      Vec<4, T>{vec.x, vec.y, vec.z, 1}};
+                      Vec<4, T>{vec.x(), vec.y(), vec.z(), 1}};
 }
 
 /**

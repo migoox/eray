@@ -26,7 +26,7 @@ GLFWWindow::GLFWWindow(void* glfw_window_ptr, WindowProperties props, Driver dri
                        std::unique_ptr<ImGuiBackend> imgui)
     : Window(std::move(props)), glfw_window_ptr_(glfw_window_ptr), driver_(driver), imgui_(std::move(imgui)) {
   if (props_.has_valid_pos) {
-    glfwSetWindowPos(glfw::win_native(glfw_window_ptr_), props.pos.x, props.pos.y);
+    glfwSetWindowPos(glfw::win_native(glfw_window_ptr_), props.pos.x(), props.pos.y());
   } else {
     int x, y;  // NOLINT
     glfwGetWindowPos(glfw::win_native(glfw_window_ptr_), &x, &y);
@@ -137,12 +137,12 @@ void GLFWWindow::set_title(util::zstring_view title) {
 }
 
 void GLFWWindow::set_pos(math::Vec2i pos) {
-  glfwSetWindowPos(glfw::win_native(glfw_window_ptr_), pos.x, pos.y);
+  glfwSetWindowPos(glfw::win_native(glfw_window_ptr_), pos.x(), pos.y());
   props_.pos = pos;
 }
 
 void GLFWWindow::set_size(math::Vec2i size) {
-  glfwSetWindowSize(glfw::win_native(glfw_window_ptr_), size.x, size.y);
+  glfwSetWindowSize(glfw::win_native(glfw_window_ptr_), size.x(), size.y());
   props_.size = size;
 }
 
@@ -158,16 +158,16 @@ void GLFWWindow::set_fullscreen(bool /* fullscreen */) {  // NOLINT
 
 math::Vec2d GLFWWindow::mouse_pos() const {
   auto pos = math::Vec2d(1.0, 1.0);
-  glfwGetCursorPos(glfw::win_native(glfw_window_ptr_), &pos.x, &pos.y);
+  glfwGetCursorPos(glfw::win_native(glfw_window_ptr_), &pos.data[0], &pos.data[1]);
   return pos;
 }
 
 math::Vec2d GLFWWindow::mouse_pos_ndc() const {
   auto pos = math::Vec2d(1.0, 1.0);
-  glfwGetCursorPos(glfw::win_native(glfw_window_ptr_), &pos.x, &pos.y);
-  auto s       = math::Vec2d(static_cast<double>(size().x), static_cast<double>(size().y));
+  glfwGetCursorPos(glfw::win_native(glfw_window_ptr_), &pos.data[0], &pos.data[1]);
+  auto s       = math::Vec2d(static_cast<double>(size().x()), static_cast<double>(size().y()));
   auto ndc_pos = 2 * pos / s - 1.0;
-  return math::Vec2d(ndc_pos.x, -ndc_pos.y);
+  return math::Vec2d(ndc_pos.x(), -ndc_pos.y());
 }
 
 bool GLFWWindow::is_btn_held(KeyCode code) {

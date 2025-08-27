@@ -36,8 +36,8 @@ class SwapChain {
   const vk::raii::SwapchainKHR& operator*() const noexcept { return swap_chain_; }
 
   const std::vector<vk::Image>& images() const { return images_; }
-  const vk::raii::Image& depth_stencil_attachment_image() const { return depth_stencil_image_.image; }
-  const vk::raii::Image& color_attachment_image() const { return color_image_.image; }
+  const vk::raii::Image& depth_stencil_attachment_image() const { return depth_stencil_image_.image(); }
+  const vk::raii::Image& color_attachment_image() const { return color_image_.image(); }
 
   const std::vector<vk::raii::ImageView>& image_views() { return image_views_; }
   const vk::raii::ImageView& depth_stencil_attachment_image_view() const { return depth_stencil_image_view_; }
@@ -113,16 +113,16 @@ class SwapChain {
    * @brief Handle to a color buffer attachment.
    *
    */
-  vkren::ExclusiveImage2DResource color_image_;
-  vk::raii::ImageView color_image_view_ = nullptr;
+  vkren::ExclusiveImage2DResource color_image_ = vkren::ExclusiveImage2DResource(nullptr);
+  vk::raii::ImageView color_image_view_        = nullptr;
 
   /**
    * @brief Handle to a depth buffer attachment.
    *
    */
-  vkren::ExclusiveImage2DResource depth_stencil_image_;
-  vk::raii::ImageView depth_stencil_image_view_ = nullptr;
-  vk::Format depth_stencil_format_              = vk::Format::eUndefined;
+  vkren::ExclusiveImage2DResource depth_stencil_image_ = vkren::ExclusiveImage2DResource(nullptr);
+  vk::raii::ImageView depth_stencil_image_view_        = nullptr;
+  vk::Format depth_stencil_format_                     = vk::Format::eUndefined;
 
   /**
    * @brief Describes the format e.g. RGBA.
