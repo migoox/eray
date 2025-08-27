@@ -64,4 +64,5 @@ endif()
 
 if(BUILD_EXAMPLES) 
     add_subdirectory(examples/depth_buffer)
+    add_subdirectory(examples/compute_particles)
 endif()
