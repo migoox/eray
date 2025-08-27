@@ -102,7 +102,7 @@ function(configure_library)
         )
         if(NOT TESTS_SOURCES)
             message(STATUS "No tests sources found, tests executable configuration stopped")
-        elseif()
+        else()
             enable_testing()
 
             add_executable(

@@ -24,7 +24,7 @@ function(add_slang_shader_target TARGET)
     set (SHADERS_DIR "")
     if (NOT ARGS_SHADERS_DIR)
         set (SHADERS_DIR ${CMAKE_CURRENT_LIST_DIR}/shaders)
-    elseif()
+    else()
         set (SHADERS_DIR ${ARGS_SHADERS_DIR})
     endif()
 
