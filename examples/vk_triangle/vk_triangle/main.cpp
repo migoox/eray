@@ -13,10 +13,10 @@
 #include <limits>
 #include <map>
 #include <ranges>
-#include <sandbox/vertex.hpp>
 #include <variant>
 #include <vector>
 #include <version/version.hpp>
+#include <vk_triangle/vertex.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -782,7 +782,7 @@ class HelloTriangleApplication {
 
     // == 1. Shader stage ==============================================================================================
 
-    auto shader_module_opt = read_binary(eray::os::System::executable_dir() / "shaders" / "main_sh.spv")
+    auto shader_module_opt = read_binary(eray::os::System::executable_dir() / "shaders" / "main.spv")
                                  .transform_error(common_err)
                                  .and_then([this, common_err](const auto& bytecode) {
                                    return create_shader_module(bytecode).transform_error(common_err);
