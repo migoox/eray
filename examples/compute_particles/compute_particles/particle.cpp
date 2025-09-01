@@ -1,12 +1,11 @@
+#include <compute_particles/particle.hpp>
 #include <liberay/math/color.hpp>
 #include <liberay/math/vec.hpp>
 #include <numbers>
 #include <random>
-#include <sandbox/particle.hpp>
 
 ParticleSystem ParticleSystem::create_on_circle(float aspect_ratio) {
   using Vec2 = eray::math::Vec2f;
-  using Vec3 = eray::math::Vec3f;
   using Vec4 = eray::math::Vec4f;
 
   auto rnd_engine = std::default_random_engine(static_cast<unsigned>(std::time(nullptr)));

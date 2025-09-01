@@ -141,7 +141,7 @@ class HelloTriangleApplication {
     // == Device Creation ==============================================================================================
     auto desktop_template                 = vkren::Device::CreateInfo::DesktopProfile{};
     auto device_info                      = desktop_template.get(surface_creator, required_global_extensions);
-    device_info.app_info.pApplicationName = "VkTriangle";
+    device_info.app_info.pApplicationName = "Depth Buffer Example";
     device_ = vkren::Device::create(context_, device_info).or_panic("Could not create a logical device wrapper");
   }
 
@@ -298,19 +298,10 @@ class HelloTriangleApplication {
   }
 
   void update_ubo(uint32_t image_index) {
-    // static auto start_time = std::chrono::high_resolution_clock::now();
-
-    // auto curr_time = std::chrono::high_resolution_clock::now();
-    // float time     = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - start_time).count();
-
     UniformBufferObject ubo{};
-
-    // right-handed, depth [0, 1]
-    ubo.model = eray::math::translation(eray::math::Vec3f(0.F, 0.F, 0.F)) *
-                eray::math::rotation_axis(eray::math::radians(45.0F), eray::math::Vec3f(0.F, 0.F, 1.F)) *
-                eray::math::rotation_axis(eray::math::radians(-50.0F), eray::math::Vec3f(1.F, 0.F, 0.F));
-    ubo.view = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -4.F));
-    ubo.proj = eray::math::perspective_vk_rh(
+    ubo.model = eray::math::rotation_axis(eray::math::radians(30.0F), eray::math::Vec3f(0.F, 1.F, 0.F));
+    ubo.view  = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -3.F));
+    ubo.proj  = eray::math::perspective_vk_rh(
         eray::math::radians(80.0F), static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight), 0.01F, 10.F);
 
     memcpy(uniform_buffers_mapped_[image_index], &ubo, sizeof(ubo));

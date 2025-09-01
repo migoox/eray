@@ -139,7 +139,7 @@ class HelloTriangleApplication {
     // == Device Creation ==============================================================================================
     auto desktop_template                 = vkren::Device::CreateInfo::DesktopProfile{};
     auto device_info                      = desktop_template.get(surface_creator, required_global_extensions);
-    device_info.app_info.pApplicationName = "VkTriangle";
+    device_info.app_info.pApplicationName = "Compute Particles Example";
     device_ = vkren::Device::create(context_, device_info).or_panic("Could not create a logical device wrapper");
   }
 
