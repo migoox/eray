@@ -16,16 +16,17 @@ class GLFWWindowBackend : public IWindowBackend {
     InitializationError  = 1,
   };
 
-  [[nodiscard]] static std::expected<std::unique_ptr<GLFWWindowBackend>, BackendCreationError> create(Driver driver);
+  [[nodiscard]] static std::expected<std::unique_ptr<GLFWWindowBackend>, BackendCreationError> create(
+      RenderingAPI driver);
 
   [[nodiscard]] std::expected<std::unique_ptr<Window>, WindowCreationError> create_window(
       WindowProperties props) override;
 
  private:
-  explicit GLFWWindowBackend(Driver driver);
+  explicit GLFWWindowBackend(RenderingAPI driver);
 
  private:
-  Driver driver_;
+  RenderingAPI driver_;
 };
 
 }  // namespace eray::os

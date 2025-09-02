@@ -1,3 +1,5 @@
+include_guard(GLOBAL)
+
 function(generate_clangd_file COMPILER_FLAGS)
   if(CMAKE_HOST_UNIX)
     set(CLANGD_COMPILER_STANDARD "-std=c++23")
@@ -5,15 +7,9 @@ function(generate_clangd_file COMPILER_FLAGS)
     set(CLANGD_COMPILER_STANDARD "/clang:-std=c++23")
   endif()
 
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(CLANGD_COMPILATION_DATABASE "build/gnu-debug/")
-  else()
-  set(CLANGD_COMPILATION_DATABASE "build/gnu-release/")
-  endif()
-
   string(CONCAT CLANGD_FILE_CONTENT 
     "CompileFlags:\n"
-    "  CompilationDatabase: ${CLANGD_COMPILATION_DATABASE}\n"
+    "  CompilationDatabase: ${CMAKE_BINARY_DIR}\n"
     "  Add:\n"
     "    - "
     ${CLANGD_COMPILER_STANDARD}

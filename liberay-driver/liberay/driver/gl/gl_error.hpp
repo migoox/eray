@@ -35,9 +35,6 @@ inline void check_gl_errors() {
       case GL_CONTEXT_LOST:
         util::panic("OpenGL context lost: The OpenGL context has been lost, possibly due to a graphics driver crash.");
         break;
-      case GL_TABLE_TOO_LARGE_EXT:
-        util::panic("OpenGL table too large: The specified table exceeds the implementation's maximum supported size.");
-        break;
       default:
         util::panic("OpenGL unknown error: An unrecognized error occurred.");
         break;

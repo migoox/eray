@@ -5,9 +5,9 @@
  * @brief Use when the function returns std::expected<void, Err>
  *
  */
-#define TRY(expr)                                        \
-  if (const auto result = (expr); !result.has_value()) { \
-    return std::unexpected(result.error());              \
+#define TRY(expr)                                                \
+  if (const auto __result__ = (expr); !__result__.has_value()) { \
+    return std::unexpected(__result__.error());                  \
   }
 
 /**

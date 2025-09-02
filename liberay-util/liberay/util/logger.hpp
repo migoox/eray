@@ -8,7 +8,6 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
-#include <print>
 #include <source_location>
 #include <string_view>
 #include <vector>
@@ -126,6 +125,10 @@ class Logger {
   static void debug(FormatWithLocation fmt_loc, const Args&... args) {
 #ifdef IS_DEBUG
     get_instance().log(LogLevel::Info, true, fmt_loc.loc, fmt_loc.value, args...);
+#else
+    // Silence the unused parameters warnings when in release
+    (void)fmt_loc;
+    ((void)args, ...);
 #endif
   }
 

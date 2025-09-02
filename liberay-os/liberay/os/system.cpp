@@ -19,17 +19,17 @@
 
 namespace eray::os {
 
-std::optional<Driver> System::requested_driver_ = std::nullopt;
+std::optional<RenderingAPI> System::requested_driver_ = std::nullopt;
 
-std::expected<void, System::DriverRequestError> System::request_driver(Driver driver) {
+std::expected<void, System::DriverRequestError> System::request_driver(RenderingAPI driver) {
   std::unique_ptr<IWindowBackend> win_backend;
   if constexpr (operating_system() == OperatingSystem::Linux) {
-    if (driver != Driver::OpenGL && driver != Driver::Vulcan) {
+    if (driver != RenderingAPI::OpenGL && driver != RenderingAPI::Vulcan) {
       util::Logger::err("Requested driver ({}) that is not supported on linux systems.", kDriverName[driver]);
       return std::unexpected(DriverRequestError::OperatingSystemDoesNotSupportRequestedDriver);
     }
   } else if constexpr (operating_system() == OperatingSystem::MacOS) {
-    if (driver != Driver::OpenGL) {
+    if (driver != RenderingAPI::OpenGL) {
       util::Logger::err("Requested driver ({}) that is not supported on MacOS.", kDriverName[driver]);
       return std::unexpected(DriverRequestError::OperatingSystemDoesNotSupportRequestedDriver);
     }
@@ -39,15 +39,15 @@ std::expected<void, System::DriverRequestError> System::request_driver(Driver dr
   return {};
 }
 
-System::System(Driver driver) : driver_(driver) {
-  if (driver_ == Driver::OpenGL || driver_ == Driver::Vulcan) {
+System::System(RenderingAPI driver) : driver_(driver) {
+  if (driver_ == RenderingAPI::OpenGL || driver_ == RenderingAPI::Vulcan) {
     auto result = GLFWWindowBackend::create(driver_);
     if (result.has_value()) {
       window_backend_ = std::move(*result);
     } else {
       util::panic("Failed to initialize GLFW backend");
     }
-  } else if (driver_ == Driver::DirectX11 || driver_ == Driver::DirectX12) {
+  } else if (driver_ == RenderingAPI::DirectX11 || driver_ == RenderingAPI::DirectX12) {
     util::panic("Requested driver ({}) that is not supported on Windows yet.", kDriverName[driver_]);
   }
 }

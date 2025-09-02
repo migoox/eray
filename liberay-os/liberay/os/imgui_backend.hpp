@@ -37,11 +37,11 @@ class ImGuiGLFWBackend : public ImGuiBackend {
   void render_draw_data() override;
 
   [[nodiscard]] static std::expected<std::unique_ptr<ImGuiGLFWBackend>, ImGuiBackendCreationError> create(
-      Driver driver);
+      RenderingAPI driver);
 
  private:
-  explicit ImGuiGLFWBackend(Driver driver);
-  Driver driver_;
+  explicit ImGuiGLFWBackend(RenderingAPI driver);
+  RenderingAPI driver_;
 };
 
 }  // namespace eray::os

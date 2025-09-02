@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <liberay/driver/gl/buffer.hpp>
 #include <liberay/driver/gl/gl_error.hpp>
-#include <liberay/util/zstring_view.hpp>.hpp>
+#include <liberay/util/zstring_view.hpp>
 
 namespace eray::driver::gl {
 

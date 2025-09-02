@@ -1,7 +1,6 @@
 #pragma once
 #include <liberay/math/quat.hpp>
 #include <liberay/math/transform3_fwd.hpp>
-#include <liberay/util/ruleof.hpp>
 #include <optional>
 #include <vector>
 
@@ -26,7 +25,8 @@ struct Transform3 final {
     }
   }
 
-  ERAY_DELETE_COPY(Transform3)
+  Transform3(const Transform3&)            = delete;
+  Transform3& operator=(const Transform3&) = delete;
 
   Transform3(Transform3&& other) noexcept
       : parent_(std::move(other.parent_)),
@@ -192,7 +192,7 @@ struct Transform3 final {
 
   Vec3<T> pos() const {
     return parent_.has_value()
-               ? Vec3<T>(parent().local_to_world_matrix() * Vec4<T>(pos_.x, pos_.y, pos_.z, static_cast<T>(1)))
+               ? Vec3<T>(parent().local_to_world_matrix() * Vec4<T>(pos_.x(), pos_.y(), pos_.z(), static_cast<T>(1)))
                : pos_;
   }
 
@@ -230,24 +230,27 @@ struct Transform3 final {
 
   Vec3<T> front() const {
     const Vec3<T> local = local_front();
-    return parent_ ? Vec3<T>(normalize(parent().local_to_world_matrix() * Vec4<T>(local.x, local.y, local.z, 0.0F)))
-                   : local;
+    return parent_
+               ? Vec3<T>(normalize(parent().local_to_world_matrix() * Vec4<T>(local.x(), local.y(), local.z(), 0.0F)))
+               : local;
   }
 
   Vec3<T> local_right() const { return rot_ * Vec3<T>(1, 0, 0); }
 
   Vec3<T> right() const {
     const Vec3<T> local = local_right();
-    return parent_ ? Vec3<T>(normalize(parent().local_to_world_matrix() * Vec4<T>(local.x, local.y, local.z, 0.0F)))
-                   : local;
+    return parent_
+               ? Vec3<T>(normalize(parent().local_to_world_matrix() * Vec4<T>(local.x(), local.y(), local.z(), 0.0F)))
+               : local;
   }
 
   Vec3<T> local_up() const { return rot_ * Vec3<T>(0, 1, 0); }
 
   Vec3<T> up() const {
     const Vec3<T> local = local_up();
-    return parent_ ? Vec3<T>(normalize(parent().local_to_world_matrix() * Vec4<T>(local.x, local.y, local.z, 0.0F)))
-                   : local;
+    return parent_
+               ? Vec3<T>(normalize(parent().local_to_world_matrix() * Vec4<T>(local.x(), local.y(), local.z(), 0.0F)))
+               : local;
   }
 
   Mat3<T> local_orientation() const {
@@ -283,9 +286,9 @@ struct Transform3 final {
   }
 
   Mat4<T> parent_to_local_matrix() const {
-    return ::eray::math::scale(Vec3<T>(scale_.x < 1e-6F ? 0.0F : 1.0F / scale_.x,  //
-                                       scale_.y < 1e-6F ? 0.0F : 1.0F / scale_.y,  //
-                                       scale_.z < 1e-6F ? 0.0F : 1.0F / scale_.z)) *
+    return ::eray::math::scale(Vec3<T>(scale_.x() < 1e-6F ? 0.0F : 1.0F / scale_.x(),  //
+                                       scale_.y() < 1e-6F ? 0.0F : 1.0F / scale_.y(),  //
+                                       scale_.z() < 1e-6F ? 0.0F : 1.0F / scale_.z())) *
            rot_mat_from_quat(conjugate(rot_)) * translation(-pos_);
   }
 

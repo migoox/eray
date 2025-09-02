@@ -8,11 +8,10 @@
 #include <liberay/util/logger.hpp>
 #include <memory>
 
-
 namespace eray::os {
 
 std::expected<std::unique_ptr<ImGuiGLFWBackend>, ImGuiGLFWBackend::ImGuiBackendCreationError> ImGuiGLFWBackend::create(
-    Driver driver) {
+    RenderingAPI driver) {
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
@@ -24,7 +23,7 @@ std::expected<std::unique_ptr<ImGuiGLFWBackend>, ImGuiGLFWBackend::ImGuiBackendC
 
   ImGui::StyleColorsDark();
 
-  if (driver != Driver::OpenGL) {  // NOLINT
+  if (driver != RenderingAPI::OpenGL) {  // NOLINT
     return std::unexpected(ImGuiBackendCreationError::DriverNotSupported);
   }
 
@@ -34,17 +33,17 @@ std::expected<std::unique_ptr<ImGuiGLFWBackend>, ImGuiGLFWBackend::ImGuiBackendC
 void ImGuiGLFWBackend::init_driver(void* window) {
   const char* glsl_version = "#version 130";
 
-  if (driver_ == Driver::OpenGL) {
+  if (driver_ == RenderingAPI::OpenGL) {
     ImGui_ImplGlfw_InitForOpenGL(reinterpret_cast<GLFWwindow*>(window), true);
     ImGui_ImplOpenGL3_Init(glsl_version);
-  } else if (driver_ == Driver::Vulcan) {  // NOLINT
+  } else if (driver_ == RenderingAPI::Vulcan) {  // NOLINT
     // TODO(migoox): add vulcan integration
     // ImGui_ImplGlfw_InitForVulkan(reinterpret_cast<GLFWwindow*>(window), true);
     // ImGui_ImplVulcan_Init(glsl_version);
   }
 }
 
-ImGuiGLFWBackend::ImGuiGLFWBackend(Driver driver) : driver_(driver) {}
+ImGuiGLFWBackend::ImGuiGLFWBackend(RenderingAPI driver) : driver_(driver) {}
 
 void ImGuiGLFWBackend::new_frame() {
   ImGui_ImplOpenGL3_NewFrame();
@@ -55,9 +54,9 @@ void ImGuiGLFWBackend::new_frame() {
 void ImGuiGLFWBackend::generate_draw_data() { ImGui::Render(); }
 
 void ImGuiGLFWBackend::render_draw_data() {
-  if (driver_ == Driver::OpenGL) {
+  if (driver_ == RenderingAPI::OpenGL) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-  } else if (driver_ == Driver::Vulcan) {
+  } else if (driver_ == RenderingAPI::Vulcan) {
     // TODO(migoox): add vulcan integration
   }
 }
@@ -66,9 +65,9 @@ ImGuiGLFWBackend::~ImGuiGLFWBackend() {
   util::Logger::info("Saved imgui.ini file");
   auto path = System::path_to_utf8str(System::executable_dir() / "imgui.ini");
   ImGui::SaveIniSettingsToDisk(path.c_str());
-  if (driver_ == Driver::OpenGL) {
+  if (driver_ == RenderingAPI::OpenGL) {
     ImGui_ImplOpenGL3_Shutdown();
-  } else if (driver_ == Driver::Vulcan) {
+  } else if (driver_ == RenderingAPI::Vulcan) {
     // TODO(migoox): add vulcan integration
   }
   ImGui_ImplGlfw_Shutdown();

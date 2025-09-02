@@ -33,7 +33,7 @@ class Window {
   util::zstring_view title() const { return props_.title; }
   virtual void set_title(util::zstring_view title) = 0;
 
-  math::Vec2i pos() const { return math::Vec2i(props_.pos.x, props_.pos.y); }
+  math::Vec2i pos() const { return math::Vec2i(props_.pos.x(), props_.pos.y()); }
   virtual void set_pos(math::Vec2i pos) = 0;
 
   math::Vec2i size() const { return props_.size; }
@@ -48,7 +48,7 @@ class Window {
   virtual math::Vec2d mouse_pos() const     = 0;
   virtual math::Vec2d mouse_pos_ndc() const = 0;
 
-  virtual Driver driver() const = 0;
+  virtual RenderingAPI rendering_api() const = 0;
 
   /**
    * @brief Polls events and swaps the back buffer. Invoked by the application main loop (the `run` function).
@@ -57,6 +57,8 @@ class Window {
    * @param callback_fn
    */
   virtual void update() = 0;
+
+  virtual bool should_close() const = 0;
 
   virtual bool is_btn_held(KeyCode code)            = 0;
   virtual bool is_mouse_btn_held(MouseBtnCode code) = 0;
