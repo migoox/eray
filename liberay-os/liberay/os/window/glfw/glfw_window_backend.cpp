@@ -47,12 +47,12 @@ bool init_vulcan_ctx(GLFWwindow* /*window_ptr_*/) {  // NOLINT
 }  // namespace glfw
 
 std::expected<std::unique_ptr<GLFWWindowBackend>, GLFWWindowBackend::BackendCreationError> GLFWWindowBackend::create(
-    Driver driver) {
+    RenderingAPI driver) {
   util::Logger::info("Initializing GLFW backend...");
 
-  if (driver != Driver::OpenGL && driver != Driver::Vulcan) {
+  if (driver != RenderingAPI::OpenGL && driver != RenderingAPI::Vulcan) {
     util::Logger::err("Provided driver ({}) is not supported by GLFW backend. Supported are {} and {}",
-                      kDriverName[driver], kDriverName[Driver::OpenGL], kDriverName[Driver::Vulcan]);
+                      kDriverName[driver], kDriverName[RenderingAPI::OpenGL], kDriverName[RenderingAPI::Vulcan]);
     return std::unexpected(BackendCreationError::DriverIsNotSupported);
   }
 
@@ -71,17 +71,17 @@ std::expected<std::unique_ptr<GLFWWindowBackend>, GLFWWindowBackend::BackendCrea
   return std::unique_ptr<GLFWWindowBackend>(new GLFWWindowBackend(driver));
 }
 
-GLFWWindowBackend::GLFWWindowBackend(Driver driver) : driver_(driver) {}
+GLFWWindowBackend::GLFWWindowBackend(RenderingAPI driver) : driver_(driver) {}
 
 std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> GLFWWindowBackend::create_window(
     WindowProperties props) {
   util::Logger::info("Creating a GLFW window for {} driver...", kDriverName[driver_]);
 
-  if (driver_ == Driver::Vulcan) {
+  if (driver_ == RenderingAPI::Vulcan) {
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   }
 
-  if (driver_ == Driver::OpenGL) {
+  if (driver_ == RenderingAPI::OpenGL) {
 #ifdef IS_DEBUG
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
@@ -92,11 +92,11 @@ std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> GLFW
 
   // TODO(migoox): Handle fullscreen
   GLFWwindow* window_ptr = glfwCreateWindow(props.size.x(), props.size.y(), props.title.c_str(), nullptr, nullptr);
-  if (driver_ == Driver::OpenGL) {
+  if (driver_ == RenderingAPI::OpenGL) {
     if (!glfw::init_opengl_ctx(window_ptr)) {
       return std::unexpected(IWindowBackend::WindowCreationError::FailedToInitializeDriverContext);
     }
-  } else if (driver_ == Driver::Vulcan) {
+  } else if (driver_ == RenderingAPI::Vulcan) {
     if (!glfw::init_vulcan_ctx(window_ptr)) {
       return std::unexpected(IWindowBackend::WindowCreationError::FailedToInitializeDriverContext);
     }
@@ -105,7 +105,7 @@ std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> GLFW
     return std::unexpected(IWindowBackend::WindowCreationError::FailedToInitializeDriverContext);
   }
 
-  util::Logger::succ("Created GLFW window with {} driver context", kDriverName[Driver::OpenGL]);
+  util::Logger::succ("Created GLFW window with {} driver context", kDriverName[RenderingAPI::OpenGL]);
 
   auto imgui_glfw = ImGuiGLFWBackend::create(driver_);
 

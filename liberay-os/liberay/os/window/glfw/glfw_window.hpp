@@ -34,7 +34,7 @@ class GLFWWindow final : public Window {
   math::Vec2d mouse_pos() const final;
   math::Vec2d mouse_pos_ndc() const final;
 
-  Driver driver() const final { return driver_; }
+  RenderingAPI rendering_api() const final { return driver_; }
 
   bool is_btn_held(KeyCode code) final;
   bool is_mouse_btn_held(MouseBtnCode code) final;
@@ -46,14 +46,15 @@ class GLFWWindow final : public Window {
 
  private:
   friend GLFWWindowBackend;
-  explicit GLFWWindow(void* glfw_window_ptr, WindowProperties props, Driver driver,
+
+  explicit GLFWWindow(void* glfw_window_ptr, WindowProperties props, RenderingAPI driver,
                       std::unique_ptr<ImGuiBackend> imgui);
 
   void init_dispatcher();
 
  private:
   void* glfw_window_ptr_;
-  Driver driver_;
+  RenderingAPI driver_;
   std::unique_ptr<ImGuiBackend> imgui_;
 };
 

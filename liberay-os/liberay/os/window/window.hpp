@@ -48,7 +48,7 @@ class Window {
   virtual math::Vec2d mouse_pos() const     = 0;
   virtual math::Vec2d mouse_pos_ndc() const = 0;
 
-  virtual Driver driver() const = 0;
+  virtual RenderingAPI rendering_api() const = 0;
 
   /**
    * @brief Polls events and swaps the back buffer. Invoked by the application main loop (the `run` function).

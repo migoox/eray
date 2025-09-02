@@ -22,7 +22,7 @@ inline GLFWwindow* win_native(void* glfw_window_ptr) { return reinterpret_cast<G
 
 }  // namespace glfw
 
-GLFWWindow::GLFWWindow(void* glfw_window_ptr, WindowProperties props, Driver driver,
+GLFWWindow::GLFWWindow(void* glfw_window_ptr, WindowProperties props, RenderingAPI driver,
                        std::unique_ptr<ImGuiBackend> imgui)
     : Window(std::move(props)), glfw_window_ptr_(glfw_window_ptr), driver_(driver), imgui_(std::move(imgui)) {
   if (props_.has_valid_pos) {
@@ -125,7 +125,7 @@ void GLFWWindow::init_dispatcher() {
 
 void GLFWWindow::update() {
   glfwPollEvents();
-  if (driver_ == Driver::OpenGL) {
+  if (driver_ == RenderingAPI::OpenGL) {
     // From docs: This function does not apply to Vulkan. If you are rendering with Vulkan, see `vkQueuePresentKHR`.
     glfwSwapBuffers(glfw::win_native(glfw_window_ptr_));
   }

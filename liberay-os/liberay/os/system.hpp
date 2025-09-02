@@ -51,10 +51,10 @@ class System {
    * @param driver
    * @return std::expected<void, DriverRequestError>
    */
-  static std::expected<void, DriverRequestError> request_driver(Driver driver);
+  static std::expected<void, DriverRequestError> request_driver(RenderingAPI driver);
 
   static System& instance() {
-    static auto system = System(requested_driver_.value_or(Driver::OpenGL));
+    static auto system = System(requested_driver_.value_or(RenderingAPI::OpenGL));
     return system;
   }
 
@@ -87,7 +87,7 @@ class System {
    *
    * @return Driver
    */
-  std::optional<Driver> driver() { return driver_; }
+  std::optional<RenderingAPI> driver() { return driver_; }
 
   /**
    * @brief Returns a string name of driver that is assumed when creating windows.
@@ -156,13 +156,13 @@ class System {
   [[nodiscard]] static FileDialog& file_dialog() { return FileDialog::instance(); }
 
  private:
-  explicit System(Driver driver);
+  explicit System(RenderingAPI driver);
 
  private:
-  Driver driver_;
+  RenderingAPI driver_;
   std::unique_ptr<IWindowBackend> window_backend_;
 
-  static std::optional<Driver> requested_driver_;
+  static std::optional<RenderingAPI> requested_driver_;
 };
 
 }  // namespace eray::os
