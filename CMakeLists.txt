@@ -63,14 +63,17 @@ if(BUILD_SANDBOX)
 endif()
 
 if(BUILD_EXAMPLES)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/vk_triangle")
+    add_subdirectory(examples/vk_triangle)
+
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/depth_buffer")
     add_subdirectory(examples/depth_buffer)
 
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/compute_particles")
     add_subdirectory(examples/compute_particles)
 
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/vk_triangle")
-    add_subdirectory(examples/vk_triangle)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/multithreading")
+    add_subdirectory(examples/multithreading)
 
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 endif()

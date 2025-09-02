@@ -57,7 +57,7 @@ struct [[nodiscard("Result should be checked for errors")]] ResultBase<void, TEr
 
   void or_panic(ResultFmtWithLoc fmt_loc = {}) {
     if (this->has_value()) {
-      return std::move(this->value());
+      return;
     }
     TResultLogger::log_panic(fmt_loc.loc, this->error(), fmt_loc.value);
     std::abort();

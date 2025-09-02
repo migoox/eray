@@ -82,7 +82,7 @@ struct SwapChainImageAcquireFailure {};
 
 using DrawFrameError = std::variant<SwapchainRecreationFailure, SwapChainImageAcquireFailure>;
 
-class HelloTriangleApplication {
+class DepthBufferApplication {
  public:
   std::expected<void, AppError> run() {
     TRY(initWindow());
@@ -1100,7 +1100,7 @@ class HelloTriangleApplication {
   }
 
   static void framebuffer_resize_callback(GLFWwindow* window, int /*width*/, int /*height*/) {
-    auto* app                 = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    auto* app                 = reinterpret_cast<DepthBufferApplication*>(glfwGetWindowUserPointer(window));
     app->framebuffer_resized_ = true;
   }
 
@@ -1234,7 +1234,7 @@ int main() {
   eray::util::Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
   eray::util::Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
 
-  auto app = HelloTriangleApplication();
+  auto app = DepthBufferApplication();
   if (auto result = app.run(); !result) {
     eray::util::panic("Error");
   }

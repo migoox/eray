@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <compute_particles/particle.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -20,11 +19,15 @@
 #include <liberay/util/try.hpp>
 #include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/buffer.hpp>
+#include <liberay/vkren/command_manager.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
+#include <multithreading/particle.hpp>
+#include <mutex>
+#include <thread>
 #include <variant>
 #include <vector>
 #include <version/version.hpp>
@@ -83,11 +86,12 @@ struct SwapChainImageAcquireFailure {};
 
 using DrawFrameError = std::variant<SwapchainRecreationFailure, SwapChainImageAcquireFailure>;
 
-class ComputeParticlesApplication {
+class ComputeParticlesMultithreadingApplication {
  public:
   std::expected<void, GLFWWindowCreationFailure> run() {
     TRY(initWindow());
     init_vk();
+    init_threads();
     main_loop();
     cleanup();
 
@@ -110,6 +114,57 @@ class ComputeParticlesApplication {
     create_descriptor_pool();
     create_descriptor_sets();
     create_sync_objs();
+  }
+
+  void init_threads() {
+    thread_count_      = std::max(1U, std::thread::hardware_concurrency());
+    thread_work_ready_ = std::vector<std::atomic<bool>>(thread_count_);
+    thread_work_done_  = std::vector<std::atomic<bool>>(thread_count_);
+    for (auto& flag : thread_work_ready_) {
+      flag.store(false);
+    }
+    for (auto& flag : thread_work_done_) {
+      flag.store(true);
+    }
+
+    command_manager_.create_thread_command_pools(device_, device_.compute_queue_family(), thread_count_)
+        .or_panic("Could not create command pools");
+    command_manager_.allocate_command_buffers(device_, thread_count_, 1).or_panic("Could not create command buffers");
+
+    // Create particle groups. Each CPU thread receives it's own particle group
+    const uint32_t particles_per_thread = ParticleSystem::kParticleCount / thread_count_;
+    particle_groups_.resize(thread_count_);
+    for (uint32_t i = 0; i < thread_count_; ++i) {
+      particle_groups_[i].start_index = i * particles_per_thread;
+      particle_groups_[i].count =
+          (i == thread_count_ - 1) ? (ParticleSystem::kParticleCount - i * particles_per_thread) : particles_per_thread;
+    }
+
+    // Start worker threads
+    for (uint32_t i = 0; i < thread_count_; ++i) {
+      worker_threads_.emplace_back(&ComputeParticlesMultithreadingApplication::worker_thread_func, this, i);
+    }
+  }
+
+  void worker_thread_func(uint32_t thread_index) {
+    while (!should_exit_) {
+      // Wait for work to be ready
+      if (!thread_work_ready_[thread_index]) {
+        std::this_thread::yield();  // Provides a hint to the implementation to reschedule the execution of threads,
+                                    // allowing other threads to run. For example, a first-in-first-out realtime
+                                    // scheduler (SCHED_FIFO in Linux) would suspend the current thread and put it on
+                                    // the back of the queue of the same-priority threads that are ready to run, and if
+                                    // there are no other threads at the same priority, yield has no effect.
+        continue;
+      }
+
+      const auto& particle_group = particle_groups_[thread_index];
+      auto& cmd_buff             = command_manager_.get_command_buffer(thread_index);
+      record_compute_command_buffer(cmd_buff, particle_group.start_index, particle_group.count);
+      thread_work_done_[thread_index]  = true;
+      thread_work_ready_[thread_index] = false;
+      work_complete_cv_.notify_one();
+    }
   }
 
   void create_device() {
@@ -175,10 +230,7 @@ class ComputeParticlesApplication {
 
     while (!glfwWindowShouldClose(window_)) {
       glfwPollEvents();
-      if (!draw_frame()) {
-        eray::util::Logger::err("Closing window: Failed to draw a frame");
-        break;
-      }
+      draw_frame();
       auto curr_time   = std::chrono::high_resolution_clock::now();
       last_frame_time_ = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - prev_time).count();
       prev_time        = curr_time;
@@ -189,81 +241,111 @@ class ComputeParticlesApplication {
     device_->waitIdle();
   }
 
-  std::expected<void, DrawFrameError> draw_frame() {
-    auto [result, image_index] = swap_chain_->acquireNextImage(UINT64_MAX, nullptr, *in_flight_fences_[current_frame_]);
+  void draw_frame() {
     while (vk::Result::eTimeout == device_->waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
     }
     device_->resetFences(*in_flight_fences_[current_frame_]);
+
+    auto [result, image_index] =
+        swap_chain_->acquireNextImage(UINT64_MAX, image_available_semaphores_[current_frame_], nullptr);
+
+    if (result == vk::Result::eErrorOutOfDateKHR) {
+      // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
+      // happens after window resize.
+      recreate_swap_chain().or_panic("Could not recreate swap chain");
+    }
+
+    if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
+      // The swap chain cannot be used even if we accept that the surface properties are no longer matched exactly
+      // (eSuboptimalKHR).
+      eray::util::panic("Failed to present swap chain image");
+    }
 
     uint64_t compute_wait_value    = timeline_value_;
     uint64_t compute_signal_value  = ++timeline_value_;
     uint64_t graphics_wait_value   = compute_signal_value;
     uint64_t graphics_signal_value = ++timeline_value_;
 
+    update_ubo(current_frame_);
+
+    // Start recording compute buffers from each thread
+    signal_threads_to_record_compute_queue();
+
+    record_graphics_command_buffer(image_index);
+
+    // Wait for compute queue recording to complete
+    wait_for_threads_to_complete();
+
+    std::vector<vk::CommandBuffer> compute_cmd_buffers;
+    compute_cmd_buffers.reserve(thread_count_);
+    for (uint32_t i = 0; i < thread_count_; ++i) {
+      compute_cmd_buffers.push_back(command_manager_.get_command_buffer(i));
+    }
+
     // == Compute Submission ===========================================================================================
     {
-      update_ubo(current_frame_);
-      record_compute_command_buffer(current_frame_);
-
-      const auto timeline_info = vk::TimelineSemaphoreSubmitInfo{
+      auto timeline_info = vk::TimelineSemaphoreSubmitInfo{
           .waitSemaphoreValueCount   = 1,
           .pWaitSemaphoreValues      = &compute_wait_value,
           .signalSemaphoreValueCount = 1,
           .pSignalSemaphoreValues    = &compute_signal_value,
       };
       vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eComputeShader};
-      const auto submit_info               = vk::SubmitInfo{
-                        .pNext                = &timeline_info,
-                        .waitSemaphoreCount   = 1,
-                        .pWaitSemaphores      = &*timeline_semaphore_,
-                        .pWaitDstStageMask    = wait_stages,
-                        .commandBufferCount   = 1,
-                        .pCommandBuffers      = &*compute_command_buffers_[current_frame_],
-                        .signalSemaphoreCount = 1,
-                        .pSignalSemaphores    = &*timeline_semaphore_,
+
+      auto submit_info = vk::SubmitInfo{
+          .pNext                = &timeline_info,
+          .waitSemaphoreCount   = 1,
+          .pWaitSemaphores      = &*timeline_semaphore_,
+          .pWaitDstStageMask    = wait_stages,
+          .commandBufferCount   = static_cast<uint32_t>(compute_cmd_buffers.size()),
+          .pCommandBuffers      = compute_cmd_buffers.data(),
+          .signalSemaphoreCount = 1,
+          .pSignalSemaphores    = &*timeline_semaphore_,
       };
-      device_.compute_queue().submit(submit_info, nullptr);
+
+      {
+        auto lock = std::lock_guard<std::mutex>(queue_submit_mtx_);
+        device_.compute_queue().submit(submit_info, nullptr);
+      }
     }
 
     // == Graphics Submission ==========================================================================================
     {
-      if (result == vk::Result::eErrorOutOfDateKHR) {
-        // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
-        // happens after window resize.
-        TRY(recreate_swap_chain());
-        return {};
-      }
-
-      if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
-        // The swap chain cannot be used even if we accept that the surface properties are no longer matched exactly
-        // (eSuboptimalKHR).
-        eray::util::Logger::err("Failed to present swap chain image");
-        return std::unexpected(SwapChainImageAcquireFailure{});
-      }
-
-      record_graphics_command_buffer(current_frame_, image_index);
-
       vk::PipelineStageFlags wait_destination_stage_mask[] = {vk::PipelineStageFlagBits::eVertexInput,
                                                               vk::PipelineStageFlagBits::eColorAttachmentOutput};
 
-      const auto timeline_info = vk::TimelineSemaphoreSubmitInfo{
-          .waitSemaphoreValueCount   = 1,
-          .pWaitSemaphoreValues      = &graphics_wait_value,
+      vk::Semaphore wait_semaphores[] = {
+          *timeline_semaphore_,
+          *image_available_semaphores_[current_frame_],
+      };
+      uint64_t wait_semaphore_values[] = {graphics_wait_value, 0};
+
+      auto timeline_info = vk::TimelineSemaphoreSubmitInfo{
+          .waitSemaphoreValueCount   = 2,
+          .pWaitSemaphoreValues      = wait_semaphore_values,
           .signalSemaphoreValueCount = 1,
           .pSignalSemaphoreValues    = &graphics_signal_value,
       };
+
       const auto submit_info = vk::SubmitInfo{
           .pNext                = &timeline_info,
-          .waitSemaphoreCount   = 1,
-          .pWaitSemaphores      = &*timeline_semaphore_,
+          .waitSemaphoreCount   = 2,
+          .pWaitSemaphores      = wait_semaphores,
           .pWaitDstStageMask    = wait_destination_stage_mask,
           .commandBufferCount   = 1,
           .pCommandBuffers      = &*graphics_command_buffers_[current_frame_],
           .signalSemaphoreCount = 1,
-          .pSignalSemaphores    = &*timeline_semaphore_,  //
+          .pSignalSemaphores    = &*timeline_semaphore_,
       };
-      device_.graphics_queue().submit(submit_info, nullptr);
 
+      {
+        auto lock = std::lock_guard<std::mutex>(queue_submit_mtx_);
+        device_.graphics_queue().submit(submit_info, *in_flight_fences_[current_frame_]);
+      }
+    }
+
+    // == Presentation =================================================================================================
+    {
       auto wait_info = vk::SemaphoreWaitInfo{
           .semaphoreCount = 1,
           .pSemaphores    = &*timeline_semaphore_,
@@ -285,16 +367,13 @@ class ComputeParticlesApplication {
 
       if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebuffer_resized_) {
         framebuffer_resized_ = false;
-        TRY(recreate_swap_chain());
+        recreate_swap_chain().or_panic("Could not recreate swap chain");
       } else if (result != vk::Result::eSuccess) {
-        eray::util::Logger::err("Failed to present swap chain image");
-        return std::unexpected(SwapChainImageAcquireFailure{});
+        eray::util::panic("Failed to present swap chain image");
       }
     }
 
     current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
-
-    return {};
   }
 
   void update_ubo(uint32_t frame_index) {
@@ -305,6 +384,13 @@ class ComputeParticlesApplication {
   }
 
   void cleanup() {
+    should_exit_ = true;
+    for (auto& thread : worker_threads_) {
+      if (thread.joinable()) {
+        thread.join();
+      }
+    }
+
     swap_chain_.cleanup();
 
     glfwDestroyWindow(window_);
@@ -325,7 +411,7 @@ class ComputeParticlesApplication {
                       .or_panic("Could not create a swap chain");
   }
 
-  std::expected<void, SwapchainRecreationFailure> recreate_swap_chain() {
+  vkren::Result<void, SwapchainRecreationFailure> recreate_swap_chain() {
     int width  = 0;
     int height = 0;
     glfwGetFramebufferSize(window_, &width, &height);
@@ -503,10 +589,17 @@ class ComputeParticlesApplication {
     };
 
     // == 2. Layout creation ===========================================================================================
+    auto push_constant_range = vk::PushConstantRange{
+        .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        .offset     = 0,
+        .size       = sizeof(uint32_t) * 2,
+    };
+
     auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
         .setLayoutCount         = 1,
         .pSetLayouts            = &*compute_descriptor_set_layout_,
-        .pushConstantRangeCount = 0,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges    = &push_constant_range,
     };
 
     compute_pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
@@ -619,13 +712,15 @@ class ComputeParticlesApplication {
     timeline_semaphore_ = vkren::Result(device_->createSemaphore(vk::SemaphoreCreateInfo{.pNext = &semaphore_info}))
                               .or_panic("Could not create a semaphore");
     timeline_value_ = 0;
+
+    image_available_semaphores_.clear();
     in_flight_fences_.clear();
-    for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
+    for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
+      image_available_semaphores_.emplace_back(
+          vkren::Result(device_->createSemaphore(vk::SemaphoreCreateInfo{})).or_panic("Could not create a semaphore"));
       in_flight_fences_.emplace_back(
           vkren::Result(device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled}))
               .or_panic("Could not create a fence"));
-
-      device_->resetFences(*in_flight_fences_.back());
     }
   }
 
@@ -770,13 +865,13 @@ class ComputeParticlesApplication {
    *
    * @param image_index
    */
-  void record_graphics_command_buffer(size_t frame_index, uint32_t image_index) {
-    graphics_command_buffers_[frame_index].begin(vk::CommandBufferBeginInfo{});
+  void record_graphics_command_buffer(uint32_t image_index) {
+    graphics_command_buffers_[current_frame_].begin(vk::CommandBufferBeginInfo{});
 
     // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
     transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
         .image_index     = image_index,
-        .frame_index     = frame_index,
+        .frame_index     = current_frame_,
         .old_layout      = vk::ImageLayout::eUndefined,
         .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
         .src_access_mask = {},
@@ -786,7 +881,7 @@ class ComputeParticlesApplication {
     });
 
     transition_depth_attachment_layout(TransitionDepthAttachmentLayoutInfo{
-        .frame_index     = frame_index,
+        .frame_index     = current_frame_,
         .old_layout      = vk::ImageLayout::eUndefined,
         .new_layout      = vk::ImageLayout::eDepthStencilAttachmentOptimal,
         .src_access_mask = {},
@@ -817,7 +912,7 @@ class ComputeParticlesApplication {
       // When multisampling is enabled use the color attachment buffer
 
       transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
-          .frame_index     = frame_index,
+          .frame_index     = current_frame_,
           .old_layout      = vk::ImageLayout::eUndefined,
           .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
           .src_access_mask = {},
@@ -842,10 +937,10 @@ class ComputeParticlesApplication {
         .pColorAttachments    = &color_buffer_attachment_info,
         .pDepthAttachment     = &depth_buffer_attachment_info,
     };
-    graphics_command_buffers_[frame_index].beginRendering(rendering_info);
+    graphics_command_buffers_[current_frame_].beginRendering(rendering_info);
 
-    graphics_command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
-    graphics_command_buffers_[frame_index].setViewport(
+    graphics_command_buffers_[current_frame_].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
+    graphics_command_buffers_[current_frame_].setViewport(
         0, vk::Viewport{
                .x      = 0.0F,
                .y      = 0.0F,
@@ -855,17 +950,17 @@ class ComputeParticlesApplication {
                .minDepth = 0.0F,
                .maxDepth = 1.0F  //
            });
-    graphics_command_buffers_[frame_index].setScissor(
+    graphics_command_buffers_[current_frame_].setScissor(
         0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_.extent()});
-    graphics_command_buffers_[frame_index].bindVertexBuffers(0, {ssbuffers_[current_frame_].buffer()}, {0});
-    graphics_command_buffers_[frame_index].draw(ParticleSystem::kParticleCount, 1, 0, 0);
+    graphics_command_buffers_[current_frame_].bindVertexBuffers(0, {ssbuffers_[current_frame_].buffer()}, {0});
+    graphics_command_buffers_[current_frame_].draw(ParticleSystem::kParticleCount, 1, 0, 0);
 
-    graphics_command_buffers_[frame_index].endRendering();
+    graphics_command_buffers_[current_frame_].endRendering();
 
     // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
     transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
         .image_index     = image_index,
-        .frame_index     = frame_index,
+        .frame_index     = current_frame_,
         .old_layout      = vk::ImageLayout::eColorAttachmentOptimal,
         .new_layout      = vk::ImageLayout::ePresentSrcKHR,
         .src_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -874,17 +969,50 @@ class ComputeParticlesApplication {
         .dst_stage_mask  = vk::PipelineStageFlagBits2::eBottomOfPipe,
     });
 
-    graphics_command_buffers_[frame_index].end();
+    graphics_command_buffers_[current_frame_].end();
   }
 
-  void record_compute_command_buffer(size_t frame_index) {
-    compute_command_buffers_[frame_index].reset();
-    compute_command_buffers_[frame_index].begin({});
-    compute_command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eCompute, compute_pipeline_);
-    compute_command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eCompute, compute_pipeline_layout_,
-                                                             0, {compute_descriptor_sets_[frame_index]}, {});
-    compute_command_buffers_[frame_index].dispatch(ParticleSystem::kParticleCount / 256, 1, 1);
-    compute_command_buffers_[frame_index].end();
+  void record_compute_command_buffer(vk::raii::CommandBuffer& cmd_buffer, uint32_t start_index, uint32_t count) {
+    cmd_buffer.reset();
+    cmd_buffer.begin({});
+
+    cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, compute_pipeline_);
+    cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, compute_pipeline_layout_, 0,
+                                  {compute_descriptor_sets_[current_frame_]}, {});
+    struct PushConstants {
+      uint32_t start_index;
+      uint32_t count;
+    } push_constants{.start_index = start_index, .count = count};
+
+    // Push constants are limited to 128 bytes, but can be accessed really fast
+    cmd_buffer.pushConstants<PushConstants>(*compute_pipeline_layout_, vk::ShaderStageFlagBits::eCompute, 0,
+                                            push_constants);
+
+    uint32_t group_count = (count + 255) / 256;
+    cmd_buffer.dispatch(group_count, 1, 1);
+
+    cmd_buffer.end();
+  }
+
+  void signal_threads_to_record_compute_queue() {
+    for (auto& flag : thread_work_ready_) {
+      flag.store(true);
+    }
+    for (auto& flag : thread_work_done_) {
+      flag.store(false);
+    }
+  }
+
+  void wait_for_threads_to_complete() {
+    auto lock = std::unique_lock<std::mutex>(queue_submit_mtx_);
+    work_complete_cv_.wait(lock, [this]() {
+      for (uint32_t i = 0; i < thread_count_; ++i) {
+        if (!thread_work_done_[i]) {
+          return false;
+        }
+      }
+      return true;
+    });
   }
 
   void create_descriptor_pool() {
@@ -1031,7 +1159,7 @@ class ComputeParticlesApplication {
   }
 
   static void framebuffer_resize_callback(GLFWwindow* window, int /*width*/, int /*height*/) {
-    auto* app                 = reinterpret_cast<ComputeParticlesApplication*>(glfwGetWindowUserPointer(window));
+    auto* app = reinterpret_cast<ComputeParticlesMultithreadingApplication*>(glfwGetWindowUserPointer(window));
     app->framebuffer_resized_ = true;
   }
 
@@ -1147,16 +1275,23 @@ class ComputeParticlesApplication {
 
   float last_frame_time_{};
 
-  /**
-   * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional
-   * operations. Common operations in validation layers are:
-   *  - Checking the values of parameters against the specification to detect misuse
-   *  - Tracking the creation and destruction of objects to find resource leaks
-   *  - Checking thread safety by tracking the threads that calls originate from
-   *  - Logging every call and its parameters to the standard output
-   *  - Tracing Vulkan calls for profiling and replaying
-   *
-   */
+  eray::vkren::CommandManager command_manager_;
+  struct ParticleGroup {
+    uint32_t start_index;
+    uint32_t count;
+  };
+  std::vector<ParticleGroup> particle_groups_;
+
+  std::vector<vk::raii::Semaphore> image_available_semaphores_;
+
+  std::mutex queue_submit_mtx_;
+  std::condition_variable work_complete_cv_;
+
+  uint32_t thread_count_{};
+  std::vector<std::thread> worker_threads_;
+  std::atomic<bool> should_exit_{false};
+  std::vector<std::atomic<bool>> thread_work_ready_;
+  std::vector<std::atomic<bool>> thread_work_done_;
 
   static constexpr eray::util::zstring_view kComputeShaderEntryPoint  = "mainComp";
   static constexpr eray::util::zstring_view kVertexShaderEntryPoint   = "mainVert";
@@ -1167,7 +1302,7 @@ int main() {
   eray::util::Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
   eray::util::Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
 
-  auto app = ComputeParticlesApplication();
+  auto app = ComputeParticlesMultithreadingApplication();
   if (auto result = app.run(); !result) {
     eray::util::panic("Error");
   }
