@@ -45,6 +45,11 @@ class System {
    */
   static Result<void, Error> init(std::unique_ptr<IWindowCreator>&& window_creator);
 
+  /**
+   * @brief Must be invoked at the end of the program.
+   *
+   * @warning Windows life time must not exceed the moment when this function is called.
+   */
   void terminate();
 
   /**
