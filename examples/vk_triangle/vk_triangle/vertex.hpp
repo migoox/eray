@@ -12,7 +12,7 @@ struct Vertex {
   Vec2 pos;
   Vec3 color;
 
-  static vk::VertexInputBindingDescription get_binding_desc() {
+  static vk::VertexInputBindingDescription binding_desc() {
     return vk::VertexInputBindingDescription{
         // Index of the binding in the array of bindings
         .binding = 0,
@@ -26,7 +26,7 @@ struct Vertex {
     };
   }
 
-  static std::array<vk::VertexInputAttributeDescription, 2> get_attribs_desc() {
+  static std::array<vk::VertexInputAttributeDescription, 2> attribs_desc() {
     return {
         vk::VertexInputAttributeDescription{
             // References the location directive of the input in the vertex shader
@@ -63,7 +63,7 @@ struct VertexBuffer {
                                                 Vertex{.pos = Vec2{-0.5F, 0.5F}, .color = Vec3{0.0F, 0.0F, 1.0F}}}};
   }
 
-  vk::BufferCreateInfo get_create_info(vk::SharingMode sharing_mode) const {
+  vk::BufferCreateInfo create_info(vk::SharingMode sharing_mode) const {
     return vk::BufferCreateInfo{
         // Flags configure sparse buffer memory
         .flags = {},

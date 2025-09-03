@@ -57,7 +57,7 @@ class GLSLShader {
  public:
   GLSLShader() = delete;
 
-  const std::unordered_set<std::string>& get_ext_defi_names() const { return ext_defi_names_; }
+  const std::unordered_set<std::string>& ext_defi_names() const { return ext_defi_names_; }
 
   /**
    * @brief Allows to set a value for external definition.
@@ -83,21 +83,21 @@ class GLSLShader {
    *
    * @return const std::string&
    */
-  const std::string& get_glsl() const;
+  const std::string& glsl() const;
 
   /**
    * @brief Returns shader type (e.g. Fragment Shader).
    *
    * @return ShaderType
    */
-  ShaderType get_type() const { return type_; }
+  ShaderType type() const { return type_; }
 
   /**
    * @brief Returns shader extension string literal (e.g. ".frag").
    *
    * @return ShaderType
    */
-  util::zstring_view get_extension() const { return kShaderTypeToExtensions[type_]; }
+  util::zstring_view extension() const { return kShaderTypeToExtensions[type_]; }
 
  protected:
   friend GLSLShaderManager;
@@ -105,7 +105,7 @@ class GLSLShader {
   GLSLShader(std::string&& content, ShaderType type, std::unordered_set<std::string>&& ext_defi_names,
              std::optional<std::string>&& version, std::filesystem::path&& path);
 
-  const std::string& get_raw() const { return raw_content_; }
+  const std::string& raw() const { return raw_content_; }
 
  private:
   std::unordered_set<std::string> ext_defi_names_;
@@ -149,7 +149,7 @@ class GLSLShaderManager {
   std::expected<std::reference_wrapper<GLSLShader>, GLSLShaderManager::LoadingError> load_library_shader(
       const std::filesystem::path& path);
 
-  static std::expected<ShaderType, LoadingError> get_sh_type(const std::filesystem::path& path);
+  static std::expected<ShaderType, LoadingError> sh_type(const std::filesystem::path& path);
 
   static std::expected<std::string, LoadingError> load_content(const std::filesystem::path& path);
 

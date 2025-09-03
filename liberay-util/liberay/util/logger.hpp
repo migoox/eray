@@ -27,7 +27,7 @@ static constexpr std::array<std::string_view, static_cast<uint32_t>(LogLevel::_C
 static constexpr std::string_view kDebugLogPrefix                                                   = "DEBUG";
 static constexpr uint32_t kMaxLogPrefixSize                                                         = 5;
 
-inline std::string_view get_log_prefix(LogLevel level) { return kLogPrefixes[static_cast<uint32_t>(level)]; }
+inline std::string_view log_prefix(LogLevel level) { return kLogPrefixes[static_cast<uint32_t>(level)]; }
 
 class LoggerScribe {
  public:
@@ -124,7 +124,7 @@ class Logger {
   template <typename... Args>
   static void debug(FormatWithLocation fmt_loc, const Args&... args) {
 #ifdef IS_DEBUG
-    get_instance().log(LogLevel::Info, true, fmt_loc.loc, fmt_loc.value, args...);
+    instance().log(LogLevel::Info, true, fmt_loc.loc, fmt_loc.value, args...);
 #else
     // Silence the unused parameters warnings when in release
     (void)fmt_loc;

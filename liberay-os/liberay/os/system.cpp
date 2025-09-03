@@ -1,17 +1,15 @@
 #include <expected>
 #include <filesystem>
-#include <liberay/os/driver.hpp>
+#include <liberay/os/error.hpp>
 #include <liberay/os/system.hpp>
-#include <liberay/os/window/glfw/glfw_window_backend.hpp>
 #include <liberay/os/window/window.hpp>
-#include <liberay/os/window/window_backend.hpp>
 #include <liberay/os/window/window_props.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
 #include <liberay/util/path_utf8.hpp>
 #include <liberay/util/platform.hpp>
 #include <liberay/util/zstring_view.hpp>
-#include <optional>
+#include <memory>
 
 #ifdef IS_WINDOWS
 #include <windows.h>
@@ -19,52 +17,46 @@
 
 namespace eray::os {
 
-std::optional<RenderingAPI> System::requested_driver_ = std::nullopt;
+std::unique_ptr<System> System::instance_ = nullptr;
 
-std::expected<void, System::DriverRequestError> System::request_driver(RenderingAPI driver) {
-  std::unique_ptr<IWindowBackend> win_backend;
+Result<void, Error> System::init(std::unique_ptr<IWindowCreator>&& window_creator) {
+  auto driver = window_creator->rendering_api();
   if constexpr (operating_system() == OperatingSystem::Linux) {
-    if (driver != RenderingAPI::OpenGL && driver != RenderingAPI::Vulcan) {
-      util::Logger::err("Requested driver ({}) that is not supported on linux systems.", kDriverName[driver]);
-      return std::unexpected(DriverRequestError::OperatingSystemDoesNotSupportRequestedDriver);
+    if (driver != RenderingAPI::OpenGL && driver != RenderingAPI::Vulkan) {
+      util::Logger::err("Requested driver ({}) that is not supported on Linux operating systems.",
+                        kRenderingAPIName[driver]);
+      return std::unexpected(Error{
+          .msg  = std::format("Linux does not support requested driver {}", kRenderingAPIName[driver]),
+          .code = ErrorCode::RenderingAPINotSupported{},
+      });
     }
   } else if constexpr (operating_system() == OperatingSystem::MacOS) {
-    if (driver != RenderingAPI::OpenGL) {
-      util::Logger::err("Requested driver ({}) that is not supported on MacOS.", kDriverName[driver]);
-      return std::unexpected(DriverRequestError::OperatingSystemDoesNotSupportRequestedDriver);
+    if (driver != RenderingAPI::OpenGL && driver != RenderingAPI::Vulkan) {
+      util::Logger::err("Requested driver ({}) that is not supported on MacOS.", kRenderingAPIName[driver]);
+      return std::unexpected(Error{
+          .msg  = std::format("Linux does not support requested driver {}", kRenderingAPIName[driver]),
+          .code = ErrorCode::RenderingAPINotSupported{},
+      });
     }
   }
-  util::Logger::info("Requested driver: {}", kDriverName[driver]);
-  requested_driver_ = driver;
+  util::Logger::info("Requested driver: {}", kRenderingAPIName[driver]);
+
+  instance_ = std::make_unique<System>(std::move(window_creator));
   return {};
 }
 
-System::System(RenderingAPI driver) : driver_(driver) {
-  if (driver_ == RenderingAPI::OpenGL || driver_ == RenderingAPI::Vulcan) {
-    auto result = GLFWWindowBackend::create(driver_);
-    if (result.has_value()) {
-      window_backend_ = std::move(*result);
-    } else {
-      util::panic("Failed to initialize GLFW backend");
-    }
-  } else if (driver_ == RenderingAPI::DirectX11 || driver_ == RenderingAPI::DirectX12) {
-    util::panic("Requested driver ({}) that is not supported on Windows yet.", kDriverName[driver_]);
-  }
-}
-
-std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> System::create_window() {
-  return create_window({
-      .title         = "Window",
-      .vsync         = false,
-      .fullscreen    = false,
-      .size          = math::Vec2i(800, 600),
-      .has_valid_pos = false,
+util::Result<std::unique_ptr<Window>, Error> System::create_window() {
+  return create_window(WindowProperties{
+      .title      = "Window",
+      .vsync      = false,
+      .fullscreen = false,
+      .width      = 800,
+      .height     = 600,
   });
 }
 
-std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> System::create_window(
-    WindowProperties props) {
-  return window_backend_->create_window(std::move(props));
+util::Result<std::unique_ptr<Window>, Error> System::create_window(const WindowProperties& props) {
+  return window_creator_->create_window(std::move(props));
 }
 
 std::filesystem::path System::executable_path() {
@@ -85,5 +77,7 @@ std::filesystem::path System::current_working_dir() { return std::filesystem::cu
 std::string System::path_to_utf8str(const std::filesystem::path& path) { return util::path_to_utf8str(path); }
 
 std::filesystem::path System::utf8str_to_path(util::zstring_view str_path) { return util::utf8str_to_path(str_path); }
+
+void System::terminate() { window_creator_->terminate(); }
 
 }  // namespace eray::os

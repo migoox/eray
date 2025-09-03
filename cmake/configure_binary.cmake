@@ -34,6 +34,8 @@ function(configure_binary)
         target_compile_definitions(${PROJECT_NAME} INTERFACE ${ARGS_COMPILE_DEFINITIONS})
     endif()
 
+    add_dependencies(${PROJECT_NAME} ${ARGS_SHADER_TARGETS})
+
     # Copy assets folder to build directory
     if(EXISTS "${PROJECT_SOURCE_DIR}/assets")
         add_custom_target("${PROJECT_NAME}__copy_assets"

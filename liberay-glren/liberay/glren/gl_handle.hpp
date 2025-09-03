@@ -1,7 +1,7 @@
 #pragma once
 #include <glad/gl.h>
 
-#include <liberay/driver/gl/gl_error.hpp>
+#include <liberay/glren/gl_error.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/ruleof.hpp>
 

@@ -12,6 +12,8 @@
 #include <liberay/math/vec.hpp>
 #include <liberay/math/vec_fwd.hpp>
 #include <liberay/os/system.hpp>
+#include <liberay/os/window/events/event.hpp>
+#include <liberay/os/window/window.hpp>
 #include <liberay/res/image.hpp>
 #include <liberay/res/shader.hpp>
 #include <liberay/util/logger.hpp>
@@ -22,6 +24,7 @@
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
+#include <liberay/vkren/glfw/vk_glfw_window_creator.hpp>
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
@@ -35,48 +38,7 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
-struct GLFWWindowCreationFailure {};
-
 namespace vkren = eray::vkren;
-
-struct VulkanExtensionNotSupported {
-  std::string glfw_extension;
-};
-struct SomeOfTheRequestedVulkanLayersAreNotSupported {};
-struct FailedToEnumeratePhysicalDevices {
-  vk::Result result;
-};
-struct NoSuitablePhysicalDevicesFound {};
-struct VulkanUnsupportedQueueFamily {
-  std::string queue_family_name;
-};
-
-struct VulkanObjectCreationError {
-  std::optional<vk::Result> result;
-  std::string what() {
-    if (result) {
-      return std::format("Creation error: {}", vk::to_string(*result));
-    }
-    return "Uknown creation error";
-  }
-};
-struct NoSuitableMemoryType {};
-struct VulkanSwapChainSupportIsNotSufficient {};
-
-struct FileDoesNotExistError {};
-
-struct FileStreamOpenFailure {};
-
-struct FileError {
-  std::variant<FileDoesNotExistError, FileStreamOpenFailure> kind;
-  std::filesystem::path path;
-};
-
-using VulkanInitError =
-    std::variant<VulkanExtensionNotSupported, SomeOfTheRequestedVulkanLayersAreNotSupported,
-                 FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound, VulkanUnsupportedQueueFamily,
-                 VulkanSwapChainSupportIsNotSufficient, FileError, VulkanObjectCreationError, NoSuitableMemoryType>;
-using AppError = std::variant<GLFWWindowCreationFailure, VulkanInitError>;
 
 struct SwapchainRecreationFailure {};
 struct SwapChainImageAcquireFailure {};
@@ -85,13 +47,17 @@ using DrawFrameError = std::variant<SwapchainRecreationFailure, SwapChainImageAc
 
 class ComputeParticlesApplication {
  public:
-  std::expected<void, GLFWWindowCreationFailure> run() {
-    TRY(initWindow());
+  explicit ComputeParticlesApplication(std::unique_ptr<eray::os::Window>&& window) : window_(std::move(window)) {}
+
+  void run() {
+    window_->set_event_callback<eray::os::FramebufferResizedEvent>([this](const auto&) -> bool {
+      framebuffer_resized_ = true;
+      return true;
+    });
+
     init_vk();
     main_loop();
     cleanup();
-
-    return {};
   }
 
   static constexpr uint32_t kWinWidth  = 800;
@@ -113,68 +79,17 @@ class ComputeParticlesApplication {
   }
 
   void create_device() {
-    // == Global Extensions ============================================================================================
-    auto required_global_extensions = std::vector<const char*>();
-    {
-      uint32_t glfw_extensions_count = 0;
-      if (auto* glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extensions_count)) {
-        required_global_extensions = std::vector<const char*>(glfw_extensions, glfw_extensions + glfw_extensions_count);
-        eray::util::Logger::info("{}", required_global_extensions);
-      } else {
-        eray::util::panic("Could not get required instance extensions from GLFW");
-      }
-    }
-
-    // == Surface Creator ==============================================================================================
-    auto surface_creator = [this](const vk::raii::Instance& instance) -> std::optional<vk::raii::SurfaceKHR> {
-      VkSurfaceKHR surface{};
-      if (glfwCreateWindowSurface(*instance, window_, nullptr, &surface)) {
-        eray::util::Logger::info("Could not create a window surface");
-        return std::nullopt;
-      }
-
-      return vk::raii::SurfaceKHR(instance, surface);
-    };
-
-    // == Device Creation ==============================================================================================
-    auto desktop_template                 = vkren::Device::CreateInfo::DesktopProfile{};
-    auto device_info                      = desktop_template.get(surface_creator, required_global_extensions);
+    auto desktop_profile                  = vkren::Device::CreateInfo::DesktopProfile{};
+    auto device_info                      = desktop_profile.get(*window_);
     device_info.app_info.pApplicationName = "Compute Particles Example";
     device_ = vkren::Device::create(context_, device_info).or_panic("Could not create a logical device wrapper");
-  }
-
-  std::expected<void, GLFWWindowCreationFailure> initWindow() {
-    glfwInit();
-
-    if (!glfwVulkanSupported()) {
-      eray::util::panic("GLFW could not load Vulkan");
-    }
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-
-    glfwSetErrorCallback([](int error_code, const char* description) {
-      eray::util::Logger::err("GLFW Error #{0}: {1}", error_code, description);
-    });
-
-    window_ = glfwCreateWindow(kWinWidth, kWinHeight, "Vulkan", nullptr, nullptr);
-    if (!window_) {
-      return std::unexpected(GLFWWindowCreationFailure{});
-    }
-
-    glfwSetWindowUserPointer(window_, this);
-    glfwSetFramebufferSizeCallback(window_, framebuffer_resize_callback);
-
-    eray::util::Logger::succ("Successfully created a GLFW Window");
-
-    return {};
   }
 
   void main_loop() {
     static auto prev_time = std::chrono::high_resolution_clock::now();
 
-    while (!glfwWindowShouldClose(window_)) {
-      glfwPollEvents();
+    while (!window_->should_close()) {
+      window_->poll_events();
       if (!draw_frame()) {
         eray::util::Logger::err("Closing window: Failed to draw a frame");
         break;
@@ -304,37 +219,18 @@ class ComputeParticlesApplication {
     memcpy(uniform_buffers_mapped_[frame_index], &ubo, sizeof(ubo));
   }
 
-  void cleanup() {
-    swap_chain_.cleanup();
-
-    glfwDestroyWindow(window_);
-    glfwTerminate();
-
-    eray::util::Logger::succ("Finished cleanup");
-  }
+  void cleanup() { swap_chain_.cleanup(); }
 
   void create_swap_chain() {
-    // Unfortunately, if you are using a high DPI display (like Apple’s Retina display), screen coordinates don’t
-    // correspond to pixels. For that reason we use glfwGetFrameBufferSize to get size in pixels. (Note:
-    // glfwGetWindowSize returns size in screen coordinates).
-    int width{};
-    int height{};
-    glfwGetFramebufferSize(window_, &width, &height);
-    swap_chain_ = vkren::SwapChain::create(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                           device_.get_max_usable_sample_count())
+    auto size   = window_->framebuffer_size();
+    swap_chain_ = vkren::SwapChain::create(device_, static_cast<uint32_t>(size.width),
+                                           static_cast<uint32_t>(size.height), device_.max_usable_sample_count())
                       .or_panic("Could not create a swap chain");
   }
 
   std::expected<void, SwapchainRecreationFailure> recreate_swap_chain() {
-    int width  = 0;
-    int height = 0;
-    glfwGetFramebufferSize(window_, &width, &height);
-    while (width == 0 || height == 0) {
-      glfwGetFramebufferSize(window_, &width, &height);
-      glfwWaitEvents();
-    }
-
-    if (!swap_chain_.recreate(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
+    auto size = window_->framebuffer_size();
+    if (!swap_chain_.recreate(device_, static_cast<uint32_t>(size.width), static_cast<uint32_t>(size.height))) {
       return std::unexpected(SwapchainRecreationFailure{});
     }
 
@@ -376,8 +272,8 @@ class ComputeParticlesApplication {
     auto viewport_state_info = vk::PipelineViewportStateCreateInfo{.viewportCount = 1, .scissorCount = 1};
 
     // == 3. Input assembly ============================================================================================
-    auto binding_desc       = ParticleSystem::get_binding_desc();
-    auto attribs_desc       = ParticleSystem::get_attribs_desc();
+    auto binding_desc       = ParticleSystem::binding_desc();
+    auto attribs_desc       = ParticleSystem::attribs_desc();
     auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
         .vertexBindingDescriptionCount   = 1,
         .pVertexBindingDescriptions      = &binding_desc,
@@ -1030,11 +926,6 @@ class ComputeParticlesApplication {
     return vk::PresentModeKHR::eFifo;
   }
 
-  static void framebuffer_resize_callback(GLFWwindow* window, int /*width*/, int /*height*/) {
-    auto* app                 = reinterpret_cast<ComputeParticlesApplication*>(glfwGetWindowUserPointer(window));
-    app->framebuffer_resized_ = true;
-  }
-
   static VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
                                                          vk::DebugUtilsMessageTypeFlagsEXT type,
                                                          const vk::DebugUtilsMessengerCallbackDataEXT* p_callback_data,
@@ -1132,17 +1023,8 @@ class ComputeParticlesApplication {
 
   std::vector<vkren::ExclusiveBufferResource> ssbuffers_;
 
-  /**
-   * @brief GLFW window pointer.
-   *
-   */
-  GLFWwindow* window_ = nullptr;
+  std::unique_ptr<eray::os::Window> window_;
 
-  /**
-   * @brief Although many drivers and platforms trigger VK_ERROR_OUT_OF_DATE_KHR automatically after a window resize,
-   * it is not guaranteed to happen. That's why there is an extra code to handle resizes explicitly.
-   *
-   */
   bool framebuffer_resized_ = false;
 
   float last_frame_time_{};
@@ -1164,13 +1046,21 @@ class ComputeParticlesApplication {
 };
 
 int main() {
-  eray::util::Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-  eray::util::Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+  using Logger = eray::util::Logger;
+  using System = eray::os::System;
 
-  auto app = ComputeParticlesApplication();
-  if (auto result = app.run(); !result) {
-    eray::util::panic("Error");
+  Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
+  Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+
+  auto window_creator =
+      eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");
+  System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
+  {
+    auto window = System::instance().create_window().or_panic("Could not create a window");
+    auto app    = ComputeParticlesApplication(std::move(window));
+    app.run();
   }
+  eray::os::System::instance().terminate();
 
   return 0;
 }

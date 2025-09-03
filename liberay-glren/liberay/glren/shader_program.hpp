@@ -2,10 +2,10 @@
 
 #include <glad/gl.h>
 
-#include <liberay/driver/glsl_shader.hpp>
+#include <liberay/glren/glsl_shader.hpp>
 #include <liberay/math/mat.hpp>
 #include <liberay/util/string_hash.hpp>
-#include <liberay/util/zstring_view.hpp>.hpp>
+#include <liberay/util/zstring_view.hpp>
 #include <string>
 #include <unordered_map>
 
@@ -31,7 +31,7 @@ class ShaderProgram {
 
   template <typename T>
   void set_uniform(util::zstring_view name, const T& value) const {
-    GLint location = get_uniform_location(name);
+    GLint location = uniform_location(name);
     if constexpr (std::is_same_v<T, bool>) {
       ERAY_GL_CALL(glProgramUniform1i(program_id_, location, value ? 1 : 0));
     } else if constexpr (std::is_same_v<T, int>) {
@@ -56,14 +56,14 @@ class ShaderProgram {
   }
 
  protected:
-  static std::optional<std::string> get_shader_status(GLuint shader, GLenum type);
-  static std::optional<std::string> get_program_status(GLuint program, GLenum type);
+  static std::optional<std::string> shader_status(GLuint shader, GLenum type);
+  static std::optional<std::string> program_status(GLuint program, GLenum type);
 
   virtual std::expected<void, ProgramCreationError> create_program() = 0;
   std::expected<GLuint, ProgramCreationError> create_shader(const GLSLShader& resource, GLenum type);
   std::expected<void, ProgramCreationError> link_program();
 
-  static constexpr util::zstring_view get_shader_type_name(GLenum shaderType) {
+  static constexpr util::zstring_view shader_type_name(GLenum shaderType) {
     switch (shaderType) {
       case GL_VERTEX_SHADER:
         return "Vertex Shader";
@@ -81,7 +81,7 @@ class ShaderProgram {
   //   void bind_uniform_buffer(util::zstring_view name, size_t binding) const;
 
  private:
-  GLint get_uniform_location(util::zstring_view name) const;
+  GLint uniform_location(util::zstring_view name) const;
 
  protected:
   std::string shader_name_;

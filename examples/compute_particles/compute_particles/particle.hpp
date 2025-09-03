@@ -24,7 +24,7 @@ struct ParticleSystem {
 
   static ParticleSystem create_on_circle(float aspect_ratio = 1.F);
 
-  static vk::VertexInputBindingDescription get_binding_desc() {
+  static vk::VertexInputBindingDescription binding_desc() {
     return vk::VertexInputBindingDescription{
         .binding   = 0,
         .stride    = sizeof(Particle),
@@ -32,7 +32,7 @@ struct ParticleSystem {
     };
   }
 
-  static auto get_attribs_desc() {
+  static auto attribs_desc() {
     return std::array{
         vk::VertexInputAttributeDescription{
             .location = 0,

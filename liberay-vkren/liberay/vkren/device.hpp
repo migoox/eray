@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <liberay/os/window/window.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/util/zstring_view.hpp>
@@ -97,6 +98,14 @@ class Device {
       CreateInfo get(const SurfaceCreator& surface_creator_func,
                      std::span<const char* const> required_global_extensions) noexcept;
 
+      /**
+       * @brief Defines proper settings basing on the window api it's handle.
+       *
+       * @param window
+       * @return CreateInfo
+       */
+      CreateInfo get(const eray::os::Window& window) noexcept;
+
      private:
       std::vector<const char*> validation_layers_;
       std::vector<const char*> global_extensions_;
@@ -168,7 +177,7 @@ class Device {
 
   Result<void, Error> generate_mipmaps(vk::raii::Image& image, const ImageDescription& image_desc) const;
 
-  vk::SampleCountFlagBits get_max_usable_sample_count() const;
+  vk::SampleCountFlagBits max_usable_sample_count() const;
 
  private:
   Device() = default;
@@ -179,14 +188,14 @@ class Device {
   Result<void, Error> create_logical_device(const CreateInfo& info) noexcept;
   Result<void, Error> create_command_pool() noexcept;
 
-  std::vector<const char*> get_global_extensions(const CreateInfo& info) noexcept;
+  std::vector<const char*> global_extensions(const CreateInfo& info) noexcept;
 
   static VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
                                                          vk::DebugUtilsMessageTypeFlagsEXT type,
                                                          const vk::DebugUtilsMessengerCallbackDataEXT* p_callback_data,
                                                          void*);
 
-  static auto get_default_feature_chain() {
+  static auto default_feature_chain() {
     return vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
                               vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>{
         {},

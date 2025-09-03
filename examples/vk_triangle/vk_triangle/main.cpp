@@ -264,7 +264,7 @@ class TriangleApplication {
     auto extension_props = context_.enumerateInstanceExtensionProperties();
 
     // Check if the required GLFW extensions are supported by the Vulkan implementation.
-    auto required_extensions = get_instance_extensions();
+    auto required_extensions = instance_extensions();
     for (const auto& ext : required_extensions) {
       if (std::ranges::none_of(extension_props, [ext_name = std::string_view(ext)](const auto& prop) {
             return std::string_view(prop.extensionName) == ext_name;
@@ -278,7 +278,7 @@ class TriangleApplication {
 
     // == 3. Validation Layers =========================================================================================
 
-    auto required_layers = get_instance_validation_layers();
+    auto required_layers = instance_validation_layers();
     auto layer_props     = context_.enumerateInstanceLayerProperties();
     if (std::ranges::any_of(required_layers, [&layer_props](const auto& required_layer) {
           return std::ranges::none_of(layer_props, [required_layer](auto const& layer_prop) {
@@ -349,7 +349,7 @@ class TriangleApplication {
     return {};
   }
 
-  std::vector<const char*> get_instance_extensions() {
+  std::vector<const char*> instance_extensions() {
     // GLFW has a function that returns Vulkan extension(s) that are needed to integrate GLFW with Vulkan
     uint32_t glfw_extensions_count = 0;
     auto* glfw_extensions          = glfwGetRequiredInstanceExtensions(&glfw_extensions_count);
@@ -367,7 +367,7 @@ class TriangleApplication {
     return required_extensions;
   }
 
-  std::vector<const char*> get_instance_validation_layers() {
+  std::vector<const char*> instance_validation_layers() {
     auto required_layers = std::vector<const char*>();
     if (kEnableValidationLayers) {
       eray::util::Logger::info("Vulkan Validation Layers are enabled");
@@ -837,8 +837,8 @@ class TriangleApplication {
     // - Bindings: spacing between data and whether the data is per-vertex or per-instance,
     // - Attribute descriptions: type of the attributes passed to the vertex shader, which binding to load them from and
     // at which offset
-    auto binding_desc       = Vertex::get_binding_desc();
-    auto attribs_desc       = Vertex::get_attribs_desc();
+    auto binding_desc       = Vertex::binding_desc();
+    auto attribs_desc       = Vertex::attribs_desc();
     auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
         .vertexBindingDescriptionCount   = 1,
         .pVertexBindingDescriptions      = &binding_desc,  //
@@ -1013,7 +1013,7 @@ class TriangleApplication {
     // == 1. Create Buffer Object ======================================================================================
 
     auto vb = VertexBuffer::create_triangle();
-    if (auto result = device_.createBuffer(vb.get_create_info(vk::SharingMode::eExclusive))) {
+    if (auto result = device_.createBuffer(vb.create_info(vk::SharingMode::eExclusive))) {
       vertex_buffer_ = std::move(*result);
     } else {
       eray::util::Logger::err("Could not create a vertex buffer. {}", vk::to_string(result.error()));

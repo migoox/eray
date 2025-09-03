@@ -159,7 +159,7 @@ class ComputeParticlesMultithreadingApplication {
       }
 
       const auto& particle_group = particle_groups_[thread_index];
-      auto& cmd_buff             = command_manager_.get_command_buffer(thread_index);
+      auto& cmd_buff             = command_manager_.command_buffer(thread_index);
       record_compute_command_buffer(cmd_buff, particle_group.start_index, particle_group.count);
       thread_work_done_[thread_index]  = true;
       thread_work_ready_[thread_index] = false;
@@ -279,7 +279,7 @@ class ComputeParticlesMultithreadingApplication {
     std::vector<vk::CommandBuffer> compute_cmd_buffers;
     compute_cmd_buffers.reserve(thread_count_);
     for (uint32_t i = 0; i < thread_count_; ++i) {
-      compute_cmd_buffers.push_back(command_manager_.get_command_buffer(i));
+      compute_cmd_buffers.push_back(command_manager_.command_buffer(i));
     }
 
     // == Compute Submission ===========================================================================================
@@ -407,7 +407,7 @@ class ComputeParticlesMultithreadingApplication {
     int height{};
     glfwGetFramebufferSize(window_, &width, &height);
     swap_chain_ = vkren::SwapChain::create(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                           device_.get_max_usable_sample_count())
+                                           device_.max_usable_sample_count())
                       .or_panic("Could not create a swap chain");
   }
 
@@ -462,8 +462,8 @@ class ComputeParticlesMultithreadingApplication {
     auto viewport_state_info = vk::PipelineViewportStateCreateInfo{.viewportCount = 1, .scissorCount = 1};
 
     // == 3. Input assembly ============================================================================================
-    auto binding_desc       = ParticleSystem::get_binding_desc();
-    auto attribs_desc       = ParticleSystem::get_attribs_desc();
+    auto binding_desc       = ParticleSystem::binding_desc();
+    auto attribs_desc       = ParticleSystem::attribs_desc();
     auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
         .vertexBindingDescriptionCount   = 1,
         .pVertexBindingDescriptions      = &binding_desc,

@@ -1,7 +1,7 @@
 #include <glad/gl.h>
 
-#include <liberay/driver/gl/framebuffer.hpp>
-#include <liberay/driver/gl/gl_error.hpp>
+#include <liberay/glren/framebuffer.hpp>
+#include <liberay/glren/gl_error.hpp>
 #include <liberay/util/logger.hpp>
 
 namespace eray::driver::gl {

@@ -1,7 +1,7 @@
 #include <expected>
-#include <liberay/driver/gl/gl_error.hpp>
-#include <liberay/driver/gl/shader_program.hpp>
-#include <liberay/driver/glsl_shader.hpp>
+#include <liberay/glren/gl_error.hpp>
+#include <liberay/glren/glsl_shader.hpp>
+#include <liberay/glren/shader_program.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/try.hpp>
 #include <memory>
@@ -42,7 +42,7 @@ std::expected<void, ShaderProgram::ProgramCreationError> ShaderProgram::recompil
   return {};
 }
 
-std::optional<std::string> ShaderProgram::get_shader_status(GLuint shader, GLenum type) {
+std::optional<std::string> ShaderProgram::shader_status(GLuint shader, GLenum type) {
   GLint status = 0;
   ERAY_GL_CALL(glGetShaderiv(shader, type, &status));
   if (status == GL_FALSE) {
@@ -57,7 +57,7 @@ std::optional<std::string> ShaderProgram::get_shader_status(GLuint shader, GLenu
   return std::nullopt;
 }
 
-std::optional<std::string> ShaderProgram::get_program_status(GLuint program, GLenum type) {
+std::optional<std::string> ShaderProgram::program_status(GLuint program, GLenum type) {
   GLint status = 0;
   ERAY_GL_CALL(glGetProgramiv(program, type, &status));
   if (status == GL_FALSE) {
@@ -75,7 +75,7 @@ std::optional<std::string> ShaderProgram::get_program_status(GLuint program, GLe
 std::expected<void, ShaderProgram::ProgramCreationError> ShaderProgram::link_program() {
   ERAY_GL_CALL(glLinkProgram(program_id_));
 
-  auto link_status = get_program_status(program_id_, GL_LINK_STATUS);
+  auto link_status = program_status(program_id_, GL_LINK_STATUS);
   if (link_status.has_value()) {
     util::Logger::err("Shader program linking failed for shader {} with status {}.", shader_name_, *link_status);
     return std::unexpected(ProgramCreationError::LinkingFailed);
@@ -83,7 +83,7 @@ std::expected<void, ShaderProgram::ProgramCreationError> ShaderProgram::link_pro
 
   ERAY_GL_CALL(glValidateProgram(program_id_));
 
-  auto validate_status = get_program_status(program_id_, GL_VALIDATE_STATUS);
+  auto validate_status = program_status(program_id_, GL_VALIDATE_STATUS);
   if (validate_status.has_value()) {
     util::Logger::err("Shader linking ({}) validation failed with status: {}.", shader_name_, validate_status.value());
     return std::unexpected(ProgramCreationError::LinkingFailed);
@@ -92,7 +92,7 @@ std::expected<void, ShaderProgram::ProgramCreationError> ShaderProgram::link_pro
   return {};
 }
 
-GLint ShaderProgram::get_uniform_location(util::zstring_view name) const {
+GLint ShaderProgram::uniform_location(util::zstring_view name) const {
   auto it = uniform_locations_.find(name);
   if (it != uniform_locations_.end()) {
     return it->second;
@@ -120,10 +120,10 @@ std::expected<GLuint, ShaderProgram::ProgramCreationError> ShaderProgram::create
     return std::unexpected(ProgramCreationError::CreationNotPossible);
   }
 
-  const GLchar* source = resource.get_glsl().c_str();
+  const GLchar* source = resource.glsl().c_str();
   ERAY_GL_CALL(glShaderSource(shader, 1, &source, nullptr));
   ERAY_GL_CALL(glCompileShader(shader));
-  auto compile_status = get_shader_status(shader, GL_COMPILE_STATUS);
+  auto compile_status = shader_status(shader, GL_COMPILE_STATUS);
   if (compile_status.has_value()) {
     util::Logger::err(R"(Shader program compilation failed for shader {}, with status: {})", shader_name_,
                       compile_status.value());
@@ -187,13 +187,13 @@ std::expected<std::unique_ptr<RenderingShaderProgram>, RenderingShaderProgram::P
 RenderingShaderProgram::create(util::zstring_view name, GLSLShader vert_shader, GLSLShader frag_shader,
                                std::optional<GLSLShader> tesc_shader, std::optional<GLSLShader> tese_shader,
                                std::optional<GLSLShader> geom_shader) {
-  if (vert_shader.get_type() != ShaderType::Vertex) {
-    util::Logger::err("Shader type mismatched. Expected .vert, but received {}.", vert_shader.get_extension());
+  if (vert_shader.type() != ShaderType::Vertex) {
+    util::Logger::err("Shader type mismatched. Expected .vert, but received {}.", vert_shader.extension());
     return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
   }
 
-  if (frag_shader.get_type() != ShaderType::Fragment) {
-    util::Logger::err("Shader type mismatched. Expected .frag, but received {}.", frag_shader.get_extension());
+  if (frag_shader.type() != ShaderType::Fragment) {
+    util::Logger::err("Shader type mismatched. Expected .frag, but received {}.", frag_shader.extension());
     return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
   }
 
@@ -203,20 +203,20 @@ RenderingShaderProgram::create(util::zstring_view name, GLSLShader vert_shader, 
   }
 
   if (tesc_shader) {
-    if (tesc_shader->get_type() != ShaderType::TessControl) {
-      util::Logger::err("Shader type mismatched. Expected .tesc, but received {}.", tesc_shader->get_extension());
+    if (tesc_shader->type() != ShaderType::TessControl) {
+      util::Logger::err("Shader type mismatched. Expected .tesc, but received {}.", tesc_shader->extension());
       return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
     }
 
-    if (tese_shader->get_type() != ShaderType::TessEval) {
-      util::Logger::err("Shader type mismatched. Expected .tese, but received {}.", tese_shader->get_extension());
+    if (tese_shader->type() != ShaderType::TessEval) {
+      util::Logger::err("Shader type mismatched. Expected .tese, but received {}.", tese_shader->extension());
       return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
     }
   }
 
   if (geom_shader) {
-    if (geom_shader->get_type() != ShaderType::Geometric) {
-      util::Logger::err("Shader type mismatched. Expected .geom, but received {}.", geom_shader->get_extension());
+    if (geom_shader->type() != ShaderType::Geometric) {
+      util::Logger::err("Shader type mismatched. Expected .geom, but received {}.", geom_shader->extension());
       return std::unexpected(ProgramCreationError::ShaderTypeMismatch);
     }
   }
@@ -284,9 +284,9 @@ std::expected<void, RenderingShaderProgram::ProgramCreationError> RenderingShade
 
 // ComputeShaderProgram::ComputeShaderProgram(util::zstring_view name, GLSLShader compute_shader)
 //     : ShaderProgram(name), compute_shader_(std::move(compute_shader)) {
-//   if (compute_shader_.get_type() != ShaderType::Compute) {
-//     log_throw(ShaderTypeMismatchException(get_shader_type_name(GL_COMPUTE_SHADER), shader_name_,
-//                                           compute_shader_.get_extension()));
+//   if (compute_shader_.type() != ShaderType::Compute) {
+//     log_throw(ShaderTypeMismatchException(shader_type_name(GL_COMPUTE_SHADER), shader_name_,
+//                                           compute_shader_.extension()));
 //   }
 
 //   using clock = std::chrono::high_resolution_clock;

@@ -127,7 +127,7 @@ void TerminalLoggerScribe::vlog(std::string_view usr_fmt, std::format_args usr_a
   }
 #endif
 
-  print_msg(*std_stream_, get_log_prefix(level), usr_fmt, usr_args, time_point, file_path, location, level);
+  print_msg(*std_stream_, log_prefix(level), usr_fmt, usr_args, time_point, file_path, location, level);
 
 #ifdef IS_UNIX
   end_unix_terminal();
@@ -217,7 +217,7 @@ void RotatedFileLoggerScribe::vlog(std::string_view usr_fmt, std::format_args us
 
 #ifdef NDEBUG
   if (level <= max_level_) {
-    print_msg(file_stream_.value(), get_log_prefix(level), usr_fmt, usr_args, time_point, file_path, location, level);
+    print_msg(file_stream_.value(), log_prefix(level), usr_fmt, usr_args, time_point, file_path, location, level);
     std::print(file_stream_.value(), "\n");
   }
 #else
@@ -228,7 +228,7 @@ void RotatedFileLoggerScribe::vlog(std::string_view usr_fmt, std::format_args us
   }
 
   if (level <= max_level_) {
-    print_msg(file_stream_.value(), get_log_prefix(level), usr_fmt, usr_args, time_point, file_path, location, level);
+    print_msg(file_stream_.value(), log_prefix(level), usr_fmt, usr_args, time_point, file_path, location, level);
     std::print(file_stream_.value(), "\n");
   }
 #endif

@@ -1,62 +1,56 @@
 #pragma once
 
-#include <cstdint>
-#include <expected>
-#include <liberay/os/driver.hpp>
 #include <liberay/os/file_dialog.hpp>
+#include <liberay/os/operating_system.hpp>
+#include <liberay/os/rendering_api.hpp>
 #include <liberay/os/window/window.hpp>
-#include <liberay/os/window/window_backend.hpp>
+#include <liberay/os/window/window_creator.hpp>
+#include <liberay/os/window_api.hpp>
 #include <liberay/util/enum_mapper.hpp>
 #include <liberay/util/platform.hpp>
+#include <liberay/util/result.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/util/zstring_view.hpp>
-#include <optional>
 
 namespace eray::os {
 
-enum class OperatingSystem : uint8_t {
-  Linux   = 0,
-  Windows = 1,
-  MacOS   = 2,
-  Other   = 3,
-  _Count  = 4,  // NOLINT
-};
-
-constexpr auto kOperatingSystemName = util::StringEnumMapper<OperatingSystem>({
-    {OperatingSystem::Linux, "Linux"},
-    {OperatingSystem::Windows, "Windows"},
-    {OperatingSystem::MacOS, "MacOS"},
-    {OperatingSystem::Other, "Unknown operating system"},
-});
-
 /**
  * @brief Singleton class that provides an abstraction over common operating system calls. Basing on the requested
- * graphics driver this class is capable of creating a window.
+ * graphics rendering API this class is capable of creating a window.
  *
  */
 class System {
  public:
-  System() = delete;
-  ERAY_DELETE_COPY_AND_MOVE(System)
+  System()                         = delete;
+  System(const System&)            = delete;
+  System& operator=(const System&) = delete;
+  System(System&&)                 = delete;
+  System& operator=(System&&)      = default;
 
-  enum class DriverRequestError : uint8_t {
-    OperatingSystemDoesNotSupportRequestedDriver = 0,
-  };
+  explicit System(std::unique_ptr<IWindowCreator>&& window_creator)
+      : rendering_api_(window_creator->rendering_api()), window_creator_(std::move(window_creator)) {}
 
   /**
-   * @brief Allows to request a driver. Basing on the driver a proper window backend is used later, e.g. GLFW for
-   * OpenGL. This function must be called before first call to `System`s `instance()` -- it has no effect otherwise. If
-   * this function is not called, OpenGL will be used by default.
+   * @brief Returns a singleton instance.
    *
-   * @param driver
-   * @return std::expected<void, DriverRequestError>
+   * @return System&
    */
-  static std::expected<void, DriverRequestError> request_driver(RenderingAPI driver);
+  static System& instance() { return *instance_; }
 
-  static System& instance() {
-    static auto system = System(requested_driver_.value_or(RenderingAPI::OpenGL));
-    return system;
-  }
+  /**
+   * @brief Initializes the System singleton. This call is required before using the `instance()` method.
+   *
+   * @param window_creator
+   * @return Result<void, Error>
+   */
+  static Result<void, Error> init(std::unique_ptr<IWindowCreator>&& window_creator);
+
+  /**
+   * @brief Must be invoked at the end of the program.
+   *
+   * @warning Windows life time must not exceed the moment when this function is called.
+   */
+  void terminate();
 
   /**
    * @brief Returns a detected operating system enum value. This information is gathered at compile time.
@@ -83,18 +77,32 @@ class System {
   static constexpr util::zstring_view operating_system_name() { return kOperatingSystemName[operating_system()]; }
 
   /**
-   * @brief Driver that is assumed when creating windows.
+   * @brief Returns requested rendering API.
    *
-   * @return Driver
+   * @return RenderingAPI
    */
-  std::optional<RenderingAPI> driver() { return driver_; }
+  RenderingAPI rendering_api() const { return rendering_api_; }
 
   /**
    * @brief Returns a string name of driver that is assumed when creating windows.
    *
    * @return util::zstring_view
    */
-  std::optional<util::zstring_view> driver_name() { return kDriverName[driver_]; }
+  util::zstring_view rendering_api_name() const { return kRenderingAPIName[rendering_api_]; }
+
+  /**
+   * @brief Returns window API backend.
+   *
+   * @return WindowAPI
+   */
+  WindowAPI window_api() const { return window_creator_->window_api(); }
+
+  /**
+   * @brief Returns window API backend string.
+   *
+   * @return WindowAPI
+   */
+  util::zstring_view window_api_name() const { return kWindowingAPIName[window_creator_->window_api()]; }
 
   /**
    * @brief Get the executable path of the application. The path is system agnostic.
@@ -140,29 +148,25 @@ class System {
   /**
    * @brief Creates a window and returns an unique pointer to the instance.
    *
-   * @return std::expected<std::unique_ptr<IWindow>, WindowCreationError>
+   * @return util::Result<std::unique_ptr<IWindow>, WindowCreationError>
    */
-  [[nodiscard]] std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> create_window();
+  [[nodiscard]] util::Result<std::unique_ptr<Window>, Error> create_window();
 
   /**
    * @brief Creates a window and returns an unique pointer to the instance. Allows to specify window properties.
    *
-   * @param window_properties
-   * @return std::expected<std::unique_ptr<Window>, WindowCreationError>
+   * @param props
+   * @return util::Result<std::unique_ptr<Window>, WindowCreationError>
    */
-  [[nodiscard]] std::expected<std::unique_ptr<Window>, IWindowBackend::WindowCreationError> create_window(
-      WindowProperties props);
+  [[nodiscard]] util::Result<std::unique_ptr<Window>, Error> create_window(const WindowProperties& props);
 
   [[nodiscard]] static FileDialog& file_dialog() { return FileDialog::instance(); }
 
  private:
-  explicit System(RenderingAPI driver);
+  RenderingAPI rendering_api_;
+  std::unique_ptr<IWindowCreator> window_creator_;
 
- private:
-  RenderingAPI driver_;
-  std::unique_ptr<IWindowBackend> window_backend_;
-
-  static std::optional<RenderingAPI> requested_driver_;
+  static std::unique_ptr<System> instance_;
 };
 
 }  // namespace eray::os

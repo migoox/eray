@@ -1,11 +1,10 @@
 #include <glad/gl.h>
 
-#include <liberay/driver/gl/buffer.hpp>
-#include <liberay/driver/gl/gl_error.hpp>
-#include <liberay/driver/gl/vertex_array.hpp>
-#include <liberay/util/zstring_view.hpp>.hpp>
-
-#include "liberay/driver/gl/gl_handle.hpp"
+#include <liberay/glren/buffer.hpp>
+#include <liberay/glren/gl_error.hpp>
+#include <liberay/glren/gl_handle.hpp>
+#include <liberay/glren/vertex_array.hpp>
+#include <liberay/util/zstring_view.hpp>
 
 namespace eray::driver::gl {
 

@@ -2,9 +2,8 @@
 
 #include <glad/gl.h>
 
-#include <expected>
-#include <liberay/driver/gl/gl_error.hpp>
-#include <liberay/driver/gl/gl_handle.hpp>
+#include <liberay/glren/gl_error.hpp>
+#include <liberay/glren/gl_handle.hpp>
 #include <liberay/util/enum_mapper.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/util/zstring_view.hpp>

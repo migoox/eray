@@ -22,7 +22,8 @@ enum class WindowEventType : uint8_t {
   MouseScrolled       = 9,
   MouseEntered        = 10,
   MouseLeft           = 11,
-  _Count              = 12,  // NOLINT
+  FramebufferResized  = 12,
+  _Count              = 13,  // NOLINT
 };
 
 constexpr std::size_t kWindowEventCount = static_cast<std::size_t>(WindowEventType::_Count);
@@ -40,6 +41,7 @@ constexpr auto kWindowEventTypeName = util::StringEnumMapper<WindowEventType>({
     {WindowEventType::MouseScrolled, "MouseScrolledEvent"},
     {WindowEventType::MouseEntered, "MouseEnteredEvent"},
     {WindowEventType::MouseLeft, "MouseLeftEvent"},
+    {WindowEventType::FramebufferResized, "FramebufferResized"},
 });
 
 template <typename T>
@@ -118,24 +120,22 @@ class KeyReleasedEvent : public WindowEventBase<WindowEventType::KeyReleased> {
 
 class MouseButtonPressedEvent : public WindowEventBase<WindowEventType::MouseButtonPressed> {
  public:
-  MouseButtonPressedEvent(MouseBtnCode mouse_btn_code_, double x, double y, bool on_ui)
-      : mouse_btn_code_(mouse_btn_code_), x_(x), y_(y), on_ui_(on_ui) {}
+  MouseButtonPressedEvent(MouseBtnCode mouse_btn_code_, double x, double y)
+      : mouse_btn_code_(mouse_btn_code_), x_(x), y_(y) {}
   MouseBtnCode mouse_btn_code() const { return mouse_btn_code_; }
   double x() const { return x_; }
   double y() const { return y_; }
-  bool is_on_ui() const { return on_ui_; }
 
  private:
   MouseBtnCode mouse_btn_code_{};
   double x_{};
   double y_{};
-  bool on_ui_{};
 };
 
 class MouseButtonReleasedEvent : public WindowEventBase<WindowEventType::MouseButtonReleased> {
  public:
-  explicit MouseButtonReleasedEvent(MouseBtnCode mouse_btn_code, double x, double y, bool on_ui)
-      : mouse_btn_code_(mouse_btn_code), x_(x), y_(y), on_ui_(on_ui) {}
+  explicit MouseButtonReleasedEvent(MouseBtnCode mouse_btn_code, double x, double y)
+      : mouse_btn_code_(mouse_btn_code), x_(x), y_(y) {}
   double x() const { return x_; }
   double y() const { return y_; }
   bool is_on_ui() const { return on_ui_; }
@@ -168,6 +168,11 @@ class MouseEntered : public WindowEventBase<WindowEventType::MouseEntered> {
 class MouseLeft : public WindowEventBase<WindowEventType::MouseLeft> {
  public:
   MouseLeft() = default;
+};
+
+class FramebufferResizedEvent : public WindowEventBase<WindowEventType::FramebufferResized> {
+ public:
+  FramebufferResizedEvent() = default;
 };
 
 template <CWindowEvent TEvent>
@@ -274,6 +279,6 @@ class WindowEventDispatcherBase {
 using WindowEventDispatcher =
     WindowEventDispatcherBase<KeyPressedEvent, KeyReleasedEvent, MouseButtonPressedEvent, MouseButtonReleasedEvent,
                               WindowClosedEvent, WindowResizedEvent, WindowFocusedEvent, WindowLostFocusEvent,
-                              WindowMovedEvent, MouseScrolledEvent, MouseEntered, MouseLeft>;
+                              WindowMovedEvent, MouseScrolledEvent, MouseEntered, MouseLeft, FramebufferResizedEvent>;
 
 }  // namespace eray::os

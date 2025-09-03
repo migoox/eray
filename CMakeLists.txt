@@ -55,7 +55,7 @@ add_subdirectory(liberay-util)
 add_subdirectory(liberay-math)
 add_subdirectory(liberay-res)
 add_subdirectory(liberay-os)
-add_subdirectory(liberay-driver)
+add_subdirectory(liberay-glren)
 add_subdirectory(liberay-vkren)
 
 if(BUILD_SANDBOX) 

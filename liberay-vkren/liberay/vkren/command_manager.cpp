@@ -60,12 +60,12 @@ Result<void, Error> CommandManager::create_thread_command_pools(const Device& de
   return {};
 }
 
-vk::raii::CommandPool& CommandManager::get_command_pool(uint32_t thread_index) {
+vk::raii::CommandPool& CommandManager::command_pool(uint32_t thread_index) {
   auto lock = std::lock_guard<std::mutex>(resource_mtx_);
   return command_pools_[thread_index];
 }
 
-vk::raii::CommandBuffer& CommandManager::get_command_buffer(uint32_t thread_index) {
+vk::raii::CommandBuffer& CommandManager::command_buffer(uint32_t thread_index) {
   auto buffer = std::lock_guard<std::mutex>(resource_mtx_);
   return command_buffers_[thread_index];
 }

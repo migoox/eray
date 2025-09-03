@@ -1,11 +1,12 @@
 #pragma once
-#include <liberay/driver/gl/vertex_array.hpp>
+#include <liberay/glren/glfw/gl_glfw_swap_chain.hpp>
+#include <liberay/glren/vertex_array.hpp>
 #include <liberay/os/window/events/event.hpp>
 #include <liberay/os/window/window.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <memory>
 
-namespace eray::os {
+namespace eray::glren {
 
 using namespace std::chrono_literals;
 
@@ -14,7 +15,7 @@ class Application {
   Application() = delete;
   explicit Application(std::unique_ptr<os::Window> window);
 
-  virtual ~Application() = default;
+  virtual ~Application();
 
   ERAY_DELETE_COPY_AND_MOVE(Application)
 
@@ -46,7 +47,7 @@ class Application {
   virtual void update(Duration delta);
 
  private:
-  bool on_closed(const WindowClosedEvent& closed_event);
+  bool on_closed(const os::WindowClosedEvent& closed_event);
 
  protected:
   static constexpr Duration kTickTime = 16666us;  // 60 TPS = 16.6(6) ms/t
@@ -57,7 +58,9 @@ class Application {
   bool running_   = true;
   bool minimized_ = false;
 
+  GLFWSwapChain swap_chain_ = GLFWSwapChain(nullptr);
+
   std::unique_ptr<os::Window> window_;
 };
 
-}  // namespace eray::os
+}  // namespace eray::glren
