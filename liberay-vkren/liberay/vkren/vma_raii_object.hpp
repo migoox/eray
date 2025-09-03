@@ -13,7 +13,7 @@ namespace eray::vkren {
  * @brief RAII VMA object. This struct must not outlive the allocator.
  *
  */
-template <typename TVMAObject, void (*DeleteCallback)(VmaAllocator, VmaAllocation, TVMAObject)>
+template <typename TVMAObject, void (*DeleteCallback)(VmaAllocator, VmaAllocation, TVMAObject) noexcept>
 struct VMARaiiObject {
   VmaAllocator _allocator{};
   VmaAllocation _allocation{};
@@ -24,38 +24,49 @@ struct VMARaiiObject {
 
   VMARaiiObject(VMARaiiObject&& other) noexcept
       : _allocator(other._allocator), _allocation(other._allocation), _handle(other._handle) {
-    other._allocation = VK_NULL_HANDLE;
+    other._allocation = nullptr;
+    other._allocator  = nullptr;
     other._handle     = VK_NULL_HANDLE;
-    other._allocator  = VK_NULL_HANDLE;
   }
 
   VMARaiiObject& operator=(VMARaiiObject&& other) noexcept {
-    _allocation = other._allocation;
-    _handle     = other._handle;
-    _allocator  = other._allocator;
+    if (this == &other) {
+      return *this;
+    }
 
-    other._allocation = VK_NULL_HANDLE;
+    if (_allocation != nullptr && _allocator != nullptr && _handle != VK_NULL_HANDLE) {
+      DeleteCallback(_allocator, _allocation, _handle);
+    }
+
+    _allocation = other._allocation;
+    _allocator  = other._allocator;
+    _handle     = other._handle;
+
+    other._allocation = nullptr;
+    other._allocator  = nullptr;
     other._handle     = VK_NULL_HANDLE;
-    other._allocator  = VK_NULL_HANDLE;
 
     return *this;
   }
 
+  VMARaiiObject(const VMARaiiObject& other)            = delete;
   VMARaiiObject& operator=(const VMARaiiObject& other) = delete;
 
   ~VMARaiiObject() {
-    if (_allocation != VK_NULL_HANDLE && _handle != VK_NULL_HANDLE && _allocator != VK_NULL_HANDLE) {
-      DeleteCallback(_allocator, _handle, _allocation);
+    if (_allocation != nullptr && _allocator != nullptr && _handle != VK_NULL_HANDLE) {
+      DeleteCallback(_allocator, _allocation, _handle);
     }
   }
 };
 
-using VMARaiiBuffer = VMARaiiObject<VkBuffer, [](VmaAllocator allocator, VmaAllocation allocation, VkBuffer buffer) {
-  vmaDestroyBuffer(allocator, buffer, allocation);
-}>;
+using VMARaiiBuffer =
+    VMARaiiObject<VkBuffer, [](VmaAllocator allocator, VmaAllocation allocation, VkBuffer buffer) noexcept {
+      vmaDestroyBuffer(allocator, buffer, allocation);
+    }>;
 
-using VMARaiiImage = VMARaiiObject<VkImage, [](VmaAllocator allocator, VmaAllocation allocation, VkImage image) {
-  vmaDestroyImage(allocator, image, allocation);
-}>;
+using VMARaiiImage =
+    VMARaiiObject<VkImage, [](VmaAllocator allocator, VmaAllocation allocation, VkImage image) noexcept {
+      vmaDestroyImage(allocator, image, allocation);
+    }>;
 
 }  // namespace eray::vkren
