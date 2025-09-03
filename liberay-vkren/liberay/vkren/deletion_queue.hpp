@@ -7,6 +7,7 @@
 namespace eray::vkren {
 
 class DeletionQueue {
+ public:
   DeletionQueue() = default;
   static DeletionQueue create() { return DeletionQueue(); }
 

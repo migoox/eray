@@ -1,11 +1,14 @@
 #pragma once
 
+#include <vma/vk_mem_alloc.h>
+
 #include <functional>
 #include <liberay/os/window/window.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/common.hpp>
+#include <liberay/vkren/deletion_queue.hpp>
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/image_description.hpp>
 #include <vulkan/vulkan.hpp>
@@ -32,6 +35,8 @@ class Device {
    *
    */
   explicit Device(std::nullptr_t) {}
+
+  ~Device();
 
   ERAY_DELETE_COPY(Device)
   ERAY_DEFAULT_MOVE(Device)
@@ -132,6 +137,8 @@ class Device {
   vk::raii::SurfaceKHR& surface() noexcept { return surface_; }
   const vk::raii::SurfaceKHR& surface() const noexcept { return surface_; }
 
+  VmaAllocator allocator() const { return allocator_; }
+
   uint32_t graphics_queue_family() const { return graphics_queue_family_; }
   vk::raii::Queue& graphics_queue() noexcept { return graphics_queue_; }
   const vk::raii::Queue& graphics_queue() const noexcept { return graphics_queue_; }
@@ -204,6 +211,8 @@ class Device {
     };
   }
 
+  void cleanup();
+
  private:
   /**
    * @brief The Vulkan context, used to access drivers.
@@ -248,6 +257,18 @@ class Device {
    *
    */
   vk::raii::CommandPool single_time_cmd_pool_ = nullptr;
+
+  /**
+   * @brief Vulkan Memory Allocator.
+   *
+   */
+  VmaAllocator allocator_ = nullptr;
+
+  /**
+   * @brief Responsible for deletion of non-raii objects;
+   *
+   */
+  DeletionQueue main_deletion_queue_;
 
   // TODO(migoox): allow for creation of multiple queues
   vk::raii::Queue graphics_queue_ = nullptr;

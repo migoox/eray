@@ -1,4 +1,6 @@
 #include <GLFW/glfw3.h>
+#define VMA_IMPLEMENTATION
+#include <vma/vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
 #include <algorithm>
@@ -116,6 +118,15 @@ Result<Device, Error> Device::create(vk::raii::Context& ctx, const CreateInfo& i
   TRY(device.pick_physical_device(info));
   TRY(device.create_logical_device(info));
   TRY(device.create_command_pool());
+
+  auto allocator_info           = VmaAllocatorCreateInfo{};
+  allocator_info.physicalDevice = *device.physical_device_;
+  allocator_info.device         = *device.device_;
+  allocator_info.instance       = *device.instance_;
+  allocator_info.flags          = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+
+  vmaCreateAllocator(&allocator_info, &device.allocator_);
+  device.main_deletion_queue_.push_deletor([&]() { vmaDestroyAllocator(device.allocator_); });
 
   return device;
 }
@@ -733,5 +744,9 @@ Result<void, Error> Device::generate_mipmaps(vk::raii::Image& image, const Image
 
   return {};
 }
+
+void Device::cleanup() { main_deletion_queue_.flush(); }
+
+Device::~Device() { cleanup(); }
 
 }  // namespace eray::vkren
