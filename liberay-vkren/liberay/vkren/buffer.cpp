@@ -127,7 +127,8 @@ void ExclusiveBufferResource::copy_from(const vk::raii::Buffer& src_buff, vk::Bu
   p_device_->end_single_time_commands(cmd_cpy_buff);
 }
 
-Result<Buffer, Error> Buffer::create_staging_buffer(const Device& device, const util::MemoryRegion& src_region) {
+Result<BufferResource, Error> BufferResource::create_staging_buffer(const Device& device,
+                                                                    const util::MemoryRegion& src_region) {
   VkBufferCreateInfo buf_create_info = {};
   buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
   buf_create_info.size               = src_region.size_bytes();
@@ -150,17 +151,19 @@ Result<Buffer, Error> Buffer::create_staging_buffer(const Device& device, const 
   }
   vmaCopyMemoryToAllocation(device.allocator(), src_region.data(), alloc, 0, src_region.size_bytes());
 
-  return Buffer{
-      ._buffer      = VMARaiiBuffer(device.allocator(), alloc, buf),
-      ._p_device    = &device,
-      .size_bytes   = src_region.size_bytes(),
-      .transfer_src = true,
-      .mappable     = true,
+  return BufferResource{
+      ._buffer             = VMARaiiBuffer(device.allocator(), alloc, buf),
+      ._p_device           = &device,
+      .size_bytes          = src_region.size_bytes(),
+      .usage               = static_cast<vk::BufferUsageFlagBits>(buf_create_info.usage),
+      .transfer_src        = true,
+      .persistently_mapped = false,
+      .mappable            = true,
   };
 }
 
-Result<PersistentlyMappedBuffer, Error> Buffer::create_readback_buffer(const Device& device,
-                                                                       vk::DeviceSize size_bytes) {
+Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_buffer(const Device& device,
+                                                                                       vk::DeviceSize size_bytes) {
   VkBufferCreateInfo buf_create_info = {};
   buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
   buf_create_info.size               = size_bytes;
@@ -189,21 +192,23 @@ Result<PersistentlyMappedBuffer, Error> Buffer::create_readback_buffer(const Dev
     });
   }
 
-  return PersistentlyMappedBuffer{
+  return PersistentlyMappedBufferResource{
       .buffer =
-          Buffer{
-              ._buffer      = VMARaiiBuffer(device.allocator(), alloc, buf),
-              ._p_device    = &device,
-              .size_bytes   = size_bytes,
-              .transfer_src = false,
-              .mappable     = true,
+          BufferResource{
+              ._buffer             = VMARaiiBuffer(device.allocator(), alloc, buf),
+              ._p_device           = &device,
+              .size_bytes          = size_bytes,
+              .usage               = static_cast<vk::BufferUsageFlagBits>(buf_create_info.usage),
+              .transfer_src        = false,
+              .persistently_mapped = true,
+              .mappable            = true,
           },
       .mapped_data = alloc_info.pMappedData,
   };
 }
 
-Result<Buffer, Error> Buffer::create_gpu_local_buffer(const Device& device, vk::DeviceSize size_bytes,
-                                                      vk::BufferUsageFlagBits usage) {
+Result<BufferResource, Error> BufferResource::create_gpu_local_buffer(const Device& device, vk::DeviceSize size_bytes,
+                                                                      vk::BufferUsageFlagBits usage) {
   VkBufferCreateInfo buf_create_info = {};
   buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
   buf_create_info.size               = size_bytes;
@@ -225,17 +230,22 @@ Result<Buffer, Error> Buffer::create_gpu_local_buffer(const Device& device, vk::
     });
   }
 
-  return Buffer{
-      ._buffer      = VMARaiiBuffer(device.allocator(), alloc, buf),
-      ._p_device    = &device,
-      .size_bytes   = size_bytes,
-      .transfer_src = false,
-      .mappable     = false,
+  return BufferResource{
+      ._buffer             = VMARaiiBuffer(device.allocator(), alloc, buf),
+      ._p_device           = &device,
+      .size_bytes          = size_bytes,
+      .usage               = static_cast<vk::BufferUsageFlagBits>(buf_create_info.usage),
+      .transfer_src        = false,
+      .persistently_mapped = false,
+      .mappable            = false,
   };
 }
 
-Result<void, Error> Buffer::write_via_staging_buffer(const util::MemoryRegion& src_region,
-                                                     vk::DeviceSize offset) const {
+Result<void, Error> BufferResource::write_via_staging_buffer(const util::MemoryRegion& src_region,
+                                                             vk::DeviceSize offset) const {
+  assert(offset < size_bytes && "Offset exceeds the buffer size");
+  assert(src_region.size_bytes() <= size_bytes - offset && "Region size exceeds available space in the buffer");
+
   auto staging_buff = create_staging_buffer(*_p_device, src_region);
   if (!staging_buff) {
     return std::unexpected(staging_buff.error());
@@ -243,13 +253,13 @@ Result<void, Error> Buffer::write_via_staging_buffer(const util::MemoryRegion& s
 
   auto cmd_cpy_buff = _p_device->begin_single_time_commands();
   cmd_cpy_buff.copyBuffer(staging_buff->_buffer._handle, _buffer._handle,
-                          vk::BufferCopy(0, offset, std::min(size_bytes, src_region.size_bytes())));
+                          vk::BufferCopy(0, offset, src_region.size_bytes()));
   _p_device->end_single_time_commands(cmd_cpy_buff);
 
   return {};
 }
 
-Result<Buffer, Error> Buffer::create_uniform_buffer(const Device& device, vk::DeviceSize size_bytes) {
+Result<BufferResource, Error> BufferResource::create_uniform_buffer(const Device& device, vk::DeviceSize size_bytes) {
   VkBufferCreateInfo buf_create_info = {};
   buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
   buf_create_info.size               = size_bytes;
@@ -281,16 +291,18 @@ Result<Buffer, Error> Buffer::create_uniform_buffer(const Device& device, vk::De
     mappable = true;
   }
 
-  return Buffer{
-      ._buffer      = VMARaiiBuffer(device.allocator(), alloc, buf),
-      ._p_device    = &device,
-      .size_bytes   = size_bytes,
-      .transfer_src = false,
-      .mappable     = mappable,
+  return BufferResource{
+      ._buffer             = VMARaiiBuffer(device.allocator(), alloc, buf),
+      ._p_device           = &device,
+      .size_bytes          = size_bytes,
+      .usage               = static_cast<vk::BufferUsageFlagBits>(buf_create_info.usage),
+      .transfer_src        = false,
+      .persistently_mapped = alloc_info.pMappedData != nullptr,
+      .mappable            = mappable,
   };
 }
 
-[[nodiscard]] Result<PersistentlyMappedBuffer, Error> Buffer::create_persistently_mapped_uniform_buffer(
+[[nodiscard]] Result<PersistentlyMappedBufferResource, Error> BufferResource::create_persistently_mapped_uniform_buffer(
     const Device& device, vk::DeviceSize size_bytes) {
   VkBufferCreateInfo buf_create_info = {};
   buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -322,23 +334,28 @@ Result<Buffer, Error> Buffer::create_uniform_buffer(const Device& device, vk::De
     });
   }
 
-  return PersistentlyMappedBuffer{
+  return PersistentlyMappedBufferResource{
       .buffer =
-          Buffer{
-              ._buffer      = VMARaiiBuffer(device.allocator(), alloc, buf),
-              ._p_device    = &device,
-              .size_bytes   = size_bytes,
-              .transfer_src = false,
-              .mappable     = true,
+          BufferResource{
+              ._buffer             = VMARaiiBuffer(device.allocator(), alloc, buf),
+              ._p_device           = &device,
+              .size_bytes          = size_bytes,
+              .usage               = static_cast<vk::BufferUsageFlagBits>(buf_create_info.usage),
+              .transfer_src        = false,
+              .persistently_mapped = true,
+              .mappable            = true,
           },
       .mapped_data = alloc_info.pMappedData,
   };
 }
 
-Result<void, Error> Buffer::write(const util::MemoryRegion& src_region, vk::DeviceSize offset) const {
+Result<void, Error> BufferResource::write(const util::MemoryRegion& src_region, vk::DeviceSize offset) const {
+  assert(offset < size_bytes && "Offset exceeds the buffer size");
+  assert(src_region.size_bytes() <= size_bytes - offset && "Region size exceeds available space in the buffer");
+
   if (mappable) {
     auto res = vmaCopyMemoryToAllocation(_p_device->allocator(), src_region.data(), _buffer._allocation, offset,
-                                         std::min(src_region.size_bytes(), size_bytes));
+                                         src_region.size_bytes());
 
     if (res != VK_SUCCESS) {
       return std::unexpected(Error{
@@ -354,13 +371,13 @@ Result<void, Error> Buffer::write(const util::MemoryRegion& src_region, vk::Devi
   return {};
 }
 
-VmaAllocationInfo Buffer::alloc_info() const {
+VmaAllocationInfo BufferResource::alloc_info() const {
   VmaAllocationInfo info;
   vmaGetAllocationInfo(_buffer._allocator, _buffer._allocation, &info);
   return info;
 }
 
-Result<void*, Error> Buffer::map() const {
+Result<void*, Error> BufferResource::map() const {
   if (!mappable) {
     util::Logger::err("Buffer is not mappable, but map has been requested!");
     return std::unexpected(Error{
@@ -390,7 +407,7 @@ Result<void*, Error> Buffer::map() const {
   return ptr;
 }
 
-void Buffer::unmap() const {
+void BufferResource::unmap() const {
   auto alloc_info = this->alloc_info();
   // If it’s already persistently mapped (created with VMA_ALLOCATION_CREATE_MAPPED_BIT),
   // VMA provides a stable pointer here.
@@ -401,7 +418,7 @@ void Buffer::unmap() const {
   vmaUnmapMemory(_p_device->allocator(), _buffer._allocation);
 }
 
-std::optional<void*> Buffer::persistent_mapping() const {
+std::optional<void*> BufferResource::mapping() const {
   auto info = this->alloc_info();
   if (info.pMappedData == nullptr) {
     return std::nullopt;

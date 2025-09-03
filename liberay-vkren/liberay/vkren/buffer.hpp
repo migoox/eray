@@ -98,13 +98,19 @@ class ExclusiveBufferResource {
   vk::MemoryPropertyFlags mem_properties_;
 };
 
-struct PersistentlyMappedBuffer;
+struct PersistentlyMappedBufferResource;
 
-struct Buffer {
+/**
+ * @brief Buffer allocated with VMA.
+ *
+ */
+struct BufferResource {
   VMARaiiBuffer _buffer;
   observer_ptr<const Device> _p_device;
   vk::DeviceSize size_bytes;
+  vk::BufferUsageFlags usage;
   bool transfer_src;
+  bool persistently_mapped;
   bool mappable;
 
   /**
@@ -115,8 +121,8 @@ struct Buffer {
    * @param size_bytes
    * @return Result<Buffer, Error>
    */
-  [[nodiscard]] static Result<Buffer, Error> create_staging_buffer(const Device& device,
-                                                                   const util::MemoryRegion& src_region);
+  [[nodiscard]] static Result<BufferResource, Error> create_staging_buffer(const Device& device,
+                                                                           const util::MemoryRegion& src_region);
 
   /**
    * @brief Creates a gpu local buffer, e.g. for vertex or index buffer.
@@ -126,13 +132,16 @@ struct Buffer {
    * @param usage
    * @return Result<Buffer, Error>
    */
-  [[nodiscard]] static Result<Buffer, Error> create_gpu_local_buffer(const Device& device, vk::DeviceSize size_bytes,
-                                                                     vk::BufferUsageFlagBits usage);
+  [[nodiscard]] static Result<BufferResource, Error> create_gpu_local_buffer(const Device& device,
+                                                                             vk::DeviceSize size_bytes,
+                                                                             vk::BufferUsageFlagBits usage);
 
-  [[nodiscard]] static Result<Buffer, Error> create_index_buffer(const Device& device, vk::DeviceSize size_bytes) {
+  [[nodiscard]] static Result<BufferResource, Error> create_index_buffer(const Device& device,
+                                                                         vk::DeviceSize size_bytes) {
     return create_gpu_local_buffer(device, size_bytes, vk::BufferUsageFlagBits::eIndexBuffer);
   }
-  [[nodiscard]] static Result<Buffer, Error> create_vertex_buffer(const Device& device, vk::DeviceSize size_bytes) {
+  [[nodiscard]] static Result<BufferResource, Error> create_vertex_buffer(const Device& device,
+                                                                          vk::DeviceSize size_bytes) {
     return create_gpu_local_buffer(device, size_bytes, vk::BufferUsageFlagBits::eVertexBuffer);
   }
 
@@ -144,20 +153,21 @@ struct Buffer {
    * @param size_bytes
    * @return Result<Buffer, Error>
    */
-  [[nodiscard]] static Result<PersistentlyMappedBuffer, Error> create_readback_buffer(const Device& device,
-                                                                                      vk::DeviceSize size_bytes);
+  [[nodiscard]] static Result<PersistentlyMappedBufferResource, Error> create_readback_buffer(
+      const Device& device, vk::DeviceSize size_bytes);
 
   /**
    * @brief For resources that you frequently write on CPU via mapped pointer and frequently read on GPU e.g. uniform
-   * buffer (also called "dynamic"). This buffer might not be persistently mapped.
+   * buffer (also called "dynamic"). This buffer might not be mappable, to upload data safely use `write()`.
    *
    * @param device
    * @param size_bytes
    * @return Result<Buffer, Error>
    */
-  [[nodiscard]] static Result<Buffer, Error> create_uniform_buffer(const Device& device, vk::DeviceSize size_bytes);
+  [[nodiscard]] static Result<BufferResource, Error> create_uniform_buffer(const Device& device,
+                                                                           vk::DeviceSize size_bytes);
 
-  [[nodiscard]] static Result<PersistentlyMappedBuffer, Error> create_persistently_mapped_uniform_buffer(
+  [[nodiscard]] static Result<PersistentlyMappedBufferResource, Error> create_persistently_mapped_uniform_buffer(
       const Device& device, vk::DeviceSize size_bytes);
 
   /**
@@ -197,17 +207,19 @@ struct Buffer {
   /**
    * @brief Returns VMA allocation info for the current buffer.
    *
+   * @warning The lifetime of this info is bounded by the lifetime of the Buffer.
+   *
    * @return VmaAllocationInfo
    */
   VmaAllocationInfo alloc_info() const;
 
   /**
-   * @brief If buffer is persistently mapped this function returns valid void* ptr to the mapping. Returns std::nullopt
-   * otherwise.
+   * @brief If buffer is mapped this function returns valid void* ptr to the mapping. Returns std::nullopt
+   * otherwise. This function works even if the buffer is persistently mapped.
    *
    * @return std::optional<void*>
    */
-  std::optional<void*> persistent_mapping() const;
+  std::optional<void*> mapping() const;
 
   vk::Buffer buffer() const { return _buffer._handle; }
 };
@@ -216,8 +228,8 @@ struct Buffer {
  * @brief Represents a GPU buffer that is mapped to CPU through it's entire lifetime.
  *
  */
-struct PersistentlyMappedBuffer {
-  Buffer buffer;
+struct PersistentlyMappedBufferResource {
+  BufferResource buffer;
   void* mapped_data;
 };
 
