@@ -5,6 +5,7 @@
 #include <liberay/util/memory_region.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
+#include <liberay/vkren/vma_raii_object.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -97,15 +98,15 @@ class ExclusiveBufferResource {
   vk::MemoryPropertyFlags mem_properties_;
 };
 
+struct PersistentlyMappedBuffer;
+
 struct Buffer {
-  VkBuffer buffer;
-  VmaAllocation allocation;
+  VMARaiiBuffer _buffer;
   VmaAllocationInfo alloc_info;
   observer_ptr<const Device> _p_device;
   vk::DeviceSize size_bytes;
   bool transfer_src;
-
-  ~Buffer();
+  bool mappable;
 
   /**
    * @brief A "staging" buffer than you want to map and fill from CPU code, then use as a source of transfer to some GPU
@@ -115,7 +116,8 @@ struct Buffer {
    * @param size_bytes
    * @return Result<Buffer, Error>
    */
-  [[nodiscard]] static Result<Buffer, Error> create_staging(const Device& device, const util::MemoryRegion& src_region);
+  [[nodiscard]] static Result<Buffer, Error> create_staging_buffer(const Device& device,
+                                                                   const util::MemoryRegion& src_region);
 
   /**
    * @brief Creates a gpu local buffer, e.g. for vertex or index buffer.
@@ -125,14 +127,14 @@ struct Buffer {
    * @param usage
    * @return Result<Buffer, Error>
    */
-  [[nodiscard]] static Result<Buffer, Error> create_gpu_local(const Device& device, vk::DeviceSize size_bytes,
-                                                              vk::BufferUsageFlagBits usage);
+  [[nodiscard]] static Result<Buffer, Error> create_gpu_local_buffer(const Device& device, vk::DeviceSize size_bytes,
+                                                                     vk::BufferUsageFlagBits usage);
 
   [[nodiscard]] static Result<Buffer, Error> create_index_buffer(const Device& device, vk::DeviceSize size_bytes) {
-    return create_gpu_local(device, size_bytes, vk::BufferUsageFlagBits::eIndexBuffer);
+    return create_gpu_local_buffer(device, size_bytes, vk::BufferUsageFlagBits::eIndexBuffer);
   }
   [[nodiscard]] static Result<Buffer, Error> create_vertex_buffer(const Device& device, vk::DeviceSize size_bytes) {
-    return create_gpu_local(device, size_bytes, vk::BufferUsageFlagBits::eVertexBuffer);
+    return create_gpu_local_buffer(device, size_bytes, vk::BufferUsageFlagBits::eVertexBuffer);
   }
 
   /**
@@ -143,17 +145,21 @@ struct Buffer {
    * @param size_bytes
    * @return Result<Buffer, Error>
    */
-  [[nodiscard]] static Result<Buffer, Error> create_readback(const Device& device, vk::DeviceSize size_bytes);
+  [[nodiscard]] static Result<PersistentlyMappedBuffer, Error> create_readback_buffer(const Device& device,
+                                                                                      vk::DeviceSize size_bytes);
 
   /**
-   * @brief For resources that you frequently write on CPU via mapped pointer and frequently read on GPU e.g. as a
-   * uniform buffer (also called "dynamic").
+   * @brief For resources that you frequently write on CPU via mapped pointer and frequently read on GPU e.g. uniform
+   * buffer (also called "dynamic").
    *
    * @param device
    * @param size_bytes
    * @return Result<Buffer, Error>
    */
-  //   [[nodiscard]] static Result<Buffer, Error> create_dynamic(const Device& device, vk::DeviceSize size_bytes);
+  [[nodiscard]] static Result<Buffer, Error> create_uniform_buffer(const Device& device, vk::DeviceSize size_bytes);
+
+  [[nodiscard]] static Result<PersistentlyMappedBuffer, Error> create_persistently_mapped_uniform_buffer(
+      const Device& device, vk::DeviceSize size_bytes);
 
   /**
    * @brief Creates a temporary staging buffer and uses it to fill the buffer.
@@ -162,6 +168,25 @@ struct Buffer {
    * @return Result<void, Error>
    */
   Result<void, Error> fill_via_staging_buffer(const util::MemoryRegion& src_region) const;
+
+  /**
+   * @brief Fills the buffer. If the buffer is not `mappable` it will call `fill_via_staging_buffer()`.
+   *
+   * @param src_region
+   * @return Result<void, Error>
+   */
+  Result<void, Error> fill(const util::MemoryRegion& src_region) const;
+
+  vk::Buffer buffer() const { return _buffer._handle; }
+};
+
+/**
+ * @brief Represents a GPU buffer that is mapped to CPU through it's entire lifetime.
+ *
+ */
+struct PersistentlyMappedBuffer {
+  Buffer buffer;
+  void* mapped_data;
 };
 
 }  // namespace eray::vkren
