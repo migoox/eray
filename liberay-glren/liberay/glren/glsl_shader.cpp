@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include <liberay/driver/glsl_shader.hpp>
+#include <liberay/glren/glsl_shader.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/string_views.hpp>
 #include <unordered_map>

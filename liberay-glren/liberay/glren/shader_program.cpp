@@ -1,7 +1,7 @@
 #include <expected>
-#include <liberay/driver/gl/gl_error.hpp>
-#include <liberay/driver/gl/shader_program.hpp>
-#include <liberay/driver/glsl_shader.hpp>
+#include <liberay/glren/gl_error.hpp>
+#include <liberay/glren/glsl_shader.hpp>
+#include <liberay/glren/shader_program.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/try.hpp>
 #include <memory>

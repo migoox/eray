@@ -41,7 +41,7 @@ Device::CreateInfo Device::CreateInfo::DesktopProfile::get(const eray::os::Windo
   }
 
   // == Surface Creator ==============================================================================================
-  auto surface_creator = [window_handle](const vk::raii::Instance& instance) -> std::optional<vk::raii::SurfaceKHR> {
+  auto surf_creator = [window_handle](const vk::raii::Instance& instance) -> std::optional<vk::raii::SurfaceKHR> {
     VkSurfaceKHR surface{};
     if (glfwCreateWindowSurface(*instance, window_handle, nullptr, &surface)) {
       eray::util::Logger::info("Could not create a window surface");
@@ -51,7 +51,7 @@ Device::CreateInfo Device::CreateInfo::DesktopProfile::get(const eray::os::Windo
     return vk::raii::SurfaceKHR(instance, surface);
   };
 
-  return get(surface_creator, required_global_extensions);
+  return get(surf_creator, required_global_extensions);
 }
 
 Device::CreateInfo Device::CreateInfo::DesktopProfile::get(

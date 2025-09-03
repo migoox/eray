@@ -2,10 +2,10 @@
 
 #include <glad/gl.h>
 
-#include <liberay/driver/glsl_shader.hpp>
+#include <liberay/glren/glsl_shader.hpp>
 #include <liberay/math/mat.hpp>
 #include <liberay/util/string_hash.hpp>
-#include <liberay/util/zstring_view.hpp>.hpp>
+#include <liberay/util/zstring_view.hpp>
 #include <string>
 #include <unordered_map>
 

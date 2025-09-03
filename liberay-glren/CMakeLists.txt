@@ -8,7 +8,7 @@ add_subdirectory(third_party/glad)
 
 configure_library(
     NAME liberay-driver 
-    DEPS_PUBLIC glad liberay-util liberay-math
+    DEPS_PUBLIC glad liberay-util liberay-math liberay-os
 )
 
 

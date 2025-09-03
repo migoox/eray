@@ -17,9 +17,10 @@ message(STATUS "Vulkan Include Directory: ${Vulkan_INCLUDE_DIR}")
 
 configure_library(
     NAME liberay-vkren
-    DEPS_PUBLIC liberay-util liberay-math liberay-res liberay-os Vulkan::Vulkan
+    DEPS_PUBLIC liberay-util liberay-math liberay-res liberay-os glfw Vulkan::Vulkan
     COMPILE_DEFINITIONS
       VULKAN_HPP_NO_EXCEPTIONS
       VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
       VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
+      GLFW_INCLUDE_VULKAN
 )
