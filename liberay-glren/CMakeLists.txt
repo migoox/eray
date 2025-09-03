@@ -7,8 +7,8 @@ option(BUILD_TESTS "Fetch GoogleTest and build tests" OFF)
 add_subdirectory(third_party/glad)
 
 configure_library(
-    NAME liberay-driver 
-    DEPS_PUBLIC glad liberay-util liberay-math liberay-os
+    NAME liberay-glren 
+    DEPS_PUBLIC glad imgui glfw liberay-util liberay-math liberay-os
 )
 
 

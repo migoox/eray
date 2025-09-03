@@ -120,24 +120,22 @@ class KeyReleasedEvent : public WindowEventBase<WindowEventType::KeyReleased> {
 
 class MouseButtonPressedEvent : public WindowEventBase<WindowEventType::MouseButtonPressed> {
  public:
-  MouseButtonPressedEvent(MouseBtnCode mouse_btn_code_, double x, double y, bool on_ui)
-      : mouse_btn_code_(mouse_btn_code_), x_(x), y_(y), on_ui_(on_ui) {}
+  MouseButtonPressedEvent(MouseBtnCode mouse_btn_code_, double x, double y)
+      : mouse_btn_code_(mouse_btn_code_), x_(x), y_(y) {}
   MouseBtnCode mouse_btn_code() const { return mouse_btn_code_; }
   double x() const { return x_; }
   double y() const { return y_; }
-  bool is_on_ui() const { return on_ui_; }
 
  private:
   MouseBtnCode mouse_btn_code_{};
   double x_{};
   double y_{};
-  bool on_ui_{};
 };
 
 class MouseButtonReleasedEvent : public WindowEventBase<WindowEventType::MouseButtonReleased> {
  public:
-  explicit MouseButtonReleasedEvent(MouseBtnCode mouse_btn_code, double x, double y, bool on_ui)
-      : mouse_btn_code_(mouse_btn_code), x_(x), y_(y), on_ui_(on_ui) {}
+  explicit MouseButtonReleasedEvent(MouseBtnCode mouse_btn_code, double x, double y)
+      : mouse_btn_code_(mouse_btn_code), x_(x), y_(y) {}
   double x() const { return x_; }
   double y() const { return y_; }
   bool is_on_ui() const { return on_ui_; }

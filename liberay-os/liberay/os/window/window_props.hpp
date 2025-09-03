@@ -1,5 +1,4 @@
 #pragma once
-#include <liberay/math/vec.hpp>
 #include <string>
 
 namespace eray::os {

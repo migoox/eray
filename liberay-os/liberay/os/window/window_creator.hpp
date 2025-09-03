@@ -19,6 +19,7 @@ class IWindowCreator {
   virtual util::Result<std::unique_ptr<Window>, Error> create_window(const WindowProperties& props) = 0;
   virtual RenderingAPI rendering_api()                                                              = 0;
   virtual WindowAPI window_api()                                                                    = 0;
+  virtual void terminate()                                                                          = 0;
 
   virtual ~IWindowCreator() = default;
 };

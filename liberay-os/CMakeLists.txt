@@ -21,7 +21,7 @@ endif()
 
 configure_library(
     NAME liberay-os 
-    DEPS_PUBLIC glfw imgui nfd liberay-util liberay-driver
+    DEPS_PUBLIC glfw nfd liberay-util
     # GLFW_INCLUDE_NONE makes the GLFW header not include any OpenGL or OpenGL ES
     # API header.
     COMPILE_DEFINITIONS GLFW_INCLUDE_NONE

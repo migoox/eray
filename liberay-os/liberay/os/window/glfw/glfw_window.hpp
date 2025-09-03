@@ -1,6 +1,5 @@
 #pragma once
 
-#include <liberay/os/imgui_backend.hpp>
 #include <liberay/os/window/window.hpp>
 #include <liberay/os/window/window_props.hpp>
 #include <liberay/os/window_api.hpp>
@@ -11,7 +10,7 @@ namespace eray::os {
 class GLFWWindow final : public Window {
  public:
   GLFWWindow() = delete;
-  GLFWWindow(void* glfw_window_ptr, const WindowProperties& props, RenderingAPI rendering_api, WindowAPI window_api);
+  GLFWWindow(void* glfw_window_ptr, const WindowProperties& props, WindowAPI window_api);
   ERAY_DELETE_COPY_AND_MOVE(GLFWWindow)
   ~GLFWWindow() final;
 
@@ -19,7 +18,6 @@ class GLFWWindow final : public Window {
 
   void set_title(util::zstring_view title) final;
   void set_window_size(int width, int height) final;
-  void set_vsync(bool vsync) final;
   void set_fullscreen(bool fullscreen) final;
 
   Dimensions framebuffer_size() const final;
@@ -42,7 +40,6 @@ class GLFWWindow final : public Window {
 
  private:
   void* glfw_window_ptr_;
-  RenderingAPI rendering_api_;
   WindowAPI window_api_;
 };
 

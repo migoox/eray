@@ -45,6 +45,8 @@ class System {
    */
   static Result<void, Error> init(std::unique_ptr<IWindowCreator>&& window_creator);
 
+  void terminate();
+
   /**
    * @brief Returns a detected operating system enum value. This information is gathered at compile time.
    *

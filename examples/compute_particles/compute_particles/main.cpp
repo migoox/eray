@@ -47,18 +47,9 @@ using DrawFrameError = std::variant<SwapchainRecreationFailure, SwapChainImageAc
 
 class ComputeParticlesApplication {
  public:
+  explicit ComputeParticlesApplication(std::unique_ptr<eray::os::Window>&& window) : window_(std::move(window)) {}
+
   void run() {
-    using Logger = eray::util::Logger;
-    using System = eray::os::System;
-
-    Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-    Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
-
-    auto window_creator =
-        eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");
-    System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
-    window_ = System::instance().create_window().or_panic("Could not create a window");
-
     window_->set_event_callback<eray::os::FramebufferResizedEvent>([this](const auto&) -> bool {
       framebuffer_resized_ = true;
       return true;
@@ -1055,7 +1046,21 @@ class ComputeParticlesApplication {
 };
 
 int main() {
-  auto app = ComputeParticlesApplication();
-  app.run();
+  using Logger = eray::util::Logger;
+  using System = eray::os::System;
+
+  Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
+  Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+
+  auto window_creator =
+      eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");
+  System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
+  {
+    auto window = System::instance().create_window().or_panic("Could not create a window");
+    auto app    = ComputeParticlesApplication(std::move(window));
+    app.run();
+  }
+  eray::os::System::instance().terminate();
+
   return 0;
 }

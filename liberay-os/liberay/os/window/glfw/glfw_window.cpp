@@ -1,6 +1,4 @@
 #include <GLFW/glfw3.h>
-#include <imgui/imgui_impl_glfw.h>
-#include <imgui/imgui_impl_opengl3.h>
 
 #include <liberay/os/rendering_api.hpp>
 #include <liberay/os/window/events/event.hpp>
@@ -22,9 +20,8 @@ inline GLFWwindow* glfw_win_ptr(void* glfw_window_ptr) { return reinterpret_cast
 
 }  // namespace glfw
 
-GLFWWindow::GLFWWindow(void* glfw_window_ptr, const WindowProperties& props, RenderingAPI rendering_api,
-                       WindowAPI window_api)
-    : Window(props), glfw_window_ptr_(glfw_window_ptr), rendering_api_(rendering_api), window_api_(window_api) {
+GLFWWindow::GLFWWindow(void* glfw_window_ptr, const WindowProperties& props, WindowAPI window_api)
+    : Window(props), glfw_window_ptr_(glfw_window_ptr), window_api_(window_api) {
   //   glfwSwapInterval(props.vsync ? 1 : 0); opengl specific
   init_dispatcher();
 }
@@ -96,12 +93,11 @@ void GLFWWindow::init_dispatcher() {
         double x = 0.0;
         double y = 0.0;
         glfwGetCursorPos(window, &x, &y);
-        ImGuiIO& io = ImGui::GetIO();
         if (action == GLFW_PRESS) {
-          dispatcher->enqueue_event(MouseButtonPressedEvent(*button, x, y, io.WantCaptureMouse));
+          dispatcher->enqueue_event(MouseButtonPressedEvent(*button, x, y));
         }
         if (action == GLFW_RELEASE) {
-          dispatcher->enqueue_event(MouseButtonReleasedEvent(*button, x, y, io.WantCaptureMouse));
+          dispatcher->enqueue_event(MouseButtonReleasedEvent(*button, x, y));
         }
       });
 
@@ -129,11 +125,6 @@ void GLFWWindow::set_window_size(int width, int height) {
   glfwSetWindowSize(glfw::glfw_win_ptr(glfw_window_ptr_), width, height);
   props_.width  = width;
   props_.height = height;
-}
-
-void GLFWWindow::set_vsync(bool /* vsync */) {  // NOLINT
-  // TODO(migoox): add vsync switch support
-  util::not_impl_yet();
 }
 
 void GLFWWindow::set_fullscreen(bool /* fullscreen */) {  // NOLINT

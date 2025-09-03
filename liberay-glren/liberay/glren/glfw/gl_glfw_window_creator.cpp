@@ -68,9 +68,13 @@ Result<std::unique_ptr<Window>, Error> OpenGLGLFWWindowCreator::create_window(co
   util::Logger::info("\tMax uniform block size: {}", max_uniform_block_size);
   util::Logger::info("\tMax uniform block bindings: {}", max_uniform_block_bindings);
 
-  return std::unique_ptr<Window>(new GLFWWindow(window, props, rendering_api(), window_api()));
+  return std::unique_ptr<Window>(new GLFWWindow(window, props, window_api()));
 }
 
-OpenGLGLFWWindowCreator::~OpenGLGLFWWindowCreator() { glfwTerminate(); }
+void OpenGLGLFWWindowCreator::terminate() {
+  util::Logger::info("Terminating GLFW backend...");
+  glfwTerminate();
+  util::Logger::succ("Successfully terminated GLFW backend");
+}
 
 }  // namespace eray::os

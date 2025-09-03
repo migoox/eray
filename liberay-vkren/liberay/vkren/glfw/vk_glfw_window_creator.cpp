@@ -45,9 +45,13 @@ Result<std::unique_ptr<Window>, Error> VulkanGLFWWindowCreator::create_window(co
     });
   }
 
-  return std::unique_ptr<Window>(new GLFWWindow(window, props, rendering_api(), window_api()));
+  return std::unique_ptr<Window>(new GLFWWindow(window, props, window_api()));
 }
 
-VulkanGLFWWindowCreator::~VulkanGLFWWindowCreator() { glfwTerminate(); }
+void VulkanGLFWWindowCreator::terminate() {
+  util::Logger::info("Terminating GLFW backend...");
+  glfwTerminate();
+  util::Logger::succ("Successfully terminated GLFW backend");
+}
 
 }  // namespace eray::os

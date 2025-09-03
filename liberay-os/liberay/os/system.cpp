@@ -78,4 +78,6 @@ std::string System::path_to_utf8str(const std::filesystem::path& path) { return 
 
 std::filesystem::path System::utf8str_to_path(util::zstring_view str_path) { return util::utf8str_to_path(str_path); }
 
+void System::terminate() { window_creator_->terminate(); }
+
 }  // namespace eray::os

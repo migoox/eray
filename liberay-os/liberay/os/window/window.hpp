@@ -1,6 +1,5 @@
 #pragma once
 
-#include <liberay/os/imgui_backend.hpp>
 #include <liberay/os/rendering_api.hpp>
 #include <liberay/os/window/events/event.hpp>
 #include <liberay/os/window/input_codes.hpp>
@@ -48,9 +47,6 @@ class Window {
    */
   Dimensions window_size() const { return {.width = props_.width, .height = props_.height}; }
   virtual void set_window_size(int width, int height) = 0;
-
-  bool vsync() const { return props_.vsync; }
-  virtual void set_vsync(bool vsync) = 0;
 
   bool fullscreen() const { return props_.fullscreen; }
   virtual void set_fullscreen(bool fullscreen) = 0;

@@ -12,12 +12,14 @@ class VulkanGLFWWindowCreator : public IWindowCreator {
   VulkanGLFWWindowCreator() = default;
   ERAY_DELETE_COPY_AND_MOVE(VulkanGLFWWindowCreator)
 
-  ~VulkanGLFWWindowCreator() override;
+  ~VulkanGLFWWindowCreator() override = default;
 
   [[nodiscard]] static Result<std::unique_ptr<IWindowCreator>, Error> create();
   [[nodiscard]] Result<std::unique_ptr<Window>, Error> create_window(const WindowProperties& props) override;
   [[nodiscard]] RenderingAPI rendering_api() override { return RenderingAPI::Vulkan; }
   [[nodiscard]] WindowAPI window_api() override { return WindowAPI::GLFW; }
+
+  void terminate() final;
 };
 
 }  // namespace eray::os
