@@ -1,7 +1,10 @@
+#include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
 
 #include <algorithm>
 #include <expected>
+#include <liberay/os/window/glfw/glfw_window.hpp>
+#include <liberay/os/window_api.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/try.hpp>
 #include <liberay/vkren/device.hpp>
@@ -16,6 +19,40 @@
 #include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
+
+Device::CreateInfo Device::CreateInfo::DesktopProfile::get(const eray::os::Window& window) noexcept {
+  if (window.window_api() != eray::os::WindowAPI::GLFW) {
+    eray::util::panic("Renderer supports GLFW only, but {} has been provided",
+                      os::kWindowingAPIName[window.window_api()]);
+  }
+
+  auto* window_handle = reinterpret_cast<GLFWwindow*>(window.win_handle());
+
+  // == Global Extensions ============================================================================================
+  auto required_global_extensions = std::vector<const char*>();
+  {
+    uint32_t glfw_extensions_count = 0;
+    if (auto* glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extensions_count)) {
+      required_global_extensions = std::vector<const char*>(glfw_extensions, glfw_extensions + glfw_extensions_count);
+      eray::util::Logger::info("{}", required_global_extensions);
+    } else {
+      eray::util::panic("Could not get required instance extensions from GLFW");
+    }
+  }
+
+  // == Surface Creator ==============================================================================================
+  auto surface_creator = [window_handle](const vk::raii::Instance& instance) -> std::optional<vk::raii::SurfaceKHR> {
+    VkSurfaceKHR surface{};
+    if (glfwCreateWindowSurface(*instance, window_handle, nullptr, &surface)) {
+      eray::util::Logger::info("Could not create a window surface");
+      return std::nullopt;
+    }
+
+    return vk::raii::SurfaceKHR(instance, surface);
+  };
+
+  return get(surface_creator, required_global_extensions);
+}
 
 Device::CreateInfo Device::CreateInfo::DesktopProfile::get(
     const SurfaceCreator& surface_creator_func, std::span<const char* const> required_global_extensions) noexcept {
@@ -101,9 +138,9 @@ Result<void, Error> Device::create_instance(vk::raii::Context& ctx, const Create
   // == Additional extensions ==========================================================================================
 
   // Check if the requested extensions are supported by the Vulkan implementation.
-  auto extensions_props  = ctx.enumerateInstanceExtensionProperties();
-  auto global_extensions = get_global_extensions(info);
-  for (const auto& ext : global_extensions) {
+  auto extensions_props = ctx.enumerateInstanceExtensionProperties();
+  auto glob_extensions  = global_extensions(info);
+  for (const auto& ext : glob_extensions) {
     if (std::ranges::none_of(extensions_props, [ext_name = std::string_view(ext)](const auto& prop) {
           return std::string_view(prop.extensionName) == ext_name;
         })) {
@@ -136,8 +173,8 @@ Result<void, Error> Device::create_instance(vk::raii::Context& ctx, const Create
       .pApplicationInfo        = &info.app_info,
       .enabledLayerCount       = static_cast<uint32_t>(info.validation_layers.size()),
       .ppEnabledLayerNames     = info.validation_layers.data(),
-      .enabledExtensionCount   = static_cast<uint32_t>(global_extensions.size()),
-      .ppEnabledExtensionNames = global_extensions.data(),
+      .enabledExtensionCount   = static_cast<uint32_t>(glob_extensions.size()),
+      .ppEnabledExtensionNames = glob_extensions.data(),
   };
 
   auto vp_instance_info                    = VpInstanceCreateInfo{};
@@ -280,7 +317,7 @@ Result<void, Error> Device::pick_physical_device(const CreateInfo& info) noexcep
   return {};
 }
 
-vk::SampleCountFlagBits Device::get_max_usable_sample_count() const {
+vk::SampleCountFlagBits Device::max_usable_sample_count() const {
   auto props  = physical_device_.getProperties();
   auto counts = props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
 
@@ -466,7 +503,7 @@ Result<void, Error> Device::create_command_pool() noexcept {
   return {};
 }
 
-std::vector<const char*> Device::get_global_extensions(const CreateInfo& info) noexcept {
+std::vector<const char*> Device::global_extensions(const CreateInfo& info) noexcept {
   auto result = std::vector<const char*>(info.global_extensions.begin(), info.global_extensions.end());
 
   if (!info.validation_layers.empty()) {

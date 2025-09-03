@@ -1,3 +1,4 @@
+#include <liberay/os/rendering_api.hpp>
 #include <liberay/util/logger.hpp>
 #include <version/version.hpp>
 

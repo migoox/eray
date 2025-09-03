@@ -35,7 +35,7 @@ void GLSLShader::set_ext_defi(std::string_view ext_defi_name, std::string&& defi
 
 bool GLSLShader::is_glsl_ready() const { return ext_defi_contents_.size() == ext_defi_names_.size(); }
 
-const std::string& GLSLShader::get_glsl() const {
+const std::string& GLSLShader::glsl() const {
   if (!is_dirty_) {
     return glsl_;
   }
@@ -55,7 +55,7 @@ const std::string& GLSLShader::get_glsl() const {
   is_dirty_ = false;
   return glsl_;
 }
-std::expected<ShaderType, GLSLShaderManager::LoadingError> GLSLShaderManager::get_sh_type(
+std::expected<ShaderType, GLSLShaderManager::LoadingError> GLSLShaderManager::sh_type(
     const std::filesystem::path& path) {
   auto file_ext = path.extension().string();
   auto sh_type  = kShaderTypeToExtensions.from_value(file_ext);
@@ -153,8 +153,8 @@ std::expected<void, GLSLShaderManager::LoadingError> GLSLShaderManager::process_
     return std::unexpected(res.error());
   }
 
-  content.append(res->get().get_raw());
-  defi_names.insert(res->get().get_ext_defi_names().begin(), res->get().get_ext_defi_names().end());
+  content.append(res->get().raw());
+  defi_names.insert(res->get().ext_defi_names().begin(), res->get().ext_defi_names().end());
 
   return {};
 }
@@ -224,7 +224,7 @@ std::expected<GLSLShader, GLSLShaderManager::LoadingError> GLSLShaderManager::lo
     const std::filesystem::path& path) {
   util::Logger::info("Loading a shader with path \"{}\"...", path.string());
 
-  TRY_UNWRAP_DEFINE(sh_type, get_sh_type(path))
+  TRY_UNWRAP_DEFINE(sh_type, sh_type(path))
   TRY_UNWRAP_DEFINE(content, load_content(path))
 
   auto lines = util::make_lines_view(content) | std::views::enumerate;

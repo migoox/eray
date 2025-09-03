@@ -3,59 +3,47 @@
 #include <liberay/os/imgui_backend.hpp>
 #include <liberay/os/window/window.hpp>
 #include <liberay/os/window/window_props.hpp>
+#include <liberay/os/window_api.hpp>
 #include <liberay/util/ruleof.hpp>
-#include <memory>
 
 namespace eray::os {
-
-class GLFWWindowBackend;
 
 class GLFWWindow final : public Window {
  public:
   GLFWWindow() = delete;
+  GLFWWindow(void* glfw_window_ptr, const WindowProperties& props, RenderingAPI rendering_api, WindowAPI window_api);
   ERAY_DELETE_COPY_AND_MOVE(GLFWWindow)
-
   ~GLFWWindow() final;
 
-  ImGuiBackend& imgui() final { return *imgui_; }
-
-  void update() final;
+  void poll_events() final;
 
   void set_title(util::zstring_view title) final;
-
-  void set_pos(math::Vec2i pos) final;
-
-  void set_size(math::Vec2i size) final;
-
+  void set_window_size(int width, int height) final;
   void set_vsync(bool vsync) final;
-
   void set_fullscreen(bool fullscreen) final;
 
-  math::Vec2d mouse_pos() const final;
-  math::Vec2d mouse_pos_ndc() const final;
+  Dimensions framebuffer_size() const final;
+  MousePosition mouse_pos() const final;
 
-  RenderingAPI rendering_api() const final { return driver_; }
+  WindowAPI window_api() const final { return window_api_; }
 
   bool is_btn_held(KeyCode code) final;
   bool is_mouse_btn_held(MouseBtnCode code) final;
 
   void set_mouse_cursor_mode(CursorMode cursor_mode) final;
-  CursorMode get_mouse_cursor_mode() final;
+  CursorMode mouse_cursor_mode() final;
 
   bool should_close() const final;
 
+  void* win_handle() const final { return glfw_window_ptr_; }
+
  private:
-  friend GLFWWindowBackend;
-
-  explicit GLFWWindow(void* glfw_window_ptr, WindowProperties props, RenderingAPI driver,
-                      std::unique_ptr<ImGuiBackend> imgui);
-
   void init_dispatcher();
 
  private:
   void* glfw_window_ptr_;
-  RenderingAPI driver_;
-  std::unique_ptr<ImGuiBackend> imgui_;
+  RenderingAPI rendering_api_;
+  WindowAPI window_api_;
 };
 
 }  // namespace eray::os

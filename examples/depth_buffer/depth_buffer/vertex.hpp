@@ -14,7 +14,7 @@ struct Vertex {
   Vec3 color;
   Vec2 tex_coord;
 
-  static vk::VertexInputBindingDescription get_binding_desc() {
+  static vk::VertexInputBindingDescription binding_desc() {
     return vk::VertexInputBindingDescription{
         // Index of the binding in the array of bindings
         .binding = 0,
@@ -28,7 +28,7 @@ struct Vertex {
     };
   }
 
-  static auto get_attribs_desc() {
+  static auto attribs_desc() {
     return std::array{
         vk::VertexInputAttributeDescription{
             // References the location directive of the input in the vertex shader
@@ -86,7 +86,7 @@ struct VertexBuffer {
     };
   }
 
-  vk::BufferCreateInfo get_create_info(vk::SharingMode sharing_mode) const {
+  vk::BufferCreateInfo create_info(vk::SharingMode sharing_mode) const {
     return vk::BufferCreateInfo{
         // Flags configure sparse buffer memory
         .flags = {},

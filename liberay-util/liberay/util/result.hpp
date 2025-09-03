@@ -18,10 +18,8 @@ struct ResultFmtWithLoc {
 };
 
 template <typename TLogger, typename TError>
-concept CResultLogger = requires(std::source_location loc, const TError& err, zstring_view msg) {
-  TLogger::log_panic(loc, err);
-  TLogger::log_panic(loc, err, msg);
-};
+concept CResultLogger =
+    requires(std::source_location loc, const TError& err, zstring_view msg) { TLogger::log_panic(loc, err, msg); };
 
 template <typename TType, typename TError, CResultLogger<TError> TResultLogger>
 struct ResultBase : public std::expected<TType, TError> {

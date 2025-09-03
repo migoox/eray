@@ -324,7 +324,7 @@ class DepthBufferApplication {
     int height{};
     glfwGetFramebufferSize(window_, &width, &height);
     swap_chain_ = vkren::SwapChain::create(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                           device_.get_max_usable_sample_count())
+                                           device_.max_usable_sample_count())
                       .or_panic("Could not create a swap chain");
   }
 
@@ -397,8 +397,8 @@ class DepthBufferApplication {
     // - Bindings: spacing between data and whether the data is per-vertex or per-instance,
     // - Attribute descriptions: type of the attributes passed to the vertex shader, which binding to load them from and
     // at which offset
-    auto binding_desc       = Vertex::get_binding_desc();
-    auto attribs_desc       = Vertex::get_attribs_desc();
+    auto binding_desc       = Vertex::binding_desc();
+    auto attribs_desc       = Vertex::attribs_desc();
     auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
         .vertexBindingDescriptionCount   = 1,
         .pVertexBindingDescriptions      = &binding_desc,  //

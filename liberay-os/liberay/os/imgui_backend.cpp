@@ -36,7 +36,7 @@ void ImGuiGLFWBackend::init_driver(void* window) {
   if (driver_ == RenderingAPI::OpenGL) {
     ImGui_ImplGlfw_InitForOpenGL(reinterpret_cast<GLFWwindow*>(window), true);
     ImGui_ImplOpenGL3_Init(glsl_version);
-  } else if (driver_ == RenderingAPI::Vulcan) {  // NOLINT
+  } else if (driver_ == RenderingAPI::Vulkan) {  // NOLINT
     // TODO(migoox): add vulcan integration
     // ImGui_ImplGlfw_InitForVulkan(reinterpret_cast<GLFWwindow*>(window), true);
     // ImGui_ImplVulcan_Init(glsl_version);
@@ -56,7 +56,7 @@ void ImGuiGLFWBackend::generate_draw_data() { ImGui::Render(); }
 void ImGuiGLFWBackend::render_draw_data() {
   if (driver_ == RenderingAPI::OpenGL) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-  } else if (driver_ == RenderingAPI::Vulcan) {
+  } else if (driver_ == RenderingAPI::Vulkan) {
     // TODO(migoox): add vulcan integration
   }
 }
@@ -67,7 +67,7 @@ ImGuiGLFWBackend::~ImGuiGLFWBackend() {
   ImGui::SaveIniSettingsToDisk(path.c_str());
   if (driver_ == RenderingAPI::OpenGL) {
     ImGui_ImplOpenGL3_Shutdown();
-  } else if (driver_ == RenderingAPI::Vulcan) {
+  } else if (driver_ == RenderingAPI::Vulkan) {
     // TODO(migoox): add vulcan integration
   }
   ImGui_ImplGlfw_Shutdown();

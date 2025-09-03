@@ -22,7 +22,8 @@ enum class WindowEventType : uint8_t {
   MouseScrolled       = 9,
   MouseEntered        = 10,
   MouseLeft           = 11,
-  _Count              = 12,  // NOLINT
+  FramebufferResized  = 12,
+  _Count              = 13,  // NOLINT
 };
 
 constexpr std::size_t kWindowEventCount = static_cast<std::size_t>(WindowEventType::_Count);
@@ -40,6 +41,7 @@ constexpr auto kWindowEventTypeName = util::StringEnumMapper<WindowEventType>({
     {WindowEventType::MouseScrolled, "MouseScrolledEvent"},
     {WindowEventType::MouseEntered, "MouseEnteredEvent"},
     {WindowEventType::MouseLeft, "MouseLeftEvent"},
+    {WindowEventType::FramebufferResized, "FramebufferResized"},
 });
 
 template <typename T>
@@ -170,6 +172,11 @@ class MouseLeft : public WindowEventBase<WindowEventType::MouseLeft> {
   MouseLeft() = default;
 };
 
+class FramebufferResizedEvent : public WindowEventBase<WindowEventType::FramebufferResized> {
+ public:
+  FramebufferResizedEvent() = default;
+};
+
 template <CWindowEvent TEvent>
 using EventCallback = std::function<bool(const TEvent&)>;
 
@@ -274,6 +281,6 @@ class WindowEventDispatcherBase {
 using WindowEventDispatcher =
     WindowEventDispatcherBase<KeyPressedEvent, KeyReleasedEvent, MouseButtonPressedEvent, MouseButtonReleasedEvent,
                               WindowClosedEvent, WindowResizedEvent, WindowFocusedEvent, WindowLostFocusEvent,
-                              WindowMovedEvent, MouseScrolledEvent, MouseEntered, MouseLeft>;
+                              WindowMovedEvent, MouseScrolledEvent, MouseEntered, MouseLeft, FramebufferResizedEvent>;
 
 }  // namespace eray::os
