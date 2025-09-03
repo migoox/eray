@@ -3,6 +3,7 @@
 #include <liberay/util/panic.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
+#include <liberay/vkren/device.hpp>
 #include <liberay/vkren/error.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
@@ -62,8 +63,8 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create(const Dev
   return ExclusiveBufferResource(std::move(*buffer_opt), std::move(*buffer_mem_opt), info.size_bytes, info.buff_usage,
                                  info.mem_properties, &device);
 }
-Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_staging_buffer(const Device& device,
-                                                                                      util::MemoryRegion src_region) {
+Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_staging(const Device& device,
+                                                                               util::MemoryRegion src_region) {
   auto staging_buff_opt =
       vkren::ExclusiveBufferResource::create(device, vkren::ExclusiveBufferResource::CreateInfo{
                                                          .size_bytes = src_region.size_bytes(),
@@ -83,8 +84,8 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_and_uploa
     util::panic("Region size and creation info size mismatch");
   }
 
-  auto staging_buffer = vkren::ExclusiveBufferResource::create_staging_buffer(device, src_region)
-                            .or_panic("Staging buffer creation failed");
+  auto staging_buffer =
+      vkren::ExclusiveBufferResource::create_staging(device, src_region).or_panic("Staging buffer creation failed");
   auto new_info = info;
   new_info.buff_usage |= vk::BufferUsageFlagBits::eTransferDst;
   auto result = vkren::ExclusiveBufferResource::create(device, new_info);
@@ -119,6 +120,113 @@ void ExclusiveBufferResource::copy_from(const vk::raii::Buffer& src_buff, vk::Bu
   auto cmd_cpy_buff = p_device_->begin_single_time_commands();
   cmd_cpy_buff.copyBuffer(src_buff, buffer_, cpy_info);
   p_device_->end_single_time_commands(cmd_cpy_buff);
+}
+
+Result<Buffer, Error> Buffer::create_staging(const Device& device, const util::MemoryRegion& src_region) {
+  VkBufferCreateInfo buf_create_info = {};
+  buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  buf_create_info.size               = src_region.size_bytes();
+  buf_create_info.usage              = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
+  alloc_create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+  VkBuffer buf        = nullptr;
+  VmaAllocation alloc = nullptr;
+  VmaAllocationInfo alloc_info;
+  vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
+
+  void* mapped_data = nullptr;
+  vmaMapMemory(device.allocator(), alloc, &mapped_data);
+  memcpy(mapped_data, src_region.data(), src_region.size_bytes());
+  vmaUnmapMemory(device.allocator(), alloc);
+
+  return Buffer{
+      .buffer       = buf,
+      .allocation   = alloc,
+      .alloc_info   = alloc_info,
+      ._p_device    = &device,
+      .size_bytes   = src_region.size_bytes(),
+      .transfer_src = true,
+  };
+}
+
+Result<Buffer, Error> Buffer::create_readback(const Device& device, vk::DeviceSize size_bytes) {
+  VkBufferCreateInfo buf_create_info = {};
+  buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  buf_create_info.size               = size_bytes;
+  buf_create_info.usage              = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
+  alloc_create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+  VkBuffer buf        = nullptr;
+  VmaAllocation alloc = nullptr;
+  VmaAllocationInfo alloc_info;
+  vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
+  return Buffer{
+      .buffer       = buf,
+      .allocation   = alloc,
+      .alloc_info   = alloc_info,
+      ._p_device    = &device,
+      .size_bytes   = size_bytes,
+      .transfer_src = true,
+  };
+}
+
+Buffer::~Buffer() {
+  if (buffer != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE) {
+    vmaDestroyBuffer(_p_device->allocator(), buffer, allocation);
+  }
+}
+
+Result<Buffer, Error> Buffer::create_gpu_local(const Device& device, vk::DeviceSize size_bytes,
+                                               vk::BufferUsageFlagBits usage) {
+  VkBufferCreateInfo buf_create_info = {};
+  buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  buf_create_info.size               = size_bytes;
+  buf_create_info.usage              = static_cast<VkBufferUsageFlags>(usage) | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  buf_create_info.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
+
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+  VkBuffer buf        = VK_NULL_HANDLE;
+  VmaAllocation alloc = VK_NULL_HANDLE;
+  VmaAllocationInfo alloc_info{};
+  VkResult res = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
+
+  if (res != VK_SUCCESS) {
+    return std::unexpected(Error{
+        .msg     = "Failed to create GPU-local buffer",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = vk::Result(res),
+    });
+  }
+
+  return Buffer{
+      .buffer       = buf,
+      .allocation   = alloc,
+      .alloc_info   = alloc_info,
+      ._p_device    = &device,
+      .size_bytes   = size_bytes,
+      .transfer_src = false,
+  };
+}
+
+Result<void, Error> Buffer::fill_via_staging_buffer(const util::MemoryRegion& src_region) const {
+  auto staging_buff = create_staging(*_p_device, src_region);
+  if (!staging_buff) {
+    return std::unexpected(staging_buff.error());
+  }
+
+  auto cmd_cpy_buff = _p_device->begin_single_time_commands();
+  cmd_cpy_buff.copyBuffer(staging_buff->buffer, buffer, vk::BufferCopy(0, 0, src_region.size_bytes()));
+  _p_device->end_single_time_commands(cmd_cpy_buff);
+
+  return {};
 }
 
 }  // namespace eray::vkren
