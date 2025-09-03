@@ -22,8 +22,17 @@ class GLObjectHandle {
 
   GLObjectHandle(GLObjectHandle&& other) noexcept : id_(other.id_) { other.id_ = 0; }
   GLObjectHandle& operator=(GLObjectHandle&& other) noexcept {
+    if (this == &other) {
+      return *this;
+    }
+
+    if (id_ != 0) {
+      DeleteFunc(id_);
+    }
+
     id_       = other.id_;
     other.id_ = 0;
+
     return *this;
   }
 
