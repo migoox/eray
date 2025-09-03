@@ -1,5 +1,6 @@
 #include <vulkan/vulkan_core.h>
 
+#include <cassert>
 #include <expected>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
@@ -136,7 +137,7 @@ Result<Buffer, Error> Buffer::create_staging_buffer(const Device& device, const 
   alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
   alloc_create_info.flags                   = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
-  VkBuffer buf        = nullptr;
+  VkBuffer buf        = VK_NULL_HANDLE;
   VmaAllocation alloc = nullptr;
   VmaAllocationInfo alloc_info;
   auto result = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
@@ -151,7 +152,6 @@ Result<Buffer, Error> Buffer::create_staging_buffer(const Device& device, const 
 
   return Buffer{
       ._buffer      = VMARaiiBuffer(device.allocator(), alloc, buf),
-      .alloc_info   = alloc_info,
       ._p_device    = &device,
       .size_bytes   = src_region.size_bytes(),
       .transfer_src = true,
@@ -171,7 +171,7 @@ Result<PersistentlyMappedBuffer, Error> Buffer::create_readback_buffer(const Dev
   alloc_create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
   VkBuffer buf        = VK_NULL_HANDLE;
-  VmaAllocation alloc = VK_NULL_HANDLE;
+  VmaAllocation alloc = nullptr;
   VmaAllocationInfo alloc_info{};
   VkResult res = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
   if (res != VK_SUCCESS) {
@@ -193,10 +193,9 @@ Result<PersistentlyMappedBuffer, Error> Buffer::create_readback_buffer(const Dev
       .buffer =
           Buffer{
               ._buffer      = VMARaiiBuffer(device.allocator(), alloc, buf),
-              .alloc_info   = alloc_info,
               ._p_device    = &device,
               .size_bytes   = size_bytes,
-              .transfer_src = true,
+              .transfer_src = false,
               .mappable     = true,
           },
       .mapped_data = alloc_info.pMappedData,
@@ -215,7 +214,7 @@ Result<Buffer, Error> Buffer::create_gpu_local_buffer(const Device& device, vk::
   alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
   VkBuffer buf        = VK_NULL_HANDLE;
-  VmaAllocation alloc = VK_NULL_HANDLE;
+  VmaAllocation alloc = nullptr;
   VmaAllocationInfo alloc_info{};
   VkResult res = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
   if (res != VK_SUCCESS) {
@@ -228,7 +227,6 @@ Result<Buffer, Error> Buffer::create_gpu_local_buffer(const Device& device, vk::
 
   return Buffer{
       ._buffer      = VMARaiiBuffer(device.allocator(), alloc, buf),
-      .alloc_info   = alloc_info,
       ._p_device    = &device,
       .size_bytes   = size_bytes,
       .transfer_src = false,
@@ -236,9 +234,8 @@ Result<Buffer, Error> Buffer::create_gpu_local_buffer(const Device& device, vk::
   };
 }
 
-Result<void, Error> Buffer::fill_via_staging_buffer(const util::MemoryRegion& src_region) const {
-  assert(src_region.size_bytes() == size_bytes);
-
+Result<void, Error> Buffer::write_via_staging_buffer(const util::MemoryRegion& src_region,
+                                                     vk::DeviceSize offset) const {
   auto staging_buff = create_staging_buffer(*_p_device, src_region);
   if (!staging_buff) {
     return std::unexpected(staging_buff.error());
@@ -246,7 +243,7 @@ Result<void, Error> Buffer::fill_via_staging_buffer(const util::MemoryRegion& sr
 
   auto cmd_cpy_buff = _p_device->begin_single_time_commands();
   cmd_cpy_buff.copyBuffer(staging_buff->_buffer._handle, _buffer._handle,
-                          vk::BufferCopy(0, 0, src_region.size_bytes()));
+                          vk::BufferCopy(0, offset, std::min(size_bytes, src_region.size_bytes())));
   _p_device->end_single_time_commands(cmd_cpy_buff);
 
   return {};
@@ -266,7 +263,7 @@ Result<Buffer, Error> Buffer::create_uniform_buffer(const Device& device, vk::De
                             VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
   VkBuffer buf        = VK_NULL_HANDLE;
-  VmaAllocation alloc = VK_NULL_HANDLE;
+  VmaAllocation alloc = nullptr;
   VmaAllocationInfo alloc_info{};
   VkResult res = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
 
@@ -286,7 +283,6 @@ Result<Buffer, Error> Buffer::create_uniform_buffer(const Device& device, vk::De
 
   return Buffer{
       ._buffer      = VMARaiiBuffer(device.allocator(), alloc, buf),
-      .alloc_info   = alloc_info,
       ._p_device    = &device,
       .size_bytes   = size_bytes,
       .transfer_src = false,
@@ -307,7 +303,7 @@ Result<Buffer, Error> Buffer::create_uniform_buffer(const Device& device, vk::De
   alloc_create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
   VkBuffer buf        = VK_NULL_HANDLE;
-  VmaAllocation alloc = VK_NULL_HANDLE;
+  VmaAllocation alloc = nullptr;
   VmaAllocationInfo alloc_info{};
   VkResult res = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
 
@@ -330,7 +326,6 @@ Result<Buffer, Error> Buffer::create_uniform_buffer(const Device& device, vk::De
       .buffer =
           Buffer{
               ._buffer      = VMARaiiBuffer(device.allocator(), alloc, buf),
-              .alloc_info   = alloc_info,
               ._p_device    = &device,
               .size_bytes   = size_bytes,
               .transfer_src = false,
@@ -340,12 +335,10 @@ Result<Buffer, Error> Buffer::create_uniform_buffer(const Device& device, vk::De
   };
 }
 
-Result<void, Error> Buffer::fill(const util::MemoryRegion& src_region) const {
-  assert(size_bytes == src_region.size_bytes());
-
+Result<void, Error> Buffer::write(const util::MemoryRegion& src_region, vk::DeviceSize offset) const {
   if (mappable) {
-    auto res = vmaCopyMemoryToAllocation(_p_device->allocator(), src_region.data(), _buffer._allocation, 0,
-                                         src_region.size_bytes());
+    auto res = vmaCopyMemoryToAllocation(_p_device->allocator(), src_region.data(), _buffer._allocation, offset,
+                                         std::min(src_region.size_bytes(), size_bytes));
 
     if (res != VK_SUCCESS) {
       return std::unexpected(Error{
@@ -355,10 +348,66 @@ Result<void, Error> Buffer::fill(const util::MemoryRegion& src_region) const {
       });
     }
   } else {
-    return fill_via_staging_buffer(src_region);
+    return write_via_staging_buffer(src_region, offset);
   }
 
   return {};
+}
+
+VmaAllocationInfo Buffer::alloc_info() const {
+  VmaAllocationInfo info;
+  vmaGetAllocationInfo(_buffer._allocator, _buffer._allocation, &info);
+  return info;
+}
+
+Result<void*, Error> Buffer::map() const {
+  if (!mappable) {
+    util::Logger::err("Buffer is not mappable, but map has been requested!");
+    return std::unexpected(Error{
+        .msg  = "Buffer is not mappable",
+        .code = ErrorCode::MemoryMappingNotSupported{},
+    });
+  }
+
+  auto alloc_info = this->alloc_info();
+  // If it’s already persistently mapped (created with VMA_ALLOCATION_CREATE_MAPPED_BIT),
+  // VMA provides a stable pointer here.
+  if (alloc_info.pMappedData) {
+    return alloc_info.pMappedData;
+  }
+
+  void* ptr    = nullptr;
+  VkResult res = vmaMapMemory(_p_device->allocator(), _buffer._allocation, &ptr);
+  if (res != VK_SUCCESS) {
+    util::Logger::err("Could map memory with VMA");
+    return std::unexpected(Error{
+        .msg     = "VMA mapping failed",
+        .code    = ErrorCode::MemoryMappingFailure{},
+        .vk_code = vk::Result(res),
+    });
+  }
+
+  return ptr;
+}
+
+void Buffer::unmap() const {
+  auto alloc_info = this->alloc_info();
+  // If it’s already persistently mapped (created with VMA_ALLOCATION_CREATE_MAPPED_BIT),
+  // VMA provides a stable pointer here.
+  if (alloc_info.pMappedData) {
+    return;
+  }
+
+  vmaUnmapMemory(_p_device->allocator(), _buffer._allocation);
+}
+
+std::optional<void*> Buffer::persistent_mapping() const {
+  auto info = this->alloc_info();
+  if (info.pMappedData == nullptr) {
+    return std::nullopt;
+  }
+
+  return info.pMappedData;
 }
 
 }  // namespace eray::vkren

@@ -102,7 +102,6 @@ struct PersistentlyMappedBuffer;
 
 struct Buffer {
   VMARaiiBuffer _buffer;
-  VmaAllocationInfo alloc_info;
   observer_ptr<const Device> _p_device;
   vk::DeviceSize size_bytes;
   bool transfer_src;
@@ -150,7 +149,7 @@ struct Buffer {
 
   /**
    * @brief For resources that you frequently write on CPU via mapped pointer and frequently read on GPU e.g. uniform
-   * buffer (also called "dynamic").
+   * buffer (also called "dynamic"). This buffer might not be persistently mapped.
    *
    * @param device
    * @param size_bytes
@@ -164,18 +163,51 @@ struct Buffer {
   /**
    * @brief Creates a temporary staging buffer and uses it to fill the buffer.
    *
+   * @param offset Represents the destination (GPU memory) offset. Zero by default.
    * @param src_region
    * @return Result<void, Error>
    */
-  Result<void, Error> fill_via_staging_buffer(const util::MemoryRegion& src_region) const;
+  Result<void, Error> write_via_staging_buffer(const util::MemoryRegion& src_region, vk::DeviceSize offset = 0) const;
 
   /**
    * @brief Fills the buffer. If the buffer is not `mappable` it will call `fill_via_staging_buffer()`.
    *
+   * @param offset Represents the destination (GPU memory) offset. Zero by default.
    * @param src_region
    * @return Result<void, Error>
    */
-  Result<void, Error> fill(const util::MemoryRegion& src_region) const;
+  Result<void, Error> write(const util::MemoryRegion& src_region, vk::DeviceSize offset = 0) const;
+
+  /**
+   * @brief Maps the buffer on demand. If the buffer is persistently mapped (VMA_ALLOCATION_CREATE_MAPPED_BIT) the
+   * function will just return the pointer to the mapping.
+   *
+   * @warning The buffer must be `mappable`, the assertion will fail otherwise.
+   *
+   * @return Result<void, Error>
+   */
+  Result<void*, Error> map() const;
+
+  /**
+   * @brief This function has no effect if the buffer is persistently mapped (VMA_ALLOCATION_CREATE_MAPPED_BIT).
+   *
+   */
+  void unmap() const;
+
+  /**
+   * @brief Returns VMA allocation info for the current buffer.
+   *
+   * @return VmaAllocationInfo
+   */
+  VmaAllocationInfo alloc_info() const;
+
+  /**
+   * @brief If buffer is persistently mapped this function returns valid void* ptr to the mapping. Returns std::nullopt
+   * otherwise.
+   *
+   * @return std::optional<void*>
+   */
+  std::optional<void*> persistent_mapping() const;
 
   vk::Buffer buffer() const { return _buffer._handle; }
 };

@@ -22,6 +22,8 @@ class ErrorCode {
   struct ValidationLayerNotSupported {};
   struct PhysicalDeviceNotSufficient {};
   struct SurfaceCreationFailure {};
+  struct MemoryMappingFailure {};
+  struct MemoryMappingNotSupported {};
 
   using Enum = std::variant<        //
       VulkanObjectCreationFailure,  //
@@ -31,7 +33,9 @@ class ErrorCode {
       ValidationLayerNotSupported,  //
       ProfileNotSupported,          //
       PhysicalDeviceNotSufficient,  //
-      SurfaceCreationFailure        //
+      SurfaceCreationFailure,       //
+      MemoryMappingFailure,         //
+      MemoryMappingNotSupported     //
       >;
 };
 
