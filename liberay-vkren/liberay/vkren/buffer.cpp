@@ -371,12 +371,6 @@ Result<void, Error> BufferResource::write(const util::MemoryRegion& src_region, 
   return {};
 }
 
-VmaAllocationInfo BufferResource::alloc_info() const {
-  VmaAllocationInfo info;
-  vmaGetAllocationInfo(_buffer._allocator, _buffer._allocation, &info);
-  return info;
-}
-
 Result<void*, Error> BufferResource::map() const {
   if (!mappable) {
     util::Logger::err("Buffer is not mappable, but map has been requested!");

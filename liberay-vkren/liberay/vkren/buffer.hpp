@@ -211,11 +211,11 @@ struct BufferResource {
    *
    * @return VmaAllocationInfo
    */
-  VmaAllocationInfo alloc_info() const;
+  VmaAllocationInfo alloc_info() const { return _buffer.alloc_info(); }
 
   /**
-   * @brief If buffer is mapped this function returns valid void* ptr to the mapping. Returns std::nullopt
-   * otherwise. This function works even if the buffer is persistently mapped.
+   * @brief If buffer is mapped this function returns valid void* ptr to the mapping and std::nullopt
+   * otherwise. If buffer is persistently mapped, this function returns valid void* ptr.
    *
    * @return std::optional<void*>
    */

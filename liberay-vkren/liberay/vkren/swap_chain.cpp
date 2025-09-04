@@ -216,21 +216,9 @@ Result<void, Error> SwapChain::create_image_views(const vkren::Device& device) n
 }
 
 Result<void, Error> SwapChain::create_color_buffer(const vkren::Device& device) noexcept {
-  auto img_info = vkren::ExclusiveImage2DResource::CreateInfo{
-      .size_bytes  = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
-      .image_usage = vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
-      .desc =
-          ImageDescription{
-              .format     = format_,
-              .width      = extent_.width,
-              .height     = extent_.height,
-              .mip_levels = 1,
-          },
-      .tiling         = vk::ImageTiling::eOptimal,
-      .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-      .sample_count   = msaa_sample_count_,
-  };
-  auto img_opt = ExclusiveImage2DResource::create(device, img_info);
+  auto img_opt = ImageResource::create_color_attachment_image(
+      device, ImageDescription::image2d_desc(color_attachment_format(), extent_.width, extent_.height),
+      msaa_sample_count_);
   if (!img_opt) {
     util::Logger::err("Could not create an image resource for color attachment");
     return std::unexpected(img_opt.error());
@@ -257,25 +245,13 @@ Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& 
   }
   depth_stencil_format_ = *format_opt;
 
-  auto img_info = vkren::ExclusiveImage2DResource::CreateInfo{
-      .size_bytes  = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
-      .image_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
-      .desc =
-          ImageDescription{
-              .format     = depth_stencil_format_,
-              .width      = extent_.width,
-              .height     = extent_.height,
-              .mip_levels = 1,
-          },
-      .tiling         = vk::ImageTiling::eOptimal,
-      .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-      .sample_count   = msaa_sample_count_,
-  };
-  auto img_opt = vkren::ExclusiveImage2DResource::create(device, img_info);
+  auto img_opt = ImageResource::create_depth_stencil_attachment_image(
+      device, ImageDescription::image2d_desc(depth_stencil_format_, extent_.width, extent_.height), msaa_sample_count_);
   if (!img_opt) {
     util::Logger::err("Could not create an image resource for depth buffer");
     return std::unexpected(img_opt.error());
   }
+
   depth_stencil_image_ = std::move(*img_opt);
 
   auto view_opt = depth_stencil_image_.create_image_view(vk::ImageAspectFlagBits::eDepth);

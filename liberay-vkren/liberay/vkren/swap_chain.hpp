@@ -113,16 +113,16 @@ class SwapChain {
    * @brief Handle to a color buffer attachment.
    *
    */
-  vkren::ExclusiveImage2DResource color_image_ = vkren::ExclusiveImage2DResource(nullptr);
-  vk::raii::ImageView color_image_view_        = nullptr;
+  vkren::ImageResource color_image_;
+  vk::raii::ImageView color_image_view_ = nullptr;
 
   /**
    * @brief Handle to a depth buffer attachment.
    *
    */
-  vkren::ExclusiveImage2DResource depth_stencil_image_ = vkren::ExclusiveImage2DResource(nullptr);
-  vk::raii::ImageView depth_stencil_image_view_        = nullptr;
-  vk::Format depth_stencil_format_                     = vk::Format::eUndefined;
+  vkren::ImageResource depth_stencil_image_;
+  vk::raii::ImageView depth_stencil_image_view_ = nullptr;
+  vk::Format depth_stencil_format_              = vk::Format::eUndefined;
 
   /**
    * @brief Describes the format e.g. RGBA.

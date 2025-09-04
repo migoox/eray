@@ -19,8 +19,8 @@ struct VMARaiiObject {
   VmaAllocation _allocation{};
   TVMAObject _handle{};
 
-  VMARaiiObject(VmaAllocator allocator, VmaAllocation allocation, TVMAObject buffer)
-      : _allocator(allocator), _allocation(allocation), _handle(buffer) {}
+  VMARaiiObject(VmaAllocator allocator, VmaAllocation allocation, TVMAObject handle)
+      : _allocator(allocator), _allocation(allocation), _handle(handle) {}
 
   VMARaiiObject(VMARaiiObject&& other) noexcept
       : _allocator(other._allocator), _allocation(other._allocation), _handle(other._handle) {
@@ -51,6 +51,12 @@ struct VMARaiiObject {
 
   VMARaiiObject(const VMARaiiObject& other)            = delete;
   VMARaiiObject& operator=(const VMARaiiObject& other) = delete;
+
+  VmaAllocationInfo alloc_info() const {
+    VmaAllocationInfo info;
+    vmaGetAllocationInfo(_allocator, _allocation, &info);
+    return info;
+  }
 
   ~VMARaiiObject() {
     if (_allocation != nullptr && _allocator != nullptr && _handle != VK_NULL_HANDLE) {

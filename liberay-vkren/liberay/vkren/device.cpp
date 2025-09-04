@@ -597,7 +597,7 @@ void Device::end_single_time_commands(vk::raii::CommandBuffer& cmd_buff) const {
                                 // submission command
 }
 
-void Device::transition_image_layout(const vk::raii::Image& image, const ImageDescription& image_desc,
+void Device::transition_image_layout(const vk::raii::Image& image, const ImageDescription& image_desc, bool mipmapping,
                                      vk::ImageLayout old_layout, vk::ImageLayout new_layout) const {
   auto cmd_buff = begin_single_time_commands();
   auto barrier  = vk::ImageMemoryBarrier{
@@ -610,7 +610,7 @@ void Device::transition_image_layout(const vk::raii::Image& image, const ImageDe
           vk::ImageSubresourceRange{
                .aspectMask     = vk::ImageAspectFlagBits::eColor,
                .baseMipLevel   = 0,
-               .levelCount     = image_desc.mip_levels,
+               .levelCount     = mipmapping ? image_desc.mip_levels() : 1,
                .baseArrayLayer = 0,
                .layerCount     = 1,
           },
@@ -641,108 +641,6 @@ void Device::transition_image_layout(const vk::raii::Image& image, const ImageDe
   cmd_buff.pipelineBarrier(src_stage, dst_stage, {}, {}, nullptr, barrier);
 
   end_single_time_commands(cmd_buff);
-}
-
-Result<void, Error> Device::generate_mipmaps(vk::raii::Image& image, const ImageDescription& image_desc) const {
-  auto format_props = physical_device_.getFormatProperties(image_desc.format);
-  if (image_desc.mip_levels > 1 &&
-      !(format_props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
-    util::Logger::err(
-        "Texture creation failed due to lack of support for linear blitting, so mipmaps could not be generated");
-    return std::unexpected(Error{
-        .msg  = "Mipmapping impossible, because linear blitting is not supported for the specified format",
-        .code = ErrorCode::PhysicalDeviceNotSufficient{},
-    });
-  }
-
-  auto cmd_buff = begin_single_time_commands();
-  auto barrier  = vk::ImageMemoryBarrier{
-       .srcAccessMask       = vk::AccessFlagBits::eTransferWrite,
-       .dstAccessMask       = vk::AccessFlagBits::eTransferRead,
-       .oldLayout           = vk::ImageLayout::eTransferDstOptimal,
-       .newLayout           = vk::ImageLayout::eTransferSrcOptimal,
-       .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-       .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-       .image               = image,
-       .subresourceRange =
-          vk::ImageSubresourceRange{
-               .aspectMask     = vk::ImageAspectFlagBits::eColor,
-               .levelCount     = 1,
-               .baseArrayLayer = 0,
-               .layerCount     = 1,
-          },
-  };
-
-  auto mip_width  = static_cast<int32_t>(image_desc.width);
-  auto mip_height = static_cast<int32_t>(image_desc.height);
-  for (uint32_t i = 1; i < image_desc.mip_levels; ++i) {
-    barrier.subresourceRange.baseMipLevel = i - 1;
-    barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
-    barrier.newLayout                     = vk::ImageLayout::eTransferSrcOptimal;
-    barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
-    barrier.dstAccessMask                 = vk::AccessFlagBits::eTransferRead;
-
-    cmd_buff.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, {}, {}, {},
-                             barrier);
-
-    auto offsets     = vk::ArrayWrapper1D<vk::Offset3D, 2>();
-    auto dst_offsets = vk::ArrayWrapper1D<vk::Offset3D, 2>();
-
-    offsets[0] = vk::Offset3D(0, 0, 0);
-    offsets[1] = vk::Offset3D(mip_width, mip_height, 1);
-
-    dst_offsets[0] = vk::Offset3D(0, 0, 0);
-    dst_offsets[1] = vk::Offset3D(mip_width > 1 ? mip_width / 2 : 1, mip_height > 1 ? mip_height / 2 : 1, 1);
-
-    auto blit = vk::ImageBlit{
-        .srcSubresource =
-            vk::ImageSubresourceLayers{
-                .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                .mipLevel       = i - 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-        .srcOffsets = offsets,
-        .dstSubresource =
-            vk::ImageSubresourceLayers{
-                .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                .mipLevel       = i,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-        .dstOffsets = dst_offsets,
-    };
-    cmd_buff.blitImage(image, vk::ImageLayout::eTransferSrcOptimal, image, vk::ImageLayout::eTransferDstOptimal, {blit},
-                       vk::Filter::eLinear);
-
-    barrier.oldLayout     = vk::ImageLayout::eTransferSrcOptimal;
-    barrier.newLayout     = vk::ImageLayout::eShaderReadOnlyOptimal;
-    barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
-    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-
-    cmd_buff.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {},
-                             {}, barrier);
-
-    if (mip_width > 1) {
-      mip_width /= 2;
-    }
-    if (mip_height > 1) {
-      mip_height /= 2;
-    }
-  };
-
-  barrier.subresourceRange.baseMipLevel = image_desc.mip_levels - 1;
-  barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
-  barrier.newLayout                     = vk::ImageLayout::eShaderReadOnlyOptimal;
-  barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
-  barrier.dstAccessMask                 = vk::AccessFlagBits::eShaderRead;
-
-  cmd_buff.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {},
-                           barrier);
-
-  end_single_time_commands(cmd_buff);
-
-  return {};
 }
 
 void Device::cleanup() { main_deletion_queue_.flush(); }

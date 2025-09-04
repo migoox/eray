@@ -4,11 +4,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <liberay/res/error.hpp>
+#include <liberay/util/memory_region.hpp>
 #include <liberay/util/result.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <vector>
-
-#include "liberay/util/memory_region.hpp"
 
 namespace eray::res {
 
@@ -98,7 +97,7 @@ class Image {
    * @return uint32_t mip levels count
    */
   uint32_t calculate_mip_levels() const;
-  static uint32_t calculate_mip_levels(uint32_t width, uint32_t height);
+  static uint32_t calculate_mip_levels(uint32_t width, uint32_t height, std::uint32_t depth = 1);
 
   /**
    * @brief CPU-sided mipmaps generation. Returns a buffer of packed images with LOD ranging 0 to mip levels - 1.

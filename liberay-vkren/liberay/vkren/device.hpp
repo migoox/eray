@@ -179,10 +179,8 @@ class Device {
    * @param old_layout
    * @param new_layout
    */
-  void transition_image_layout(const vk::raii::Image& image, const ImageDescription& image_desc,
+  void transition_image_layout(const vk::raii::Image& image, const ImageDescription& image_desc, bool mipmapping,
                                vk::ImageLayout old_layout, vk::ImageLayout new_layout) const;
-
-  Result<void, Error> generate_mipmaps(vk::raii::Image& image, const ImageDescription& image_desc) const;
 
   vk::SampleCountFlagBits max_usable_sample_count() const;
 

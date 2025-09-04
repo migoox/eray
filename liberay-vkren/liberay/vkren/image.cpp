@@ -1,354 +1,285 @@
+#include <vma/vk_mem_alloc.h>
+#include <vulkan/vulkan_core.h>
+
 #include <expected>
 #include <liberay/util/logger.hpp>
+#include <liberay/util/memory_region.hpp>
 #include <liberay/vkren/buffer.hpp>
+#include <liberay/vkren/device.hpp>
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/image_description.hpp>
+#include <liberay/vkren/image_format_helpers.hpp>
+#include <liberay/vkren/vma_raii_object.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
-Result<void, Error> ExclusiveImage2DResource::copy_mip_maps_data(const Device& device,
-                                                                 const ExclusiveImage2DResource& image,
-                                                                 util::MemoryRegion mipmaps_region) {
-  // Staging buffer
-  auto staging_buffer = vkren::ExclusiveBufferResource::create(  //
-      device,
-      vkren::ExclusiveBufferResource::CreateInfo{
-          .size_bytes     = mipmaps_region.size_bytes(),
-          .buff_usage     = vk::BufferUsageFlagBits::eTransferSrc,
-          .mem_properties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-      });
-  if (!staging_buffer) {
-    return std::unexpected(staging_buffer.error());
+Result<ImageResource, Error> ImageResource::create_attachment_image(const Device& device, ImageDescription desc,
+                                                                    vk::ImageUsageFlags usage,
+                                                                    vk::SampleCountFlagBits sample_count) {
+  auto image_type = vk::ImageType::e2D;
+  if (desc.depth > 1) {
+    image_type = vk::ImageType::e3D;
   }
-  staging_buffer->fill_data(mipmaps_region);
-
-  // Copy mip maps data
-  auto cmd_buff    = device.begin_single_time_commands();
-  auto copy_region = vk::BufferImageCopy{
-      .bufferOffset = 0,
-
-      // For example, you could have some padding bytes between rows of the image. Specifying 0 for both indicates that
-      // the pixels are simply tightly packed like they are in our case.
-      .bufferRowLength   = 0,
-      .bufferImageHeight = 0,
-
-      // The imageSubresource, imageOffset and imageExtent fields indicate to which part of the image we want to copy
-      // the pixels.
-
-      .imageSubresource =
-          vk::ImageSubresourceLayers{
-              .aspectMask     = vk::ImageAspectFlagBits::eColor,
-              .mipLevel       = 0,
-              .baseArrayLayer = 0,
-              .layerCount     = 1,
-          },
-      .imageOffset = vk::Offset3D{.x = 0, .y = 0, .z = 0},
-      .imageExtent =
-          vk::Extent3D{
-              .width  = image.desc_.width,
-              .height = image.desc_.height,
-              .depth  = 1,
-          },
-  };
-
-  auto mip_width  = static_cast<uint32_t>(image.desc_.width);
-  auto mip_height = static_cast<uint32_t>(image.desc_.height);
-  for (uint32_t i = 0; i < image.desc_.mip_levels; ++i) {
-    copy_region.imageSubresource.mipLevel = i;
-    copy_region.imageExtent               = vk::Extent3D{.width = mip_width, .height = mip_height, .depth = 1};
-    cmd_buff.copyBufferToImage(staging_buffer->buffer(), image.image_, vk::ImageLayout::eTransferDstOptimal,
-                               copy_region);
-
-    copy_region.bufferOffset += mip_width * mip_height * 4;
-    mip_width  = std::max(mip_width / 2U, 1U);
-    mip_height = std::max(mip_height / 2U, 1U);
-  }
-  device.end_single_time_commands(cmd_buff);
-  device.transition_image_layout(image.image_, image.desc_, vk::ImageLayout::eTransferDstOptimal,
-                                 vk::ImageLayout::eShaderReadOnlyOptimal);
-  return {};
-}
-
-Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture_from_mipmaps_buffer(
-    const Device& device, ImageDescription desc, util::MemoryRegion mipmaps_region) {
-  // Image object
-  auto txt_image = vkren::ExclusiveImage2DResource::create(
-      device, vkren::ExclusiveImage2DResource::CreateInfo{
-                  .size_bytes = mipmaps_region.size_bytes(),
-
-                  // We want to sample the image in the fragment shader
-                  // transfer src for mipmap generation
-                  .image_usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled |
-                                 vk::ImageUsageFlagBits::eTransferSrc,
-
-                  .desc = desc,
-
-                  // Texels are laid out in an implementation defined order for optimal access
-                  .tiling = vk::ImageTiling::eOptimal,
-
-                  .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-              });
-  if (!txt_image) {
-    return std::unexpected(txt_image.error());
-  }
-  device.transition_image_layout(txt_image->image_, txt_image->desc_, vk::ImageLayout::eUndefined,
-                                 vk::ImageLayout::eTransferDstOptimal);
-  if (auto result = copy_mip_maps_data(device, *txt_image, mipmaps_region); !result) {
-    std::unexpected(result.error());
-  }
-  return txt_image;
-}
-
-Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture(const Device& device,
-                                                                                 ImageDescription desc,
-                                                                                 util::MemoryRegion mipmaps_region) {
-  // Staging buffer
-  auto staging_buffer = vkren::ExclusiveBufferResource::create(  //
-      device,
-      vkren::ExclusiveBufferResource::CreateInfo{
-          .size_bytes     = mipmaps_region.size_bytes(),
-          .buff_usage     = vk::BufferUsageFlagBits::eTransferSrc,
-          .mem_properties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-      });
-  if (!staging_buffer) {
-    return std::unexpected(staging_buffer.error());
-  }
-
-  staging_buffer->fill_data(mipmaps_region);
-
-  // Image object
-  auto txt_image = vkren::ExclusiveImage2DResource::create(
-      device, vkren::ExclusiveImage2DResource::CreateInfo{
-                  .size_bytes = mipmaps_region.size_bytes(),
-
-                  // We want to sample the image in the fragment shader
-                  // transfer src for mipmap generation
-                  .image_usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled |
-                                 vk::ImageUsageFlagBits::eTransferSrc,
-
-                  .desc = desc,
-
-                  // Texels are laid out in an implementation defined order for optimal access
-                  .tiling = vk::ImageTiling::eOptimal,
-
-                  .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-              });
-  if (!txt_image) {
-    return std::unexpected(txt_image.error());
-  }
-
-  device.transition_image_layout(txt_image->image_, txt_image->desc_, vk::ImageLayout::eUndefined,
-                                 vk::ImageLayout::eTransferDstOptimal);
-  txt_image->copy_from(staging_buffer->buffer());
-  if (desc.mip_levels == 1) {
-    device.transition_image_layout(txt_image->image_, txt_image->desc_, vk::ImageLayout::eTransferDstOptimal,
-                                   vk::ImageLayout::eShaderReadOnlyOptimal);
-  } else {
-    if (auto result = device.generate_mipmaps(txt_image->image_, txt_image->desc_); !result) {
-      return std::unexpected(result.error());
-    }
-  }
-
-  return txt_image;
-}
-
-Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create_texture(const Device& device,
-                                                                                 const res::Image& image,
-                                                                                 bool generate_mipmaps) {
-  // Staging buffer
-  auto staging_buffer = vkren::ExclusiveBufferResource::create(  //
-      device,
-      vkren::ExclusiveBufferResource::CreateInfo{
-          .size_bytes     = image.size_bytes(),
-          .buff_usage     = vk::BufferUsageFlagBits::eTransferSrc,
-          .mem_properties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-      });
-  if (!staging_buffer) {
-    return std::unexpected(staging_buffer.error());
-  }
-  staging_buffer->fill_data(image.memory_region());
-
-  // Image object
-  auto txt_image = vkren::ExclusiveImage2DResource::create(
-      device, vkren::ExclusiveImage2DResource::CreateInfo{
-                  .size_bytes = image.size_bytes(),
-
-                  // We want to sample the image in the fragment shader
-                  // transfer src for mipmap generation
-                  .image_usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled |
-                                 vk::ImageUsageFlagBits::eTransferSrc,
-
-                  .desc =
-                      ImageDescription{
-                          .format     = vk::Format::eR8G8B8A8Srgb,
-                          .width      = image.width(),
-                          .height     = image.height(),
-                          .mip_levels = generate_mipmaps ? image.calculate_mip_levels() : 1,
-                      },
-
-                  // Texels are laid out in an implementation defined order for optimal access
-                  .tiling = vk::ImageTiling::eOptimal,
-
-                  .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-              });
-  if (!txt_image) {
-    return std::unexpected(txt_image.error());
-  }
-
-  device.transition_image_layout(txt_image->image_, txt_image->desc_, vk::ImageLayout::eUndefined,
-                                 vk::ImageLayout::eTransferDstOptimal);
-  txt_image->copy_from(staging_buffer->buffer());
-  if (generate_mipmaps) {
-    if (auto result = device.generate_mipmaps(txt_image->image_, txt_image->desc_); !result) {
-      if (result.error().has_code<ErrorCode::PhysicalDeviceNotSufficient>()) {
-        auto buff = image.generate_mipmaps_buffer();
-        if (auto cpy_result = copy_mip_maps_data(device, *txt_image, buff.memory_region()); !cpy_result) {
-          std::unexpected(cpy_result.error());
-        }
-      } else {
-        return std::unexpected(result.error());
-      }
-    }
-  } else {
-    device.transition_image_layout(txt_image->image_, txt_image->desc_, vk::ImageLayout::eTransferDstOptimal,
-                                   vk::ImageLayout::eShaderReadOnlyOptimal);
-  }
-
-  return txt_image;
-}
-
-Result<ExclusiveImage2DResource, Error> ExclusiveImage2DResource::create(const Device& device, const CreateInfo& info) {
-  // == Create Image Object ===========================================================================================
 
   auto image_info = vk::ImageCreateInfo{
-      .imageType   = vk::ImageType::e2D,
-      .format      = info.desc.format,
-      .extent      = vk::Extent3D{.width = info.desc.width, .height = info.desc.height, .depth = 1},
-      .mipLevels   = info.desc.mip_levels,
+      .sType       = vk::StructureType::eImageCreateInfo,
+      .imageType   = image_type,
+      .format      = desc.format,
+      .extent      = vk::Extent3D{.width = desc.width, .height = desc.height, .depth = desc.depth},
+      .mipLevels   = 1,
       .arrayLayers = 1,
-      .samples     = info.sample_count,
-      .tiling      = info.tiling,
-      .usage       = info.image_usage,
+      .samples     = sample_count,
+      .tiling      = vk::ImageTiling::eOptimal,
+      .usage       = usage,
       .sharingMode = vk::SharingMode::eExclusive,
   };
 
-  auto image_opt = device->createImage(image_info);
-  if (!image_opt) {
-    util::Logger::err("Could not create an image object: {}", vk::to_string(image_opt.error()));
+  auto alloc_create_info     = VmaAllocationCreateInfo{};
+  alloc_create_info.usage    = VMA_MEMORY_USAGE_AUTO;
+  alloc_create_info.flags    = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+  alloc_create_info.priority = 1.0F;
+
+  VkImage vkimg{};
+  VmaAllocation alloc{};
+  VmaAllocationInfo alloc_info;
+  auto result = vmaCreateImage(device.allocator(), reinterpret_cast<VkImageCreateInfo*>(&image_info),
+                               &alloc_create_info, &vkimg, &alloc, &alloc_info);
+  if (result != VK_SUCCESS) {
     return std::unexpected(Error{
-        .msg     = "Vulkan Image Creation failed",
+        .msg     = "Failed to create staging buffer",
         .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = image_opt.error(),
+        .vk_code = vk::Result(result),
     });
   }
 
-  // == Allocate Device Memory =========================================================================================
-  //
-  // The first step of allocating memory for the buffer is to query its memory requirements
-  // - size: describes the size required memory in bytes may differ from buffer_info.size
-  // - alignment: the offset in bytes where the buffer begins in the allocated region of memory, depends on usage and
-  //              flags
-  // - memoryTypeBits: Bit field of the memory types that are suitable for the buffer
-  //
-  auto mem_requirements = image_opt->getMemoryRequirements();
-  auto mem_type_opt     = device.find_mem_type(mem_requirements.memoryTypeBits, info.mem_properties);
-  if (!mem_type_opt) {
-    util::Logger::err("Could not find a memory type that meets the buffer memory requirements");
-    return std::unexpected(Error{
-        .msg     = "No memory type that meets the buffer memory requirements",
-        .code    = ErrorCode::NoSuitableMemoryTypeFailure{},
-        .vk_code = vk::Result::eSuccess,
-    });
-  }
-
-  auto alloc_info = vk::MemoryAllocateInfo{
-      .allocationSize  = mem_requirements.size,
-      .memoryTypeIndex = *mem_type_opt,
+  return ImageResource{
+      ._image      = VMARaiiImage(device.allocator(), alloc, vkimg),
+      .description = desc,
+      ._p_device   = &device,
+      .mipmapping  = false,
   };
-  auto image_mem_opt = device->allocateMemory(alloc_info);
-  if (!image_mem_opt) {
-    util::Logger::err("Could not allocate memory for a buffer object: {}", vk::to_string(image_mem_opt.error()));
-    return std::unexpected(Error{
-        .msg     = "Vulkan memory allocation failed",
-        .code    = ErrorCode::MemoryAllocationFailure{},
-        .vk_code = image_mem_opt.error(),
-    });
-  }
-  image_opt->bindMemory(*image_mem_opt, 0);
-
-  return ExclusiveImage2DResource(ImageDescription{info.desc}, std::move(*image_opt), std::move(*image_mem_opt),
-                                  &device, mem_requirements.size, info.image_usage, info.mem_properties);
 }
 
-void ExclusiveImage2DResource::copy_from(const vk::raii::Buffer& src_buff) const {
-  auto cmd_buff    = p_device_->begin_single_time_commands();
-  auto copy_region = vk::BufferImageCopy{
-      .bufferOffset = 0,
+Result<ImageResource, Error> ImageResource::create_texture(const Device& device, ImageDescription desc,
+                                                           bool mipmapping) {
+  assert(!helper::is_block_format(desc.format) && "Block Compression Formats are not supported yet!");
 
-      // For example, you could have some padding bytes between rows of the image. Specifying 0 for both indicates that
-      // the pixels are simply tightly packed like they are in our case.
-      .bufferRowLength   = 0,
-      .bufferImageHeight = 0,
+  auto image_type = vk::ImageType::e2D;
+  if (desc.depth > 1) {
+    image_type = vk::ImageType::e3D;
+  }
 
-      // The imageSubresource, imageOffset and imageExtent fields indicate to which part of the image we want to copy
-      // the pixels.
-
-      .imageSubresource =
-          vk::ImageSubresourceLayers{
-              .aspectMask     = vk::ImageAspectFlagBits::eColor,
-              .mipLevel       = 0,
-              .baseArrayLayer = 0,
-              .layerCount     = 1,
-          },
-      .imageOffset = vk::Offset3D{.x = 0, .y = 0, .z = 0},
-      .imageExtent =
-          vk::Extent3D{
-              .width  = desc_.width,
-              .height = desc_.height,
-              .depth  = 1,
-          },
+  auto image_info = vk::ImageCreateInfo{
+      .sType       = vk::StructureType::eImageCreateInfo,
+      .imageType   = image_type,
+      .format      = desc.format,
+      .extent      = vk::Extent3D{.width = desc.width, .height = desc.height, .depth = desc.depth},
+      .mipLevels   = mipmapping ? desc.mip_levels() : 1,
+      .arrayLayers = desc.array_layers,
+      .samples     = vk::SampleCountFlagBits::e1,
+      .tiling      = vk::ImageTiling::eOptimal,
+      .usage       = vk::ImageUsageFlagBits::eSampled,
+      .sharingMode = vk::SharingMode::eExclusive,
   };
-  cmd_buff.copyBufferToImage(src_buff, image_, vk::ImageLayout::eTransferDstOptimal, copy_region);
-  p_device_->end_single_time_commands(cmd_buff);
+
+  auto alloc_create_info     = VmaAllocationCreateInfo{};
+  alloc_create_info.usage    = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+  alloc_create_info.priority = 1.0F;
+
+  VkImage vkimg{};
+  VmaAllocation alloc{};
+  VmaAllocationInfo alloc_info;
+  auto result = vmaCreateImage(device.allocator(), reinterpret_cast<VkImageCreateInfo*>(&image_info),
+                               &alloc_create_info, &vkimg, &alloc, &alloc_info);
+  if (result != VK_SUCCESS) {
+    return std::unexpected(Error{
+        .msg     = "Failed to create staging buffer",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = vk::Result(result),
+    });
+  }
+
+  return ImageResource{
+      ._image      = VMARaiiImage(device.allocator(), alloc, vkimg),
+      .description = std::move(desc),
+      ._p_device   = &device,
+      .mipmapping  = mipmapping,
+  };
 }
 
-Result<vk::raii::ImageView, Error> ExclusiveImage2DResource::create_image_view(vk::ImageAspectFlags aspect_mask) {
-  auto img_create_info = vk::ImageViewCreateInfo{
-      .image    = image_,
-      .viewType = vk::ImageViewType::e2D,
-      .format   = desc_.format,
-      .components =
-          vk::ComponentMapping{
-              .r = vk::ComponentSwizzle::eIdentity,
-              .g = vk::ComponentSwizzle::eIdentity,
-              .b = vk::ComponentSwizzle::eIdentity,
-              .a = vk::ComponentSwizzle::eIdentity,
-          },
-      .subresourceRange =
+Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::ImageAspectFlags aspect_mask) const {
+  const auto full_size = find_full_size_bytes();
+  assert((mipmapping && src_region.size_bytes() == full_size) ||
+         src_region.size_bytes() == lod0_size_bytes() &&
+             "Expected either LOD=0 image level or full image with all of the mipmap levels");
+
+  // == Copy data from the staging buffer to the image layers ==========================================================
+  {
+    const auto copy_mip_levels = (mipmapping && src_region.size_bytes() == full_size) ? description.mip_levels() : 1;
+
+    auto staging_buffer = BufferResource::create_staging_buffer(*_p_device, src_region);
+    if (!staging_buffer) {
+      util::Logger::err("Could not upload a texture. Staging buffer creation failed!");
+      return std::unexpected(staging_buffer.error());
+    }
+
+    auto cmd_cpy_buff = _p_device->begin_single_time_commands();
+    auto mip_width    = description.width;
+    auto mip_height   = description.height;
+    auto mip_depth    = description.depth;
+    auto mip_offset   = 0U;
+    for (auto mip_level = 0U; mip_level < copy_mip_levels; ++mip_level) {
+      const auto mip_size_bytes =
+          helper::bytes_per_pixel(description.format) * mip_width * mip_height * mip_depth * description.array_layers;
+
+      for (auto layer = 0U; layer < description.array_layers; ++layer) {
+        const auto copy_region = vk::BufferImageCopy{
+            .bufferOffset = mip_offset,
+
+            // No padding bytes between rows of the image is assumed
+            .bufferRowLength   = 0,
+            .bufferImageHeight = 0,
+
+            .imageSubresource =
+                vk::ImageSubresourceLayers{
+                    .aspectMask     = aspect_mask,
+                    .mipLevel       = mip_level,
+                    .baseArrayLayer = 0,
+                    .layerCount     = description.array_layers,
+                },
+            .imageOffset = vk::Offset3D{.x = 0, .y = 0, .z = 0},
+            .imageExtent =
+                vk::Extent3D{
+                    .width  = description.width,
+                    .height = description.height,
+                    .depth  = description.depth,
+                },
+        };
+
+        cmd_cpy_buff.copyBufferToImage(staging_buffer->_buffer._handle, _image._handle,
+                                       vk::ImageLayout::eTransferDstOptimal, copy_region);
+      }
+      mip_offset += mip_size_bytes;
+      mip_width  = std::max(mip_width / 2U, 1U);
+      mip_height = std::max(mip_height / 2U, 1U);
+      mip_depth  = std::max(mip_depth / 2U, 1U);
+    }
+    _p_device->end_single_time_commands(cmd_cpy_buff);
+  }
+
+  // Return if mipmapping is disabled or the memory region already contained pregenerated mipmaps.
+  if (!mipmapping || src_region.size_bytes() == full_size) {
+    return {};
+  }
+
+  // == Generate mipmaps using linear blitting =========================================================================
+  auto format_props = _p_device->physical_device().getFormatProperties(description.format);
+  if (mipmapping && !(format_props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
+    util::Logger::err(
+        "Texture creation failed due to lack of support for linear blitting. Mipmaps could not be generated");
+    return std::unexpected(Error{
+        .msg  = "Mipmapping impossible, because linear blitting is not supported for the specified format",
+        .code = ErrorCode::PhysicalDeviceNotSufficient{},
+    });
+  }
+
+  auto cmd_buff = _p_device->begin_single_time_commands();
+  auto barrier  = vk::ImageMemoryBarrier{
+       .srcAccessMask       = vk::AccessFlagBits::eTransferWrite,
+       .dstAccessMask       = vk::AccessFlagBits::eTransferRead,
+       .oldLayout           = vk::ImageLayout::eTransferDstOptimal,
+       .newLayout           = vk::ImageLayout::eTransferSrcOptimal,
+       .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+       .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+       .image               = image(),
+       .subresourceRange =
           vk::ImageSubresourceRange{
-              .aspectMask     = aspect_mask,
-              .baseMipLevel   = 0,
-              .levelCount     = desc_.mip_levels,
-              .baseArrayLayer = 0,
-              .layerCount     = 1  //
+               .aspectMask     = aspect_mask,
+               .levelCount     = 1,
+               .baseArrayLayer = 0,
+               .layerCount     = description.array_layers,
           },
   };
 
-  auto img_view_opt = (*p_device_)->createImageView(img_create_info);
-  if (!img_view_opt) {
-    util::Logger::err("Could not create an image view: {}", vk::to_string(img_view_opt.error()));
-    return std::unexpected(Error{
-        .msg     = "Vulkan Image View creation failed",
-        .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = img_view_opt.error(),
-    });
+  auto mip_levels = description.mip_levels();
+  auto mip_width  = static_cast<int32_t>(description.width);
+  auto mip_height = static_cast<int32_t>(description.height);
+  auto mip_depth  = static_cast<int32_t>(description.depth);
+  for (uint32_t i = 1; i < mip_levels; ++i) {
+    barrier.subresourceRange.baseMipLevel = i - 1;
+    barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
+    barrier.newLayout                     = vk::ImageLayout::eTransferSrcOptimal;
+    barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
+    barrier.dstAccessMask                 = vk::AccessFlagBits::eTransferRead;
+
+    cmd_buff.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, {}, {}, {},
+                             barrier);
+
+    auto offsets     = vk::ArrayWrapper1D<vk::Offset3D, 2>();
+    auto dst_offsets = vk::ArrayWrapper1D<vk::Offset3D, 2>();
+
+    offsets[0] = vk::Offset3D(0, 0, 0);
+    offsets[1] = vk::Offset3D(mip_width, mip_height, mip_depth);
+
+    dst_offsets[0] = vk::Offset3D(0, 0, 0);
+    dst_offsets[1] = vk::Offset3D(mip_width > 1 ? mip_width / 2 : 1, mip_height > 1 ? mip_height / 2 : 1,
+                                  mip_depth > 1 ? mip_depth / 2 : 1);
+
+    auto blit = vk::ImageBlit{
+        .srcSubresource =
+            vk::ImageSubresourceLayers{
+                .aspectMask     = aspect_mask,
+                .mipLevel       = i - 1,
+                .baseArrayLayer = 0,
+                .layerCount     = description.array_layers,
+            },
+        .srcOffsets = offsets,
+        .dstSubresource =
+            vk::ImageSubresourceLayers{
+                .aspectMask     = aspect_mask,
+                .mipLevel       = i,
+                .baseArrayLayer = 0,
+                .layerCount     = description.array_layers,
+            },
+        .dstOffsets = dst_offsets,
+    };
+
+    cmd_buff.blitImage(image(), vk::ImageLayout::eTransferSrcOptimal, image(), vk::ImageLayout::eTransferDstOptimal,
+                       {blit}, vk::Filter::eLinear);
+
+    barrier.oldLayout     = vk::ImageLayout::eTransferSrcOptimal;
+    barrier.newLayout     = vk::ImageLayout::eShaderReadOnlyOptimal;
+    barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
+    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+    cmd_buff.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {},
+                             {}, barrier);
+
+    if (mip_width > 1) {
+      mip_width /= 2;
+    }
+    if (mip_height > 1) {
+      mip_height /= 2;
+    }
+    if (mip_depth > 1) {
+      mip_depth /= 2;
+    }
   }
 
-  return std::move(*img_view_opt);
+  barrier.subresourceRange.baseMipLevel = mip_levels - 1;
+  barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
+  barrier.newLayout                     = vk::ImageLayout::eShaderReadOnlyOptimal;
+  barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
+  barrier.dstAccessMask                 = vk::AccessFlagBits::eShaderRead;
+
+  cmd_buff.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {},
+                           barrier);
+
+  _p_device->end_single_time_commands(cmd_buff);
 }
 
 }  // namespace eray::vkren
