@@ -225,7 +225,7 @@ Result<void, Error> SwapChain::create_color_buffer(const vkren::Device& device) 
   }
   color_image_ = std::move(*img_opt);
 
-  auto view_opt = color_image_.create_image_view(vk::ImageAspectFlagBits::eColor);
+  auto view_opt = color_image_.create_image_view();
   if (!view_opt) {
     util::Logger::err("Could not create image view for color attachment");
     return std::unexpected(view_opt.error());
@@ -254,7 +254,7 @@ Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& 
 
   depth_stencil_image_ = std::move(*img_opt);
 
-  auto view_opt = depth_stencil_image_.create_image_view(vk::ImageAspectFlagBits::eDepth);
+  auto view_opt = depth_stencil_image_.create_image_view();
   if (!view_opt) {
     util::Logger::err("Could not create image view for depth buffer");
     return std::unexpected(view_opt.error());
