@@ -10,6 +10,7 @@
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/image_format_helpers.hpp>
+#include <liberay/vkren/vk_util.hpp>
 #include <liberay/vkren/vma_raii_object.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -55,15 +56,19 @@ Result<ImageResource, Error> ImageResource::create_attachment_image(const Device
   return ImageResource{
       ._image      = VMARaiiImage(device.allocator(), alloc, vkimg),
       .description = desc,
-      .aspect      = aspect,
       ._p_device   = &device,
       .mip_levels  = 1,
+      .aspect      = aspect,
+      .usage       = usage,
   };
 }
 
 Result<ImageResource, Error> ImageResource::create_texture(const Device& device, ImageDescription desc, bool mipmapping,
                                                            vk::ImageAspectFlags aspect) {
   assert(!helper::is_block_format(desc.format) && "Block Compression Formats are not supported yet!");
+
+  const auto usage =
+      vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc;
 
   auto image_info = vk::ImageCreateInfo{
       .sType       = vk::StructureType::eImageCreateInfo,
@@ -74,7 +79,7 @@ Result<ImageResource, Error> ImageResource::create_texture(const Device& device,
       .arrayLayers = desc.array_layers,
       .samples     = vk::SampleCountFlagBits::e1,
       .tiling      = vk::ImageTiling::eOptimal,
-      .usage       = vk::ImageUsageFlagBits::eSampled,
+      .usage       = usage,
       .sharingMode = vk::SharingMode::eExclusive,
   };
 
@@ -98,17 +103,19 @@ Result<ImageResource, Error> ImageResource::create_texture(const Device& device,
   return ImageResource{
       ._image      = VMARaiiImage(device.allocator(), alloc, vkimg),
       .description = std::move(desc),
-      .aspect      = aspect,
       ._p_device   = &device,
       .mip_levels  = mipmapping ? desc.find_mip_levels() : 1,
+      .aspect      = aspect,
+      .usage       = usage,
   };
 }
 
-Result<void, Error> ImageResource::upload(util::MemoryRegion src_region) const {
+Result<void, Error> ImageResource::upload(util::MemoryRegion src_region) {
   const auto full_size = find_full_size_bytes();
   assert((mipmapping_enabled() && src_region.size_bytes() == full_size) ||
          src_region.size_bytes() == lod0_size_bytes() &&
              "Expected either LOD=0 image level or full image with all of the mipmap levels");
+  assert((usage & vk::ImageUsageFlagBits::eTransferDst) && "Image is not a transfer destination, upload impossible");
 
   // == Copy data from the staging buffer to the image layers ==========================================================
   {
@@ -145,14 +152,10 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region) const {
                     .layerCount     = description.array_layers,
                 },
             .imageOffset = vk::Offset3D{.x = 0, .y = 0, .z = 0},
-            .imageExtent =
-                vk::Extent3D{
-                    .width  = description.width,
-                    .height = description.height,
-                    .depth  = description.depth,
-                },
+            .imageExtent = description.extent(),
         };
 
+        transition_layout(cmd_cpy_buff, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
         cmd_cpy_buff.copyBufferToImage(staging_buffer->_buffer._handle, _image._handle,
                                        vk::ImageLayout::eTransferDstOptimal, copy_region);
       }
@@ -183,35 +186,13 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region) const {
   }
 
   auto cmd_buff = _p_device->begin_single_time_commands();
-  auto barrier  = vk::ImageMemoryBarrier{
-       .srcAccessMask       = vk::AccessFlagBits::eTransferWrite,
-       .dstAccessMask       = vk::AccessFlagBits::eTransferRead,
-       .oldLayout           = vk::ImageLayout::eTransferDstOptimal,
-       .newLayout           = vk::ImageLayout::eTransferSrcOptimal,
-       .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-       .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-       .image               = image(),
-       .subresourceRange =
-          vk::ImageSubresourceRange{
-               .aspectMask     = aspect,
-               .levelCount     = 1,
-               .baseArrayLayer = 0,
-               .layerCount     = description.array_layers,
-          },
-  };
 
   auto mip_width  = static_cast<int32_t>(description.width);
   auto mip_height = static_cast<int32_t>(description.height);
   auto mip_depth  = static_cast<int32_t>(description.depth);
   for (uint32_t i = 1; i < mip_levels; ++i) {
-    barrier.subresourceRange.baseMipLevel = i - 1;
-    barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
-    barrier.newLayout                     = vk::ImageLayout::eTransferSrcOptimal;
-    barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
-    barrier.dstAccessMask                 = vk::AccessFlagBits::eTransferRead;
-
-    cmd_buff.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, {}, {}, {},
-                             barrier);
+    transition_mip_level_layout(cmd_buff, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal,
+                                i - 1);
 
     auto offsets     = vk::ArrayWrapper1D<vk::Offset3D, 2>();
     auto dst_offsets = vk::ArrayWrapper1D<vk::Offset3D, 2>();
@@ -245,13 +226,8 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region) const {
     cmd_buff.blitImage(image(), vk::ImageLayout::eTransferSrcOptimal, image(), vk::ImageLayout::eTransferDstOptimal,
                        {blit}, vk::Filter::eLinear);
 
-    barrier.oldLayout     = vk::ImageLayout::eTransferSrcOptimal;
-    barrier.newLayout     = vk::ImageLayout::eShaderReadOnlyOptimal;
-    barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
-    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-
-    cmd_buff.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {},
-                             {}, barrier);
+    transition_mip_level_layout(cmd_buff, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                                i - 1);
 
     if (mip_width > 1) {
       mip_width /= 2;
@@ -264,14 +240,8 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region) const {
     }
   }
 
-  barrier.subresourceRange.baseMipLevel = mip_levels - 1;
-  barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
-  barrier.newLayout                     = vk::ImageLayout::eShaderReadOnlyOptimal;
-  barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
-  barrier.dstAccessMask                 = vk::AccessFlagBits::eShaderRead;
-
-  cmd_buff.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {},
-                           barrier);
+  transition_mip_level_layout(cmd_buff, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                              mip_levels - 1);
 
   _p_device->end_single_time_commands(cmd_buff);
 
@@ -318,6 +288,32 @@ Result<vk::raii::ImageView, Error> ImageResource::create_image_view() const {
     return create_image_view(vk::ImageViewType::e2D);
   }
   return create_image_view(vk::ImageViewType::e3D);
+}
+
+void ImageResource::transition_layout(vk::CommandBuffer cmd, vk::ImageLayout current_layout,
+                                      vk::ImageLayout new_layout) {
+  vk_util::transition_image_barrier(cmd, image(),
+                                    vk::ImageSubresourceRange{
+                                        .aspectMask     = aspect,
+                                        .baseMipLevel   = 0,
+                                        .levelCount     = mip_levels,
+                                        .baseArrayLayer = 0,
+                                        .layerCount     = description.array_layers,
+                                    },
+                                    current_layout, new_layout);
+}
+
+void ImageResource::transition_mip_level_layout(vk::CommandBuffer cmd, vk::ImageLayout current_layout,
+                                                vk::ImageLayout new_layout, uint32_t base_level, uint32_t level_count) {
+  vk_util::transition_image_barrier(cmd, image(),
+                                    vk::ImageSubresourceRange{
+                                        .aspectMask     = aspect,
+                                        .baseMipLevel   = base_level,
+                                        .levelCount     = level_count,
+                                        .baseArrayLayer = 0,
+                                        .layerCount     = description.array_layers,
+                                    },
+                                    current_layout, new_layout);
 }
 
 }  // namespace eray::vkren

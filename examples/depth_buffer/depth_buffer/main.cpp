@@ -34,6 +34,8 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
+#include "liberay/vkren/image_description.hpp"
+
 struct GLFWWindowCreationFailure {};
 
 namespace vkren = eray::vkren;
@@ -693,10 +695,9 @@ class DepthBufferApplication {
     auto img = eray::res::Image::load_from_path(eray::os::System::executable_dir() / "assets" / "cad.jpeg")
                    .or_panic("cad is not there :(");
     // Image
-    txt_image_ = eray::vkren::ExclusiveImage2DResource::create_texture(device_, img)
+    txt_image_ = vkren::ImageResource::create_texture(device_, vkren::ImageDescription::from(img))
                      .or_panic("Could not create a texture image");
-
-    // Image View
+    txt_image_.upload(img.memory_region()).or_panic("Could not upload the image");
     txt_view_ = txt_image_.create_image_view().or_panic("Could not create the image view");
 
     // Image Sampler
@@ -986,7 +987,6 @@ class DepthBufferApplication {
 
     graphics_command_buffers_[frame_index].endRendering();
 
-    // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
     transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
         .image_index     = image_index,
         .frame_index     = frame_index,
@@ -1197,9 +1197,9 @@ class DepthBufferApplication {
   vk::raii::DescriptorPool descriptor_pool_ = nullptr;
   std::vector<vk::raii::DescriptorSet> compute_descriptor_sets_;
 
-  eray::vkren::ExclusiveImage2DResource txt_image_ = vkren::ExclusiveImage2DResource(nullptr);
-  vk::raii::ImageView txt_view_                    = nullptr;
-  vk::raii::Sampler txt_sampler_                   = nullptr;
+  vkren::ImageResource txt_image_;
+  vk::raii::ImageView txt_view_  = nullptr;
+  vk::raii::Sampler txt_sampler_ = nullptr;
 
   /**
    * @brief GLFW window pointer.

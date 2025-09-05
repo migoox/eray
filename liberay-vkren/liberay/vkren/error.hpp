@@ -24,6 +24,7 @@ class ErrorCode {
   struct SurfaceCreationFailure {};
   struct MemoryMappingFailure {};
   struct MemoryMappingNotSupported {};
+  struct NotATransferDestination {};
 
   using Enum = std::variant<        //
       VulkanObjectCreationFailure,  //

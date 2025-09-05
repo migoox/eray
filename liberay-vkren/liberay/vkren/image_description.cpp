@@ -59,4 +59,14 @@ vk::DeviceSize ImageDescription::find_full_size_bytes() const {
   assert(false && "At least one of the values: array_layers, depth must be equal 1!");
 }
 
+ImageDescription ImageDescription::from(const res::Image& image) {
+  return ImageDescription{
+      .format       = vk::Format::eR8G8B8A8Srgb,
+      .width        = image.width(),
+      .height       = image.height(),
+      .depth        = 1,
+      .array_layers = 1,
+  };
+}
+
 }  // namespace eray::vkren

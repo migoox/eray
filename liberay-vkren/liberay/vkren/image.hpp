@@ -18,14 +18,17 @@ namespace eray::vkren {
 struct ImageResource {
   VMARaiiImage _image = VMARaiiImage(nullptr);
   ImageDescription description;
-  vk::ImageAspectFlags aspect;
   observer_ptr<const Device> _p_device = nullptr;
   uint32_t mip_levels;
+  vk::ImageAspectFlags aspect;
+  vk::ImageUsageFlags usage;
 
   /**
    * @brief Any resources that you frequently write and read on GPU, e.g. images used as color attachments (aka "render
    * targets"), depth-stencil attachments, images/buffers used as storage image/buffer (aka "Unordered Access View
    * (UAV)"). The buffer has always usage set to eSampled.
+   *
+   * The layout is VK_IMAGE_LAYOUT_UNDEFINED.
    *
    * @param device
    * @param desc
@@ -52,7 +55,8 @@ struct ImageResource {
   }
 
   /**
-   * @brief Use this for buffers that are frequently sampled by the GPU, and loaded once from the CPU.
+   * @brief Use this for buffers that are frequently sampled by the GPU, and loaded once from the CPU. The layout is
+   * VK_IMAGE_LAYOUT_UNDEFINED.
    *
    * @param device
    * @param desc
@@ -63,17 +67,30 @@ struct ImageResource {
       vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor);
 
   /**
+   * @brief Invokes `vkCmdPipelineBarrier2`. `cmd` must be in the begin state.
+   *
+   * @param cmd
+   * @param new_layout
+   */
+  void transition_layout(vk::CommandBuffer cmd, vk::ImageLayout current_layout, vk::ImageLayout new_layout);
+
+  void transition_mip_level_layout(vk::CommandBuffer cmd, vk::ImageLayout current_layout, vk::ImageLayout new_layout,
+                                   uint32_t base_level, uint32_t level_count = 1);
+
+  /**
    * @brief Automatically detects whether the buffer contains all mipmaps. If so it uploads the buffer to the texture.
    * If the buffer contains LOD0 only and `mipmapping` is set to true, this function uploads the LOD0 image(s) and
    * generates the missing mipmaps.
+   *
+   * Expects the layout of the image range to be VK_IMAGE_LAYOUT_UNDEFINED. Leaves the layout in the
+   * VK_IMAGE_SHADER_READ_ONLY_OPTIMAL state.
    *
    * @param src_region Represents packed region of CPU memory that consists of mip levels. A mip level with LOD `i`
    * contains all layer images with LOD `i`.
    * @param offset
    * @return Result<void, Error>
    */
-
-  Result<void, Error> upload(util::MemoryRegion src_region) const;
+  Result<void, Error> upload(util::MemoryRegion src_region);
 
   VmaAllocationInfo alloc_info() const { return _image.alloc_info(); }
 

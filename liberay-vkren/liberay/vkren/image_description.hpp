@@ -1,5 +1,6 @@
 #pragma once
 
+#include <liberay/res/image.hpp>
 #include <liberay/vkren/image_format_helpers.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
@@ -18,6 +19,8 @@ struct ImageDescription {
   std::uint32_t height;
   std::uint32_t depth;
   std::uint32_t array_layers;
+
+  static ImageDescription from(const res::Image& image);
 
   static ImageDescription image2d_desc(vk::Format format, std::uint32_t width, std::uint32_t height,
                                        std::uint32_t array_layers = 1) {
@@ -63,6 +66,14 @@ struct ImageDescription {
   vk::DeviceSize find_full_size_bytes() const;
 
   vk::ImageType image_type() const { return depth > 1 ? vk::ImageType::e3D : vk::ImageType::e2D; }
+
+  vk::Extent3D extent() const {
+    return vk::Extent3D{
+        .width  = width,
+        .height = height,
+        .depth  = depth,
+    };
+  }
 };
 
 }  // namespace eray::vkren
