@@ -56,9 +56,25 @@ class SwapChain {
 
   const vk::Extent2D& extent() { return extent_; }
 
+  /**
+   * @brief Starts the rendering queue and sets up attachments and swap chain for rendering.
+   *
+   * @param cmd_buff
+   * @param image_index
+   * @param clear_color
+   * @param clear_depth_stencil
+   */
   void begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index,
                        vk::ClearColorValue clear_color                = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F),
                        vk::ClearDepthStencilValue clear_depth_stencil = vk::ClearDepthStencilValue(1.0F, 0));
+  /**
+   * @brief Sets up attachments for presentation and finishes the rendering queue.
+   *
+   * @param cmd_buff
+   * @param image_index
+   * @param clear_color
+   * @param clear_depth_stencil
+   */
   void end_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index);
 
   /**
