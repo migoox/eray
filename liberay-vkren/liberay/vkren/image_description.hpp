@@ -60,7 +60,7 @@ struct ImageDescription {
    */
   vk::DeviceSize find_full_size_bytes() const;
 
-  vk::ImageViewType image_view_type() const { return depth > 1 ? vk::ImageViewType::e3D : vk::ImageViewType::e2D; }
+  vk::ImageType image_type() const { return depth > 1 ? vk::ImageType::e3D : vk::ImageType::e2D; }
 };
 
 }  // namespace eray::vkren

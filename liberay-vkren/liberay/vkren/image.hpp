@@ -18,6 +18,7 @@ namespace eray::vkren {
 struct ImageResource {
   VMARaiiImage _image = VMARaiiImage(nullptr);
   ImageDescription description;
+  vk::ImageAspectFlags aspect;
   observer_ptr<const Device> _p_device = nullptr;
   uint32_t mip_levels;
 
@@ -32,7 +33,7 @@ struct ImageResource {
    * @return Result<Image, Error>
    */
   [[nodiscard]] static Result<ImageResource, Error> create_attachment_image(
-      const Device& device, ImageDescription desc, vk::ImageUsageFlags usage,
+      const Device& device, ImageDescription desc, vk::ImageUsageFlags usage, vk::ImageAspectFlags aspect,
       vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1);
 
   [[nodiscard]] static Result<ImageResource, Error> create_color_attachment_image(
@@ -40,13 +41,14 @@ struct ImageResource {
       vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
     return create_attachment_image(
         device, desc, vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
-        sample_count);
+        vk::ImageAspectFlagBits::eColor, sample_count);
   }
 
   [[nodiscard]] static Result<ImageResource, Error> create_depth_stencil_attachment_image(
       const Device& device, const ImageDescription& desc,
       vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
-    return create_attachment_image(device, desc, vk::ImageUsageFlagBits::eDepthStencilAttachment, sample_count);
+    return create_attachment_image(device, desc, vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                                   vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil, sample_count);
   }
 
   /**
@@ -56,8 +58,9 @@ struct ImageResource {
    * @param desc
    * @return Result<ImageResource, Error>
    */
-  [[nodiscard]] static Result<ImageResource, Error> create_texture(const Device& device, ImageDescription desc,
-                                                                   bool mipmapping = true);
+  [[nodiscard]] static Result<ImageResource, Error> create_texture(
+      const Device& device, ImageDescription desc, bool mipmapping = true,
+      vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor);
 
   /**
    * @brief Automatically detects whether the buffer contains all mipmaps. If so it uploads the buffer to the texture.
@@ -70,14 +73,21 @@ struct ImageResource {
    * @return Result<void, Error>
    */
 
-  Result<void, Error> upload(util::MemoryRegion src_region,
-                             vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlagBits::eColor) const;
+  Result<void, Error> upload(util::MemoryRegion src_region) const;
 
   VmaAllocationInfo alloc_info() const { return _image.alloc_info(); }
 
   vk::Image image() const { return _image._handle; }
 
-  Result<vk::raii::ImageView, Error> create_image_view(vk::ImageAspectFlags aspect_mask) const;
+  Result<vk::raii::ImageView, Error> create_image_view(vk::ImageViewType image_view_type) const;
+
+  /**
+   * @brief In case of `vk::ImageType::e2D` returns image view with `vk::ImageViewType::e2D`. Returns image view
+   * `vk::ImageViewType::e3D` otherwise.
+   *
+   * @return Result<vk::raii::ImageView, Error>
+   */
+  Result<vk::raii::ImageView, Error> create_image_view() const;
 
   /**
    * @brief Size of the image in level of detail 0. The function ignores the mipmap level and layers.

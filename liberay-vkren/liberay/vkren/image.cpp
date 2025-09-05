@@ -19,15 +19,11 @@ namespace eray::vkren {
 
 Result<ImageResource, Error> ImageResource::create_attachment_image(const Device& device, ImageDescription desc,
                                                                     vk::ImageUsageFlags usage,
+                                                                    vk::ImageAspectFlags aspect,
                                                                     vk::SampleCountFlagBits sample_count) {
-  auto image_type = vk::ImageType::e2D;
-  if (desc.depth > 1) {
-    image_type = vk::ImageType::e3D;
-  }
-
   auto image_info = vk::ImageCreateInfo{
       .sType       = vk::StructureType::eImageCreateInfo,
-      .imageType   = image_type,
+      .imageType   = desc.image_type(),
       .format      = desc.format,
       .extent      = vk::Extent3D{.width = desc.width, .height = desc.height, .depth = desc.depth},
       .mipLevels   = 1,
@@ -59,23 +55,19 @@ Result<ImageResource, Error> ImageResource::create_attachment_image(const Device
   return ImageResource{
       ._image      = VMARaiiImage(device.allocator(), alloc, vkimg),
       .description = desc,
+      .aspect      = aspect,
       ._p_device   = &device,
       .mip_levels  = 1,
   };
 }
 
-Result<ImageResource, Error> ImageResource::create_texture(const Device& device, ImageDescription desc,
-                                                           bool mipmapping) {
+Result<ImageResource, Error> ImageResource::create_texture(const Device& device, ImageDescription desc, bool mipmapping,
+                                                           vk::ImageAspectFlags aspect) {
   assert(!helper::is_block_format(desc.format) && "Block Compression Formats are not supported yet!");
-
-  auto image_type = vk::ImageType::e2D;
-  if (desc.depth > 1) {
-    image_type = vk::ImageType::e3D;
-  }
 
   auto image_info = vk::ImageCreateInfo{
       .sType       = vk::StructureType::eImageCreateInfo,
-      .imageType   = image_type,
+      .imageType   = desc.image_type(),
       .format      = desc.format,
       .extent      = vk::Extent3D{.width = desc.width, .height = desc.height, .depth = desc.depth},
       .mipLevels   = mipmapping ? desc.find_mip_levels() : 1,
@@ -106,12 +98,13 @@ Result<ImageResource, Error> ImageResource::create_texture(const Device& device,
   return ImageResource{
       ._image      = VMARaiiImage(device.allocator(), alloc, vkimg),
       .description = std::move(desc),
+      .aspect      = aspect,
       ._p_device   = &device,
       .mip_levels  = mipmapping ? desc.find_mip_levels() : 1,
   };
 }
 
-Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::ImageAspectFlags aspect_mask) const {
+Result<void, Error> ImageResource::upload(util::MemoryRegion src_region) const {
   const auto full_size = find_full_size_bytes();
   assert((mipmapping_enabled() && src_region.size_bytes() == full_size) ||
          src_region.size_bytes() == lod0_size_bytes() &&
@@ -146,7 +139,7 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::Ima
 
             .imageSubresource =
                 vk::ImageSubresourceLayers{
-                    .aspectMask     = aspect_mask,
+                    .aspectMask     = aspect,
                     .mipLevel       = mip_level,
                     .baseArrayLayer = 0,
                     .layerCount     = description.array_layers,
@@ -200,7 +193,7 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::Ima
        .image               = image(),
        .subresourceRange =
           vk::ImageSubresourceRange{
-               .aspectMask     = aspect_mask,
+               .aspectMask     = aspect,
                .levelCount     = 1,
                .baseArrayLayer = 0,
                .layerCount     = description.array_layers,
@@ -233,7 +226,7 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::Ima
     auto blit = vk::ImageBlit{
         .srcSubresource =
             vk::ImageSubresourceLayers{
-                .aspectMask     = aspect_mask,
+                .aspectMask     = aspect,
                 .mipLevel       = i - 1,
                 .baseArrayLayer = 0,
                 .layerCount     = description.array_layers,
@@ -241,7 +234,7 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::Ima
         .srcOffsets = offsets,
         .dstSubresource =
             vk::ImageSubresourceLayers{
-                .aspectMask     = aspect_mask,
+                .aspectMask     = aspect,
                 .mipLevel       = i,
                 .baseArrayLayer = 0,
                 .layerCount     = description.array_layers,
@@ -285,10 +278,10 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::Ima
   return {};
 }
 
-Result<vk::raii::ImageView, Error> ImageResource::create_image_view(vk::ImageAspectFlags aspect_mask) const {
+Result<vk::raii::ImageView, Error> ImageResource::create_image_view(vk::ImageViewType image_view_type) const {
   auto img_create_info = vk::ImageViewCreateInfo{
       .image    = image(),
-      .viewType = description.depth > 1 ? vk::ImageViewType::e3D : vk::ImageViewType::e2D,
+      .viewType = image_view_type,
       .format   = description.format,
       .components =
           vk::ComponentMapping{
@@ -299,7 +292,7 @@ Result<vk::raii::ImageView, Error> ImageResource::create_image_view(vk::ImageAsp
           },
       .subresourceRange =
           vk::ImageSubresourceRange{
-              .aspectMask     = aspect_mask,
+              .aspectMask     = aspect,
               .baseMipLevel   = 0,
               .levelCount     = mip_levels,
               .baseArrayLayer = 0,
@@ -318,6 +311,13 @@ Result<vk::raii::ImageView, Error> ImageResource::create_image_view(vk::ImageAsp
   }
 
   return std::move(*img_view_opt);
+}
+
+Result<vk::raii::ImageView, Error> ImageResource::create_image_view() const {
+  if (description.image_type() == vk::ImageType::e2D) {
+    return create_image_view(vk::ImageViewType::e2D);
+  }
+  return create_image_view(vk::ImageViewType::e3D);
 }
 
 }  // namespace eray::vkren
