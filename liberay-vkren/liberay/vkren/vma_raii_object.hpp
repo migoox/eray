@@ -3,6 +3,7 @@
 #include <vma/vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
+#include <cstddef>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <vulkan/vulkan.hpp>
@@ -18,6 +19,9 @@ struct VMARaiiObject {
   VmaAllocator _allocator{};
   VmaAllocation _allocation{};
   TVMAObject _handle{};
+
+  VMARaiiObject() = delete;
+  explicit VMARaiiObject(std::nullptr_t) {}
 
   VMARaiiObject(VmaAllocator allocator, VmaAllocation allocation, TVMAObject handle)
       : _allocator(allocator), _allocation(allocation), _handle(handle) {}
