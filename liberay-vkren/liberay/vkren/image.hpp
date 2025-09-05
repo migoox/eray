@@ -12,6 +12,7 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
@@ -127,6 +128,8 @@ struct ImageResource {
    * @return false
    */
   bool mipmapping_enabled() const { return mip_levels > 1; }
+
+  vk::ImageSubresourceRange full_resource_range() const;
 };
 
 }  // namespace eray::vkren

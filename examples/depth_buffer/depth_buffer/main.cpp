@@ -21,6 +21,7 @@
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/image.hpp>
+#include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <ranges>
@@ -33,8 +34,6 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
-
-#include "liberay/vkren/image_description.hpp"
 
 struct GLFWWindowCreationFailure {};
 
@@ -862,96 +861,8 @@ class DepthBufferApplication {
    * @param image_index
    */
   void record_graphics_command_buffer(size_t frame_index, uint32_t image_index) {
-    graphics_command_buffers_[frame_index].begin(vk::CommandBufferBeginInfo{
-        // The `flags` parameter specifies how we're going to use the command buffer:
-        // - VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT: The command buffer will be rerecorded right after executing
-        // it
-        //   once.
-        // - VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT: This is a secondary command buffer that will be
-        // entirely
-        //   within a single render pass.
-        // - WK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT: The command buffer can be resubmitted while it is also
-        //   already pending execution.
-    });
-
-    // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
-    transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
-        .image_index     = image_index,
-        .frame_index     = frame_index,
-        .old_layout      = vk::ImageLayout::eUndefined,
-        .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
-        .src_access_mask = {},
-        .dst_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .src_stage_mask  = vk::PipelineStageFlagBits2::eTopOfPipe,
-        .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-    });
-
-    transition_depth_attachment_layout(TransitionDepthAttachmentLayoutInfo{
-        .frame_index     = frame_index,
-        .old_layout      = vk::ImageLayout::eUndefined,
-        .new_layout      = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-        .src_access_mask = {},
-        .dst_access_mask =
-            vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-        .src_stage_mask = vk::PipelineStageFlagBits2::eTopOfPipe,
-        .dst_stage_mask =
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-    });
-
-    auto color_buffer_attachment_info = vk::RenderingAttachmentInfo{
-        // Specifies which image to render to
-        .imageView = swap_chain_.image_views()[image_index],
-
-        // Specifies the layout the image will be in during rendering
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-
-        // Specifies what to do with the image before rendering
-        .loadOp = vk::AttachmentLoadOp::eClear,
-
-        // Specifies what to do with the image after rendering
-        .storeOp = vk::AttachmentStoreOp::eStore,
-
-        .clearValue = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F),
-    };
-
-    auto depth_buffer_attachment_info = vk::RenderingAttachmentInfo{
-        .imageView   = swap_chain_.depth_stencil_attachment_image_view(),
-        .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eClear,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-        .clearValue  = vk::ClearDepthStencilValue(1.0F, 0),
-    };
-
-    if (swap_chain_.msaa_sample_count() != vk::SampleCountFlagBits::e1) {
-      // When multisampling is enabled use the color attachment buffer
-
-      transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
-          .frame_index     = frame_index,
-          .old_layout      = vk::ImageLayout::eUndefined,
-          .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
-          .src_access_mask = {},
-          .dst_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
-          .src_stage_mask  = vk::PipelineStageFlagBits2::eTopOfPipe,
-          .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-      });
-      color_buffer_attachment_info.imageView          = swap_chain_.color_attachment_image_view();
-      color_buffer_attachment_info.resolveMode        = vk::ResolveModeFlagBits::eAverage;
-      color_buffer_attachment_info.resolveImageView   = swap_chain_.image_views()[image_index];
-      color_buffer_attachment_info.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    }
-
-    auto rendering_info = vk::RenderingInfo{
-        // Defines the size of the render area
-        .renderArea =
-            vk::Rect2D{
-                .offset = {.x = 0, .y = 0}, .extent = swap_chain_.extent()  //
-            },
-        .layerCount           = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments    = &color_buffer_attachment_info,
-        .pDepthAttachment     = &depth_buffer_attachment_info,
-    };
-    graphics_command_buffers_[frame_index].beginRendering(rendering_info);
+    swap_chain_.begin_rendering(graphics_command_buffers_[frame_index], image_index,
+                                vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F), vk::ClearDepthStencilValue(1.0F, 0));
 
     // We can specify type of the pipeline
     graphics_command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
@@ -982,23 +893,10 @@ class DepthBufferApplication {
     graphics_command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                                               graphics_pipeline_layout_, 0,
                                                               *compute_descriptor_sets_[frame_index], nullptr);
-    // Draw 3 vertices
+
     graphics_command_buffers_[frame_index].drawIndexed(12, 1, 0, 0, 0);
 
-    graphics_command_buffers_[frame_index].endRendering();
-
-    transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
-        .image_index     = image_index,
-        .frame_index     = frame_index,
-        .old_layout      = vk::ImageLayout::eColorAttachmentOptimal,
-        .new_layout      = vk::ImageLayout::ePresentSrcKHR,
-        .src_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .dst_access_mask = {},
-        .src_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        .dst_stage_mask  = vk::PipelineStageFlagBits2::eBottomOfPipe,
-    });
-
-    graphics_command_buffers_[frame_index].end();
+    swap_chain_.end_rendering(graphics_command_buffers_[frame_index], image_index);
   }
 
   void create_descriptor_pool() {

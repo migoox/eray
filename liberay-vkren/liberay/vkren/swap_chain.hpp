@@ -6,8 +6,7 @@
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/image.hpp>
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_raii.hpp>
+#include <vulkan/vulkan.hpp>
 
 namespace eray::vkren {
 
@@ -57,6 +56,11 @@ class SwapChain {
 
   const vk::Extent2D& extent() { return extent_; }
 
+  void begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index,
+                       vk::ClearColorValue clear_color                = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F),
+                       vk::ClearDepthStencilValue clear_depth_stencil = vk::ClearDepthStencilValue(1.0F, 0));
+  void end_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index);
+
   /**
    * @brief
    *
@@ -72,6 +76,8 @@ class SwapChain {
   void cleanup();
 
   vk::SampleCountFlagBits msaa_sample_count() const { return msaa_sample_count_; }
+
+  bool msaa_enabled() const { return msaa_sample_count_ != vk::SampleCountFlagBits::e1; }
 
  private:
   SwapChain() = default;

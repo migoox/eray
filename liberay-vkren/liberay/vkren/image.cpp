@@ -316,4 +316,14 @@ void ImageResource::transition_mip_level_layout(vk::CommandBuffer cmd, vk::Image
                                     current_layout, new_layout);
 }
 
+vk::ImageSubresourceRange ImageResource::full_resource_range() const {
+  return vk::ImageSubresourceRange{
+      .aspectMask     = aspect,
+      .baseMipLevel   = 0,
+      .levelCount     = mip_levels,
+      .baseArrayLayer = 0,
+      .layerCount     = description.array_layers,
+  };
+}
+
 }  // namespace eray::vkren

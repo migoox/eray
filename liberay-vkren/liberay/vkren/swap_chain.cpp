@@ -9,7 +9,6 @@
 #include <liberay/vkren/swap_chain.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
@@ -341,6 +340,152 @@ Result<void, Error> SwapChain::recreate(const Device& device_, uint32_t width, u
 void SwapChain::cleanup() {
   image_views_.clear();
   swap_chain_ = nullptr;
+}
+
+void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index,
+                                vk::ClearColorValue clear_color, vk::ClearDepthStencilValue clear_depth_stencil) {
+  cmd_buff.begin({});
+
+  // == Swap Chain Images ==============================================================================================
+  auto swap_chain_image_barrier = vk::ImageMemoryBarrier2{
+      .srcStageMask        = vk::PipelineStageFlagBits2::eTopOfPipe,
+      .srcAccessMask       = {},
+      .dstStageMask        = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+      .dstAccessMask       = vk::AccessFlagBits2::eColorAttachmentWrite,
+      .oldLayout           = vk::ImageLayout::eUndefined,
+      .newLayout           = vk::ImageLayout::eColorAttachmentOptimal,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image               = images_[image_index],  //
+      .subresourceRange =
+          vk::ImageSubresourceRange{
+              .aspectMask     = vk::ImageAspectFlagBits::eColor,
+              .baseMipLevel   = 0,
+              .levelCount     = 1,
+              .baseArrayLayer = 0,
+              .layerCount     = 1,
+          },
+  };
+
+  auto swap_chain_image_dependency_info = vk::DependencyInfo{
+      .dependencyFlags         = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers    = &swap_chain_image_barrier,
+  };
+
+  cmd_buff.pipelineBarrier2(swap_chain_image_dependency_info);
+
+  // == Depth Stencil ==================================================================================================
+  auto depth_stencil_attachment_barrier = vk::ImageMemoryBarrier2{
+      .srcStageMask  = vk::PipelineStageFlagBits2::eTopOfPipe,
+      .srcAccessMask = {},
+      .dstStageMask  = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+      .dstAccessMask =
+          vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+      .oldLayout           = vk::ImageLayout::eUndefined,
+      .newLayout           = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image               = depth_stencil_image_.image(),  //
+      .subresourceRange    = depth_stencil_image_.full_resource_range(),
+  };
+
+  auto depth_stencil_dependency_info = vk::DependencyInfo{
+      .dependencyFlags         = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers    = &depth_stencil_attachment_barrier,
+  };
+
+  cmd_buff.pipelineBarrier2(depth_stencil_dependency_info);
+
+  auto depth_stencil_buffer_attachment_info = vk::RenderingAttachmentInfo{
+      .imageView   = depth_stencil_image_view_,
+      .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      .loadOp      = vk::AttachmentLoadOp::eClear,
+      .storeOp     = vk::AttachmentStoreOp::eStore,
+      .clearValue  = clear_depth_stencil,
+  };
+
+  // == Color Attachment ===============================================================================================
+  auto color_buffer_attachment_info = vk::RenderingAttachmentInfo{
+      .imageView   = image_views_[image_index],
+      .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+      .loadOp      = vk::AttachmentLoadOp::eClear,
+      .storeOp     = vk::AttachmentStoreOp::eStore,
+      .clearValue  = clear_color,
+  };
+
+  if (msaa_enabled()) {
+    auto color_attachment_barrier = vk::ImageMemoryBarrier2{
+        .srcStageMask        = vk::PipelineStageFlagBits2::eTopOfPipe,
+        .srcAccessMask       = {},
+        .dstStageMask        = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        .dstAccessMask       = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+        .oldLayout           = vk::ImageLayout::eUndefined,
+        .newLayout           = vk::ImageLayout::eColorAttachmentOptimal,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image               = color_image_.image(),  //
+        .subresourceRange    = color_image_.full_resource_range(),
+    };
+
+    auto color_attachment_dependency_info = vk::DependencyInfo{
+        .dependencyFlags         = {},
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers    = &color_attachment_barrier,
+    };
+    cmd_buff.pipelineBarrier2(color_attachment_dependency_info);
+
+    color_buffer_attachment_info.imageView          = color_image_view_;
+    color_buffer_attachment_info.resolveMode        = vk::ResolveModeFlagBits::eAverage;
+    color_buffer_attachment_info.resolveImageView   = image_views_[image_index];
+    color_buffer_attachment_info.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+  }
+
+  cmd_buff.beginRendering(vk::RenderingInfo{
+      .renderArea =
+          vk::Rect2D{
+              .offset = {.x = 0, .y = 0},
+              .extent = extent(),
+          },
+      .layerCount           = 1,
+      .colorAttachmentCount = 1,
+      .pColorAttachments    = &color_buffer_attachment_info,
+      .pDepthAttachment     = &depth_stencil_buffer_attachment_info,
+  });
+}
+
+void SwapChain::end_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index) {
+  cmd_buff.endRendering();
+
+  auto swap_chain_image_barrier = vk::ImageMemoryBarrier2{
+      .srcStageMask        = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+      .srcAccessMask       = vk::AccessFlagBits2::eColorAttachmentWrite,
+      .dstStageMask        = vk::PipelineStageFlagBits2::eBottomOfPipe,
+      .dstAccessMask       = {},
+      .oldLayout           = vk::ImageLayout::eColorAttachmentOptimal,
+      .newLayout           = vk::ImageLayout::ePresentSrcKHR,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image               = images_[image_index],  //
+      .subresourceRange =
+          vk::ImageSubresourceRange{
+              .aspectMask     = vk::ImageAspectFlagBits::eColor,
+              .baseMipLevel   = 0,
+              .levelCount     = 1,
+              .baseArrayLayer = 0,
+              .layerCount     = 1,
+          },
+  };
+
+  auto swap_chain_image_dependency_info = vk::DependencyInfo{
+      .dependencyFlags         = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers    = &swap_chain_image_barrier,
+  };
+
+  cmd_buff.pipelineBarrier2(swap_chain_image_dependency_info);
+  cmd_buff.end();
 }
 
 }  // namespace eray::vkren
