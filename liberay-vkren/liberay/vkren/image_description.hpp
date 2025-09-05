@@ -11,6 +11,12 @@ namespace eray::vkren {
  *
  */
 struct ImageDescription {
+  vk::Format format;
+  std::uint32_t width;
+  std::uint32_t height;
+  std::uint32_t depth;
+  std::uint32_t array_layers;
+
   static ImageDescription image2d_desc(vk::Format format, std::uint32_t width, std::uint32_t height,
                                        std::uint32_t array_layers = 1) {
     return ImageDescription{
@@ -33,7 +39,12 @@ struct ImageDescription {
     };
   }
 
-  std::uint32_t mip_levels() const;
+  /**
+   * @brief Calculates the mip levels of the image.
+   *
+   * @return std::uint32_t
+   */
+  std::uint32_t find_mip_levels() const;
 
   /**
    * @brief Size of the image in level of detail 0 (width*height*depth*array_layers*bytes_per_pixel).
@@ -43,17 +54,13 @@ struct ImageDescription {
   vk::DeviceSize lod0_size_bytes() const;
 
   /**
-   * @brief Full size in bytes, includes mipmaps and layers.
+   * @brief Calculates the full size in bytes, includes mipmaps and layers.
    *
    * @return vk::DeviceSize
    */
   vk::DeviceSize find_full_size_bytes() const;
 
-  vk::Format format;
-  std::uint32_t width;
-  std::uint32_t height;
-  std::uint32_t depth;
-  std::uint32_t array_layers;
+  vk::ImageViewType image_view_type() const { return depth > 1 ? vk::ImageViewType::e3D : vk::ImageViewType::e2D; }
 };
 
 }  // namespace eray::vkren

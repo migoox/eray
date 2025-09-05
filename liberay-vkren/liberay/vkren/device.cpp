@@ -610,7 +610,7 @@ void Device::transition_image_layout(const vk::raii::Image& image, const ImageDe
           vk::ImageSubresourceRange{
                .aspectMask     = vk::ImageAspectFlagBits::eColor,
                .baseMipLevel   = 0,
-               .levelCount     = mipmapping ? image_desc.mip_levels() : 1,
+               .levelCount     = mipmapping ? image_desc.find_mip_levels() : 1,
                .baseArrayLayer = 0,
                .layerCount     = 1,
           },

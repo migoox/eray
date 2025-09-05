@@ -4,7 +4,7 @@
 
 namespace eray::vkren {
 
-std::uint32_t ImageDescription::mip_levels() const {
+std::uint32_t ImageDescription::find_mip_levels() const {
   // Alternative like this may suffer from the floating-point precision errors:
   // return static_cast<uint32_t>(std::floor(std::log2(std::max({width, height, depth})))) + 1;
   //
@@ -32,7 +32,7 @@ vk::DeviceSize ImageDescription::find_full_size_bytes() const {
     auto mip_depth  = depth;
 
     vk::DeviceSize buff_size = 0;
-    for (auto i = 0U; i < mip_levels(); ++i) {
+    for (auto i = 0U; i < find_mip_levels(); ++i) {
       buff_size += mip_width * mip_height * mip_depth;
       mip_width  = std::max(mip_width / 2U, 1U);
       mip_height = std::max(mip_height / 2U, 1U);
@@ -47,7 +47,7 @@ vk::DeviceSize ImageDescription::find_full_size_bytes() const {
     auto mip_height = height;
 
     vk::DeviceSize buff_size = 0;
-    for (auto i = 0U; i < mip_levels(); ++i) {
+    for (auto i = 0U; i < find_mip_levels(); ++i) {
       buff_size += mip_width * mip_height;
       mip_width  = std::max(mip_width / 2U, 1U);
       mip_height = std::max(mip_height / 2U, 1U);

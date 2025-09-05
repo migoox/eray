@@ -60,7 +60,7 @@ Result<ImageResource, Error> ImageResource::create_attachment_image(const Device
       ._image      = VMARaiiImage(device.allocator(), alloc, vkimg),
       .description = desc,
       ._p_device   = &device,
-      .mipmapping  = false,
+      .mip_levels  = 1,
   };
 }
 
@@ -78,7 +78,7 @@ Result<ImageResource, Error> ImageResource::create_texture(const Device& device,
       .imageType   = image_type,
       .format      = desc.format,
       .extent      = vk::Extent3D{.width = desc.width, .height = desc.height, .depth = desc.depth},
-      .mipLevels   = mipmapping ? desc.mip_levels() : 1,
+      .mipLevels   = mipmapping ? desc.find_mip_levels() : 1,
       .arrayLayers = desc.array_layers,
       .samples     = vk::SampleCountFlagBits::e1,
       .tiling      = vk::ImageTiling::eOptimal,
@@ -107,19 +107,19 @@ Result<ImageResource, Error> ImageResource::create_texture(const Device& device,
       ._image      = VMARaiiImage(device.allocator(), alloc, vkimg),
       .description = std::move(desc),
       ._p_device   = &device,
-      .mipmapping  = mipmapping,
+      .mip_levels  = mipmapping ? desc.find_mip_levels() : 1,
   };
 }
 
 Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::ImageAspectFlags aspect_mask) const {
   const auto full_size = find_full_size_bytes();
-  assert((mipmapping && src_region.size_bytes() == full_size) ||
+  assert((mipmapping_enabled() && src_region.size_bytes() == full_size) ||
          src_region.size_bytes() == lod0_size_bytes() &&
              "Expected either LOD=0 image level or full image with all of the mipmap levels");
 
   // == Copy data from the staging buffer to the image layers ==========================================================
   {
-    const auto copy_mip_levels = (mipmapping && src_region.size_bytes() == full_size) ? description.mip_levels() : 1;
+    const auto copy_mip_levels = (mipmapping_enabled() && src_region.size_bytes() == full_size) ? mip_levels : 1;
 
     auto staging_buffer = BufferResource::create_staging_buffer(*_p_device, src_region);
     if (!staging_buffer) {
@@ -172,13 +172,15 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::Ima
   }
 
   // Return if mipmapping is disabled or the memory region already contained pregenerated mipmaps.
-  if (!mipmapping || src_region.size_bytes() == full_size) {
+  if (!mipmapping_enabled() || src_region.size_bytes() == full_size) {
     return {};
   }
 
   // == Generate mipmaps using linear blitting =========================================================================
+
+  // Check if linear blitting is supported
   auto format_props = _p_device->physical_device().getFormatProperties(description.format);
-  if (mipmapping && !(format_props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
+  if (!(format_props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
     util::Logger::err(
         "Texture creation failed due to lack of support for linear blitting. Mipmaps could not be generated");
     return std::unexpected(Error{
@@ -205,7 +207,6 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::Ima
           },
   };
 
-  auto mip_levels = description.mip_levels();
   auto mip_width  = static_cast<int32_t>(description.width);
   auto mip_height = static_cast<int32_t>(description.height);
   auto mip_depth  = static_cast<int32_t>(description.depth);
@@ -280,6 +281,43 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region, vk::Ima
                            barrier);
 
   _p_device->end_single_time_commands(cmd_buff);
+
+  return {};
+}
+
+Result<vk::raii::ImageView, Error> ImageResource::create_image_view(vk::ImageAspectFlags aspect_mask) const {
+  auto img_create_info = vk::ImageViewCreateInfo{
+      .image    = image(),
+      .viewType = description.depth > 1 ? vk::ImageViewType::e3D : vk::ImageViewType::e2D,
+      .format   = description.format,
+      .components =
+          vk::ComponentMapping{
+              .r = vk::ComponentSwizzle::eIdentity,
+              .g = vk::ComponentSwizzle::eIdentity,
+              .b = vk::ComponentSwizzle::eIdentity,
+              .a = vk::ComponentSwizzle::eIdentity,
+          },
+      .subresourceRange =
+          vk::ImageSubresourceRange{
+              .aspectMask     = aspect_mask,
+              .baseMipLevel   = 0,
+              .levelCount     = mip_levels,
+              .baseArrayLayer = 0,
+              .layerCount     = description.array_layers,
+          },
+  };
+
+  auto img_view_opt = (*_p_device)->createImageView(img_create_info);
+  if (!img_view_opt) {
+    util::Logger::err("Could not create an image view: {}", vk::to_string(img_view_opt.error()));
+    return std::unexpected(Error{
+        .msg     = "Vulkan Image View creation failed",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = img_view_opt.error(),
+    });
+  }
+
+  return std::move(*img_view_opt);
 }
 
 }  // namespace eray::vkren

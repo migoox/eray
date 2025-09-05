@@ -16,10 +16,10 @@
 namespace eray::vkren {
 
 struct ImageResource {
-  VMARaiiImage _image;
+  VMARaiiImage _image = VMARaiiImage(nullptr);
   ImageDescription description;
-  observer_ptr<const Device> _p_device;
-  bool mipmapping;
+  observer_ptr<const Device> _p_device = nullptr;
+  uint32_t mip_levels;
 
   /**
    * @brief Any resources that you frequently write and read on GPU, e.g. images used as color attachments (aka "render
@@ -77,6 +77,8 @@ struct ImageResource {
 
   vk::Image image() const { return _image._handle; }
 
+  Result<vk::raii::ImageView, Error> create_image_view(vk::ImageAspectFlags aspect_mask) const;
+
   /**
    * @brief Size of the image in level of detail 0. The function ignores the mipmap level and layers.
    *
@@ -90,6 +92,14 @@ struct ImageResource {
    * @return vk::DeviceSize
    */
   vk::DeviceSize find_full_size_bytes() const { return description.find_full_size_bytes(); }
+
+  /**
+   * @brief Returns true iff the image resource has mipmappnig enabled.
+   *
+   * @return true
+   * @return false
+   */
+  bool mipmapping_enabled() const { return mip_levels > 1; }
 };
 
 }  // namespace eray::vkren

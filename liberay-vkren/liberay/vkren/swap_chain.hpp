@@ -36,11 +36,11 @@ class SwapChain {
   const vk::raii::SwapchainKHR& operator*() const noexcept { return swap_chain_; }
 
   const std::vector<vk::Image>& images() const { return images_; }
-  const vk::raii::Image& depth_stencil_attachment_image() const { return depth_stencil_image_.image(); }
-  const vk::raii::Image& color_attachment_image() const { return color_image_.image(); }
+  vk::Image depth_stencil_attachment_image() const { return depth_stencil_image_.image(); }
+  vk::Image color_attachment_image() const { return color_image_.image(); }
 
   const std::vector<vk::raii::ImageView>& image_views() { return image_views_; }
-  const vk::raii::ImageView& depth_stencil_attachment_image_view() const { return depth_stencil_image_view_; }
+  vk::ImageView depth_stencil_attachment_image_view() const { return depth_stencil_image_view_; }
 
   /**
    * @brief Color attachment for MSAA that can be used in render pass multisample resolve operation.
@@ -48,7 +48,7 @@ class SwapChain {
    *
    * @return const vk::raii::ImageView&
    */
-  const vk::raii::ImageView& color_attachment_image_view() const { return color_image_view_; }
+  vk::ImageView color_attachment_image_view() const { return color_image_view_; }
 
   vk::Format image_format() { return format_; }
 
