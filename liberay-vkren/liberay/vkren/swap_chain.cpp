@@ -416,6 +416,13 @@ void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_
   };
 
   if (msaa_enabled()) {
+    // Don't use separate color attachment if MSAA disabled. Vulkan prohibits
+    //
+    //  color_buffer_attachment_info.resolveMode = vk::ResolveModeFlagBits::eAverage;
+    //
+    // in such case.
+    //
+
     auto color_attachment_barrier = vk::ImageMemoryBarrier2{
         .srcStageMask        = vk::PipelineStageFlagBits2::eTopOfPipe,
         .srcAccessMask       = {},
