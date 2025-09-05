@@ -18,7 +18,7 @@
 
 namespace eray::vkren {
 
-Result<ImageResource, Error> ImageResource::create_attachment_image(const Device& device, ImageDescription desc,
+Result<ImageResource, Error> ImageResource::create_attachment_image(Device& device, ImageDescription desc,
                                                                     vk::ImageUsageFlags usage,
                                                                     vk::ImageAspectFlags aspect,
                                                                     vk::SampleCountFlagBits sample_count) {
@@ -40,21 +40,14 @@ Result<ImageResource, Error> ImageResource::create_attachment_image(const Device
   alloc_create_info.flags    = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
   alloc_create_info.priority = 1.0F;
 
-  VkImage vkimg{};
-  VmaAllocation alloc{};
-  VmaAllocationInfo alloc_info;
-  auto result = vmaCreateImage(device.allocator(), reinterpret_cast<VkImageCreateInfo*>(&image_info),
-                               &alloc_create_info, &vkimg, &alloc, &alloc_info);
-  if (result != VK_SUCCESS) {
-    return std::unexpected(Error{
-        .msg     = "Failed to create staging buffer",
-        .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = vk::Result(result),
-    });
+  VmaAllocationInfo info;
+  auto image_opt = device.vma_alloc_manager().create_image(image_info, alloc_create_info, info);
+  if (!image_opt) {
+    return std::unexpected(image_opt.error());
   }
 
   return ImageResource{
-      ._image      = VMARaiiImage(device.allocator(), alloc, vkimg),
+      ._image      = VmaRaiiImage(device.vma_alloc_manager(), image_opt->allocation, image_opt->vk_image),
       .description = desc,
       ._p_device   = &device,
       .mip_levels  = 1,
@@ -63,7 +56,7 @@ Result<ImageResource, Error> ImageResource::create_attachment_image(const Device
   };
 }
 
-Result<ImageResource, Error> ImageResource::create_texture(const Device& device, ImageDescription desc, bool mipmapping,
+Result<ImageResource, Error> ImageResource::create_texture(Device& device, ImageDescription desc, bool mipmapping,
                                                            vk::ImageAspectFlags aspect) {
   assert(!helper::is_block_format(desc.format) && "Block Compression Formats are not supported yet!");
 
@@ -87,21 +80,14 @@ Result<ImageResource, Error> ImageResource::create_texture(const Device& device,
   alloc_create_info.usage    = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
   alloc_create_info.priority = 1.0F;
 
-  VkImage vkimg{};
-  VmaAllocation alloc{};
-  VmaAllocationInfo alloc_info;
-  auto result = vmaCreateImage(device.allocator(), reinterpret_cast<VkImageCreateInfo*>(&image_info),
-                               &alloc_create_info, &vkimg, &alloc, &alloc_info);
-  if (result != VK_SUCCESS) {
-    return std::unexpected(Error{
-        .msg     = "Failed to create staging buffer",
-        .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = vk::Result(result),
-    });
+  VmaAllocationInfo info;
+  auto image_opt = device.vma_alloc_manager().create_image(image_info, alloc_create_info, info);
+  if (!image_opt) {
+    return std::unexpected(image_opt.error());
   }
 
   return ImageResource{
-      ._image      = VMARaiiImage(device.allocator(), alloc, vkimg),
+      ._image      = VmaRaiiImage(device.vma_alloc_manager(), image_opt->allocation, image_opt->vk_image),
       .description = std::move(desc),
       ._p_device   = &device,
       .mip_levels  = mipmapping ? desc.find_mip_levels() : 1,
@@ -156,7 +142,7 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region) {
         };
 
         transition_layout(cmd_cpy_buff, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
-        cmd_cpy_buff.copyBufferToImage(staging_buffer->_buffer._handle, _image._handle,
+        cmd_cpy_buff.copyBufferToImage(staging_buffer->_buffer._vk_handle, _image._vk_handle,
                                        vk::ImageLayout::eTransferDstOptimal, copy_region);
       }
       mip_offset += mip_size_bytes;

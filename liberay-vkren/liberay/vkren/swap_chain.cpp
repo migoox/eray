@@ -12,7 +12,7 @@
 
 namespace eray::vkren {
 
-Result<SwapChain, Error> SwapChain::create(const Device& device, uint32_t width, uint32_t height,
+Result<SwapChain, Error> SwapChain::create(Device& device, uint32_t width, uint32_t height,
                                            vk::SampleCountFlagBits sample_count) noexcept {
   auto swap_chain               = SwapChain();
   swap_chain.msaa_sample_count_ = sample_count;
@@ -23,7 +23,7 @@ Result<SwapChain, Error> SwapChain::create(const Device& device, uint32_t width,
   return swap_chain;
 }
 
-Result<void, Error> SwapChain::create_swap_chain(const Device& device, uint32_t width, uint32_t height) noexcept {
+Result<void, Error> SwapChain::create_swap_chain(Device& device, uint32_t width, uint32_t height) noexcept {
   // Surface formats (pixel format, e.g. B8G8R8A8, color space e.g. SRGB)
   auto available_formats       = device.physical_device().getSurfaceFormatsKHR(device.surface());
   auto available_present_modes = device.physical_device().getSurfacePresentModesKHR(device.surface());
@@ -170,7 +170,7 @@ Result<void, Error> SwapChain::create_swap_chain(const Device& device, uint32_t 
   return {};
 }
 
-Result<void, Error> SwapChain::create_image_views(const vkren::Device& device) noexcept {
+Result<void, Error> SwapChain::create_image_views(vkren::Device& device) noexcept {
   image_views_.clear();
 
   auto image_view_info =
@@ -214,7 +214,7 @@ Result<void, Error> SwapChain::create_image_views(const vkren::Device& device) n
   return {};
 }
 
-Result<void, Error> SwapChain::create_color_buffer(const vkren::Device& device) noexcept {
+Result<void, Error> SwapChain::create_color_buffer(vkren::Device& device) noexcept {
   auto img_opt = ImageResource::create_color_attachment_image(
       device, ImageDescription::image2d_desc(color_attachment_format(), extent_.width, extent_.height),
       msaa_sample_count_);
@@ -234,7 +234,7 @@ Result<void, Error> SwapChain::create_color_buffer(const vkren::Device& device) 
   return {};
 }
 
-Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& device) noexcept {
+Result<void, Error> SwapChain::create_depth_stencil_buffer(vkren::Device& device) noexcept {
   auto format_opt = find_supported_depth_stencil_format(
       device, {vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint}, vk::ImageTiling::eOptimal,
       vk::FormatFeatureFlagBits::eDepthStencilAttachment);
@@ -313,7 +313,7 @@ vk::PresentModeKHR SwapChain::choose_swap_presentMode(const std::vector<vk::Pres
   return vk::PresentModeKHR::eFifo;
 }
 
-Result<void, Error> SwapChain::recreate(const Device& device_, uint32_t width, uint32_t height) {
+Result<void, Error> SwapChain::recreate(Device& device_, uint32_t width, uint32_t height) {
   device_->waitIdle();
 
   cleanup();

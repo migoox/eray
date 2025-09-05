@@ -11,6 +11,7 @@
 #include <liberay/vkren/deletion_queue.hpp>
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/image_description.hpp>
+#include <liberay/vkren/vma_allocation_manager.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_profiles.hpp>
@@ -137,7 +138,8 @@ class Device {
   vk::raii::SurfaceKHR& surface() noexcept { return surface_; }
   const vk::raii::SurfaceKHR& surface() const noexcept { return surface_; }
 
-  VmaAllocator allocator() const { return allocator_; }
+  VmaAllocationManager& vma_alloc_manager() noexcept { return vma_alloc_manager_; }
+  const VmaAllocationManager& vma_alloc_manager() const noexcept { return vma_alloc_manager_; }
 
   uint32_t graphics_queue_family() const { return graphics_queue_family_; }
   vk::raii::Queue& graphics_queue() noexcept { return graphics_queue_; }
@@ -183,6 +185,8 @@ class Device {
                                vk::ImageLayout old_layout, vk::ImageLayout new_layout) const;
 
   vk::SampleCountFlagBits max_usable_sample_count() const;
+
+  void push_vma_deletor(std::function<void()>&& function);
 
  private:
   Device() = default;
@@ -260,7 +264,7 @@ class Device {
    * @brief Vulkan Memory Allocator.
    *
    */
-  VmaAllocator allocator_ = nullptr;
+  VmaAllocationManager vma_alloc_manager_ = VmaAllocationManager(nullptr);
 
   /**
    * @brief Responsible for deletion of non-raii objects;

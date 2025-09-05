@@ -8,6 +8,7 @@
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/error.hpp>
+#include <liberay/vkren/vma_allocation_manager.hpp>
 #include <liberay/vkren/vma_raii_object.hpp>
 #include <optional>
 #include <vulkan/vulkan_enums.hpp>
@@ -127,62 +128,53 @@ void ExclusiveBufferResource::copy_from(const vk::raii::Buffer& src_buff, vk::Bu
   p_device_->end_single_time_commands(cmd_cpy_buff);
 }
 
-Result<BufferResource, Error> BufferResource::create_staging_buffer(const Device& device,
+Result<BufferResource, Error> BufferResource::create_staging_buffer(Device& device,
                                                                     const util::MemoryRegion& src_region) {
-  VkBufferCreateInfo buf_create_info = {};
-  buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buf_create_info.size               = src_region.size_bytes();
-  buf_create_info.usage              = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  auto buf_create_info = vk::BufferCreateInfo{
+      .sType = vk::StructureType::eBufferCreateInfo,
+      .size  = src_region.size_bytes(),
+      .usage = vk::BufferUsageFlagBits::eTransferSrc,
+  };
 
   VmaAllocationCreateInfo alloc_create_info = {};
   alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
   alloc_create_info.flags                   = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
-  VkBuffer buf        = VK_NULL_HANDLE;
-  VmaAllocation alloc = nullptr;
-  VmaAllocationInfo alloc_info;
-  auto result = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
-  if (result != VK_SUCCESS) {
-    return std::unexpected(Error{
-        .msg     = "Failed to create staging buffer",
-        .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = vk::Result(result),
-    });
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
   }
-  vmaCopyMemoryToAllocation(device.allocator(), src_region.data(), alloc, 0, src_region.size_bytes());
+
+  vmaCopyMemoryToAllocation(device.vma_alloc_manager().allocator(), src_region.data(), buff_opt->allocation, 0,
+                            src_region.size_bytes());
 
   return BufferResource{
-      ._buffer             = VMARaiiBuffer(device.allocator(), alloc, buf),
+      ._buffer             = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
       ._p_device           = &device,
       .size_bytes          = src_region.size_bytes(),
-      .usage               = static_cast<vk::BufferUsageFlagBits>(buf_create_info.usage),
+      .usage               = buf_create_info.usage,
       .transfer_src        = true,
       .persistently_mapped = false,
       .mappable            = true,
   };
 }
 
-Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_buffer(const Device& device,
+Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_buffer(Device& device,
                                                                                        vk::DeviceSize size_bytes) {
-  VkBufferCreateInfo buf_create_info = {};
-  buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buf_create_info.size               = size_bytes;
-  buf_create_info.usage              = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  auto buf_create_info = vk::BufferCreateInfo{
+      .sType = vk::StructureType::eBufferCreateInfo,
+      .size  = size_bytes,
+      .usage = vk::BufferUsageFlagBits::eTransferDst,
+  };
 
   VmaAllocationCreateInfo alloc_create_info = {};
   alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
   alloc_create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-  VkBuffer buf        = VK_NULL_HANDLE;
-  VmaAllocation alloc = nullptr;
-  VmaAllocationInfo alloc_info{};
-  VkResult res = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
-  if (res != VK_SUCCESS) {
-    return std::unexpected(Error{
-        .msg     = "Failed to create GPU-local buffer",
-        .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = vk::Result(res),
-    });
+  VmaAllocationInfo alloc_info;
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info, alloc_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
   }
 
   if (!alloc_info.pMappedData) {
@@ -195,11 +187,11 @@ Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_
   return PersistentlyMappedBufferResource{
       .buffer =
           BufferResource{
-              ._buffer             = VMARaiiBuffer(device.allocator(), alloc, buf),
-              ._p_device           = &device,
-              .size_bytes          = size_bytes,
-              .usage               = static_cast<vk::BufferUsageFlagBits>(buf_create_info.usage),
-              .transfer_src        = false,
+              ._buffer      = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
+              ._p_device    = &device,
+              .size_bytes   = size_bytes,
+              .usage        = buf_create_info.usage,
+              .transfer_src = false,
               .persistently_mapped = true,
               .mappable            = true,
           },
@@ -207,34 +199,28 @@ Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_
   };
 }
 
-Result<BufferResource, Error> BufferResource::create_gpu_local_buffer(const Device& device, vk::DeviceSize size_bytes,
+Result<BufferResource, Error> BufferResource::create_gpu_local_buffer(Device& device, vk::DeviceSize size_bytes,
                                                                       vk::BufferUsageFlagBits usage) {
-  VkBufferCreateInfo buf_create_info = {};
-  buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buf_create_info.size               = size_bytes;
-  buf_create_info.usage              = static_cast<VkBufferUsageFlags>(usage) | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-  buf_create_info.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
+  auto buf_create_info = vk::BufferCreateInfo{
+      .sType       = vk::StructureType::eBufferCreateInfo,
+      .size        = size_bytes,
+      .usage       = usage | vk::BufferUsageFlagBits::eTransferDst,
+      .sharingMode = vk::SharingMode::eExclusive,
+  };
 
   VmaAllocationCreateInfo alloc_create_info = {};
   alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-  VkBuffer buf        = VK_NULL_HANDLE;
-  VmaAllocation alloc = nullptr;
-  VmaAllocationInfo alloc_info{};
-  VkResult res = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
-  if (res != VK_SUCCESS) {
-    return std::unexpected(Error{
-        .msg     = "Failed to create GPU-local buffer",
-        .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = vk::Result(res),
-    });
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
   }
 
   return BufferResource{
-      ._buffer             = VMARaiiBuffer(device.allocator(), alloc, buf),
+      ._buffer             = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
       ._p_device           = &device,
       .size_bytes          = size_bytes,
-      .usage               = static_cast<vk::BufferUsageFlagBits>(buf_create_info.usage),
+      .usage               = buf_create_info.usage,
       .transfer_src        = false,
       .persistently_mapped = false,
       .mappable            = false,
@@ -252,19 +238,20 @@ Result<void, Error> BufferResource::write_via_staging_buffer(const util::MemoryR
   }
 
   auto cmd_cpy_buff = _p_device->begin_single_time_commands();
-  cmd_cpy_buff.copyBuffer(staging_buff->_buffer._handle, _buffer._handle,
+  cmd_cpy_buff.copyBuffer(staging_buff->_buffer._vk_handle, _buffer._vk_handle,
                           vk::BufferCopy(0, offset, src_region.size_bytes()));
   _p_device->end_single_time_commands(cmd_cpy_buff);
 
   return {};
 }
 
-Result<BufferResource, Error> BufferResource::create_uniform_buffer(const Device& device, vk::DeviceSize size_bytes) {
-  VkBufferCreateInfo buf_create_info = {};
-  buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buf_create_info.size               = size_bytes;
-  buf_create_info.usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-  buf_create_info.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
+Result<BufferResource, Error> BufferResource::create_uniform_buffer(Device& device, vk::DeviceSize size_bytes) {
+  vk::BufferCreateInfo buf_create_info = {
+      .sType       = vk::StructureType::eBufferCreateInfo,
+      .size        = size_bytes,
+      .usage       = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
+      .sharingMode = vk::SharingMode::eExclusive,
+  };
 
   VmaAllocationCreateInfo alloc_create_info = {};
   alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
@@ -272,59 +259,47 @@ Result<BufferResource, Error> BufferResource::create_uniform_buffer(const Device
                             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
                             VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-  VkBuffer buf        = VK_NULL_HANDLE;
-  VmaAllocation alloc = nullptr;
-  VmaAllocationInfo alloc_info{};
-  VkResult res = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
-
-  if (res != VK_SUCCESS) {
-    return std::unexpected(Error{
-        .msg     = "Failed to create GPU-local buffer",
-        .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = vk::Result(res),
-    });
+  VmaAllocationInfo alloc_info;
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info, alloc_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
   }
+
   VkMemoryPropertyFlags mem_prop_flags = 0;
-  vmaGetAllocationMemoryProperties(device.allocator(), alloc, &mem_prop_flags);
-  bool mappable = false;
+  vmaGetAllocationMemoryProperties(device.vma_alloc_manager().allocator(), buff_opt->allocation, &mem_prop_flags);
+  bool mappable_flag = false;
   if (mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-    mappable = true;
+    mappable_flag = true;
   }
 
   return BufferResource{
-      ._buffer             = VMARaiiBuffer(device.allocator(), alloc, buf),
+      ._buffer             = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
       ._p_device           = &device,
       .size_bytes          = size_bytes,
-      .usage               = static_cast<vk::BufferUsageFlagBits>(buf_create_info.usage),
+      .usage               = buf_create_info.usage,
       .transfer_src        = false,
       .persistently_mapped = alloc_info.pMappedData != nullptr,
-      .mappable            = mappable,
+      .mappable            = mappable_flag,
   };
 }
 
 [[nodiscard]] Result<PersistentlyMappedBufferResource, Error> BufferResource::create_persistently_mapped_uniform_buffer(
-    const Device& device, vk::DeviceSize size_bytes) {
-  VkBufferCreateInfo buf_create_info = {};
-  buf_create_info.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buf_create_info.size               = size_bytes;
-  buf_create_info.usage              = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-  buf_create_info.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
+    Device& device, vk::DeviceSize size_bytes) {
+  vk::BufferCreateInfo buf_create_info = {
+      .sType       = vk::StructureType::eBufferCreateInfo,
+      .size        = size_bytes,
+      .usage       = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
+      .sharingMode = vk::SharingMode::eExclusive,
+  };
 
   VmaAllocationCreateInfo alloc_create_info = {};
   alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
   alloc_create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-  VkBuffer buf        = VK_NULL_HANDLE;
-  VmaAllocation alloc = nullptr;
-  VmaAllocationInfo alloc_info{};
-  VkResult res = vmaCreateBuffer(device.allocator(), &buf_create_info, &alloc_create_info, &buf, &alloc, &alloc_info);
-
-  if (res != VK_SUCCESS) {
-    return std::unexpected(Error{
-        .msg     = "Failed to create persistently mapped uniform buffer",
-        .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = vk::Result(res),
-    });
+  VmaAllocationInfo alloc_info;
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info, alloc_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
   }
 
   if (!alloc_info.pMappedData) {
@@ -337,11 +312,11 @@ Result<BufferResource, Error> BufferResource::create_uniform_buffer(const Device
   return PersistentlyMappedBufferResource{
       .buffer =
           BufferResource{
-              ._buffer             = VMARaiiBuffer(device.allocator(), alloc, buf),
-              ._p_device           = &device,
-              .size_bytes          = size_bytes,
-              .usage               = static_cast<vk::BufferUsageFlagBits>(buf_create_info.usage),
-              .transfer_src        = false,
+              ._buffer      = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
+              ._p_device    = &device,
+              .size_bytes   = size_bytes,
+              .usage        = buf_create_info.usage,
+              .transfer_src = false,
               .persistently_mapped = true,
               .mappable            = true,
           },
@@ -354,8 +329,8 @@ Result<void, Error> BufferResource::write(const util::MemoryRegion& src_region, 
   assert(src_region.size_bytes() <= size_bytes - offset && "Region size exceeds available space in the buffer");
 
   if (mappable) {
-    auto res = vmaCopyMemoryToAllocation(_p_device->allocator(), src_region.data(), _buffer._allocation, offset,
-                                         src_region.size_bytes());
+    auto res = vmaCopyMemoryToAllocation(_p_device->vma_alloc_manager().allocator(), src_region.data(),
+                                         _buffer._allocation, offset, src_region.size_bytes());
 
     if (res != VK_SUCCESS) {
       return std::unexpected(Error{
@@ -388,7 +363,7 @@ Result<void*, Error> BufferResource::map() const {
   }
 
   void* ptr    = nullptr;
-  VkResult res = vmaMapMemory(_p_device->allocator(), _buffer._allocation, &ptr);
+  VkResult res = vmaMapMemory(_p_device->vma_alloc_manager().allocator(), _buffer._allocation, &ptr);
   if (res != VK_SUCCESS) {
     util::Logger::err("Could map memory with VMA");
     return std::unexpected(Error{
@@ -409,7 +384,7 @@ void BufferResource::unmap() const {
     return;
   }
 
-  vmaUnmapMemory(_p_device->allocator(), _buffer._allocation);
+  vmaUnmapMemory(_p_device->vma_alloc_manager().allocator(), _buffer._allocation);
 }
 
 std::optional<void*> BufferResource::mapping() const {

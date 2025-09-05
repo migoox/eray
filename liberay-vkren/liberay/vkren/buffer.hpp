@@ -105,8 +105,8 @@ struct PersistentlyMappedBufferResource;
  *
  */
 struct BufferResource {
-  VMARaiiBuffer _buffer;
-  observer_ptr<const Device> _p_device;
+  VmaRaiiBuffer _buffer = VmaRaiiBuffer(nullptr);
+  observer_ptr<Device> _p_device;
   vk::DeviceSize size_bytes;
   vk::BufferUsageFlags usage;
   bool transfer_src;
@@ -121,7 +121,7 @@ struct BufferResource {
    * @param size_bytes
    * @return Result<Buffer, Error>
    */
-  [[nodiscard]] static Result<BufferResource, Error> create_staging_buffer(const Device& device,
+  [[nodiscard]] static Result<BufferResource, Error> create_staging_buffer(Device& device,
                                                                            const util::MemoryRegion& src_region);
 
   /**
@@ -132,16 +132,13 @@ struct BufferResource {
    * @param usage
    * @return Result<Buffer, Error>
    */
-  [[nodiscard]] static Result<BufferResource, Error> create_gpu_local_buffer(const Device& device,
-                                                                             vk::DeviceSize size_bytes,
+  [[nodiscard]] static Result<BufferResource, Error> create_gpu_local_buffer(Device& device, vk::DeviceSize size_bytes,
                                                                              vk::BufferUsageFlagBits usage);
 
-  [[nodiscard]] static Result<BufferResource, Error> create_index_buffer(const Device& device,
-                                                                         vk::DeviceSize size_bytes) {
+  [[nodiscard]] static Result<BufferResource, Error> create_index_buffer(Device& device, vk::DeviceSize size_bytes) {
     return create_gpu_local_buffer(device, size_bytes, vk::BufferUsageFlagBits::eIndexBuffer);
   }
-  [[nodiscard]] static Result<BufferResource, Error> create_vertex_buffer(const Device& device,
-                                                                          vk::DeviceSize size_bytes) {
+  [[nodiscard]] static Result<BufferResource, Error> create_vertex_buffer(Device& device, vk::DeviceSize size_bytes) {
     return create_gpu_local_buffer(device, size_bytes, vk::BufferUsageFlagBits::eVertexBuffer);
   }
 
@@ -154,7 +151,7 @@ struct BufferResource {
    * @return Result<Buffer, Error>
    */
   [[nodiscard]] static Result<PersistentlyMappedBufferResource, Error> create_readback_buffer(
-      const Device& device, vk::DeviceSize size_bytes);
+      Device& device, vk::DeviceSize size_bytes);
 
   /**
    * @brief For resources that you frequently write on CPU via mapped pointer and frequently read on GPU e.g. uniform
@@ -164,11 +161,10 @@ struct BufferResource {
    * @param size_bytes
    * @return Result<Buffer, Error>
    */
-  [[nodiscard]] static Result<BufferResource, Error> create_uniform_buffer(const Device& device,
-                                                                           vk::DeviceSize size_bytes);
+  [[nodiscard]] static Result<BufferResource, Error> create_uniform_buffer(Device& device, vk::DeviceSize size_bytes);
 
   [[nodiscard]] static Result<PersistentlyMappedBufferResource, Error> create_persistently_mapped_uniform_buffer(
-      const Device& device, vk::DeviceSize size_bytes);
+      Device& device, vk::DeviceSize size_bytes);
 
   /**
    * @brief Creates a temporary staging buffer and uses it to fill the buffer.
@@ -223,7 +219,7 @@ struct BufferResource {
    */
   std::optional<void*> mapping() const;
 
-  vk::Buffer buffer() const { return _buffer._handle; }
+  vk::Buffer buffer() const { return _buffer._vk_handle; }
 };
 
 /**

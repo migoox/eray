@@ -1,4 +1,5 @@
 #include <GLFW/glfw3.h>
+
 #define VMA_IMPLEMENTATION
 #include <vma/vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
@@ -119,14 +120,7 @@ Result<Device, Error> Device::create(vk::raii::Context& ctx, const CreateInfo& i
   TRY(device.create_logical_device(info));
   TRY(device.create_command_pool());
 
-  auto allocator_info           = VmaAllocatorCreateInfo{};
-  allocator_info.physicalDevice = *device.physical_device_;
-  allocator_info.device         = *device.device_;
-  allocator_info.instance       = *device.instance_;
-  allocator_info.flags          = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-
-  vmaCreateAllocator(&allocator_info, &device.allocator_);
-  device.main_deletion_queue_.push_deletor([&]() { vmaDestroyAllocator(device.allocator_); });
+  device.vma_alloc_manager_ = VmaAllocationManager::create(device.physical_device_, device.device_, device.instance_);
 
   return device;
 }
@@ -644,6 +638,10 @@ void Device::transition_image_layout(const vk::raii::Image& image, const ImageDe
 }
 
 void Device::cleanup() { main_deletion_queue_.flush(); }
+
+void Device::push_vma_deletor(std::function<void()>&& function) {
+  main_deletion_queue_.push_deletor(std::move(function));
+}
 
 Device::~Device() { cleanup(); }
 

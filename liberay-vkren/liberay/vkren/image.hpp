@@ -17,9 +17,9 @@
 namespace eray::vkren {
 
 struct ImageResource {
-  VMARaiiImage _image = VMARaiiImage(nullptr);
+  VmaRaiiImage _image = VmaRaiiImage(nullptr);
   ImageDescription description;
-  observer_ptr<const Device> _p_device = nullptr;
+  observer_ptr<Device> _p_device = nullptr;
   uint32_t mip_levels;
   vk::ImageAspectFlags aspect;
   vk::ImageUsageFlags usage;
@@ -37,11 +37,11 @@ struct ImageResource {
    * @return Result<Image, Error>
    */
   [[nodiscard]] static Result<ImageResource, Error> create_attachment_image(
-      const Device& device, ImageDescription desc, vk::ImageUsageFlags usage, vk::ImageAspectFlags aspect,
+      Device& device, ImageDescription desc, vk::ImageUsageFlags usage, vk::ImageAspectFlags aspect,
       vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1);
 
   [[nodiscard]] static Result<ImageResource, Error> create_color_attachment_image(
-      const Device& device, const ImageDescription& desc,
+      Device& device, const ImageDescription& desc,
       vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
     return create_attachment_image(
         device, desc, vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
@@ -49,7 +49,7 @@ struct ImageResource {
   }
 
   [[nodiscard]] static Result<ImageResource, Error> create_depth_stencil_attachment_image(
-      const Device& device, const ImageDescription& desc,
+      Device& device, const ImageDescription& desc,
       vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
     return create_attachment_image(device, desc, vk::ImageUsageFlagBits::eDepthStencilAttachment,
                                    vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil, sample_count);
@@ -64,7 +64,7 @@ struct ImageResource {
    * @return Result<ImageResource, Error>
    */
   [[nodiscard]] static Result<ImageResource, Error> create_texture(
-      const Device& device, ImageDescription desc, bool mipmapping = true,
+      Device& device, ImageDescription desc, bool mipmapping = true,
       vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor);
 
   /**
@@ -95,7 +95,7 @@ struct ImageResource {
 
   VmaAllocationInfo alloc_info() const { return _image.alloc_info(); }
 
-  vk::Image image() const { return _image._handle; }
+  vk::Image image() const { return _image._vk_handle; }
 
   Result<vk::raii::ImageView, Error> create_image_view(vk::ImageViewType image_view_type) const;
 

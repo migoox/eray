@@ -25,7 +25,7 @@ class SwapChain {
   ERAY_DELETE_COPY(SwapChain)
   ERAY_DEFAULT_MOVE(SwapChain)
 
-  static Result<SwapChain, Error> create(const Device& device, uint32_t width, uint32_t height,
+  static Result<SwapChain, Error> create(Device& device, uint32_t width, uint32_t height,
                                          vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) noexcept;
 
   vk::raii::SwapchainKHR* operator->() noexcept { return &swap_chain_; }
@@ -82,7 +82,7 @@ class SwapChain {
    *
    * @param device_
    */
-  Result<void, Error> recreate(const Device& device, uint32_t width, uint32_t height);
+  Result<void, Error> recreate(Device& device, uint32_t width, uint32_t height);
 
   /**
    * @brief Allows to destroy the swap chain explicitly. Example use case: Swap chain must be destroyed before
@@ -98,10 +98,10 @@ class SwapChain {
  private:
   SwapChain() = default;
 
-  Result<void, Error> create_swap_chain(const vkren::Device& device, uint32_t width, uint32_t height) noexcept;
-  Result<void, Error> create_image_views(const vkren::Device& device) noexcept;
-  Result<void, Error> create_color_buffer(const vkren::Device& device) noexcept;
-  Result<void, Error> create_depth_stencil_buffer(const vkren::Device& device) noexcept;
+  Result<void, Error> create_swap_chain(vkren::Device& device, uint32_t width, uint32_t height) noexcept;
+  Result<void, Error> create_image_views(vkren::Device& device) noexcept;
+  Result<void, Error> create_color_buffer(vkren::Device& device) noexcept;
+  Result<void, Error> create_depth_stencil_buffer(vkren::Device& device) noexcept;
 
   Result<vk::Format, Error> find_supported_depth_stencil_format(const Device& device,
                                                                 const std::vector<vk::Format>& candidates,
