@@ -7,7 +7,9 @@
 namespace eray::vkren {
 
 /**
- * @brief Either `depth` or `array_layers` is equal to 1.
+ * @brief This class describes image requirements: format, dimensions and array layers.
+ *
+ * @note Invariant: Either `depth` or `array_layers` is equal to 1.
  *
  */
 struct ImageDescription {

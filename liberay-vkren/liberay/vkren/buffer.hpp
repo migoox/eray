@@ -172,6 +172,7 @@ struct BufferResource {
 
   /**
    * @brief Creates a temporary staging buffer and uses it to fill the buffer.
+   * This function blocks the CPU until the write is ready.
    *
    * @param offset Represents the destination (GPU memory) offset. Zero by default.
    * @param src_region
@@ -181,6 +182,7 @@ struct BufferResource {
 
   /**
    * @brief Fills the buffer. If the buffer is not `mappable` it will call `fill_via_staging_buffer()`.
+   * This function blocks the CPU until the write is ready.
    *
    * @param offset Represents the destination (GPU memory) offset. Zero by default.
    * @param src_region
