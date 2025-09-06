@@ -13,6 +13,12 @@
 
 namespace eray::vkren {
 
+/**
+ * @brief This class manages the VmaImage and VmaBuffer objects. After this class is destructed, all objects that
+ * where created with `create_buffer` or `create_image` will be automatically deallocated. To schedule the earlier
+ * deallocation use `delete_buffer` or `delete_image`.
+ *
+ */
 class VmaAllocationManager {
  public:
   VmaAllocationManager() = delete;

@@ -10,10 +10,6 @@
 
 namespace eray::vkren {
 
-/**
- * @brief RAII VMA object. This struct must not outlive the allocator.
- *
- */
 template <typename TVmaObjectHandle,
           void (*DeleteCallback)(VmaAllocationManager&, VmaAllocation, TVmaObjectHandle) noexcept>
 struct VmaRaiiObject {
@@ -73,11 +69,21 @@ struct VmaRaiiObject {
   }
 };
 
+/**
+ * @brief This struct must not outlive the allocation manager. `VmaRaiiBuffer` automatically schedules its resource
+ * deallocation when out of scope.
+ *
+ */
 using VmaRaiiBuffer = VmaRaiiObject<vk::Buffer, [](VmaAllocationManager& alloc_manager, VmaAllocation allocation,
                                                    vk::Buffer buffer) noexcept {
   alloc_manager.delete_buffer(VmaBuffer{.vk_buffer = buffer, .allocation = allocation});
 }>;
 
+/**
+ * @brief This struct must not outlive the allocation manager. `VmaRaiiImage` automatically schedules its resource
+ * deallocation when out of scope.
+ *
+ */
 using VmaRaiiImage = VmaRaiiObject<vk::Image, [](VmaAllocationManager& alloc_manager, VmaAllocation allocation,
                                                  vk::Image image) noexcept {
   alloc_manager.delete_image(VmaImage{.vk_image = image, .allocation = allocation});
