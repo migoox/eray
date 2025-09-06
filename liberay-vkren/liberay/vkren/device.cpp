@@ -120,7 +120,12 @@ Result<Device, Error> Device::create(vk::raii::Context& ctx, const CreateInfo& i
   TRY(device.create_logical_device(info));
   TRY(device.create_command_pool());
 
-  device.vma_alloc_manager_ = VmaAllocationManager::create(device.physical_device_, device.device_, device.instance_);
+  auto res = VmaAllocationManager::create(device.physical_device_, device.device_, device.instance_);
+  if (!res) {
+    return std::unexpected(res.error());
+  }
+
+  device.vma_alloc_manager_ = std::move(*res);
 
   return device;
 }

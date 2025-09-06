@@ -3,8 +3,28 @@
 
 namespace eray::vkren {
 
-VmaAllocationManager VmaAllocationManager::create(vk::PhysicalDevice physical_device, vk::Device device,
-                                                  vk::Instance instance) {
+VmaAllocationManager::VmaAllocationManager(VmaAllocationManager&& other) noexcept
+    : allocator_(other.allocator_), vma_objects_(std::move(other.vma_objects_)) {
+  other.allocator_ = nullptr;
+}
+
+VmaAllocationManager& VmaAllocationManager::operator=(VmaAllocationManager&& other) noexcept {
+  if (this == &other) {
+    return *this;
+  }
+
+  if (allocator_ != nullptr) {
+    destroy();
+  }
+  allocator_       = other.allocator_;
+  vma_objects_     = std::move(other.vma_objects_);
+  other.allocator_ = nullptr;
+
+  return *this;
+}
+
+Result<VmaAllocationManager, Error> VmaAllocationManager::create(vk::PhysicalDevice physical_device, vk::Device device,
+                                                                 vk::Instance instance) {
   auto allocator_info           = VmaAllocatorCreateInfo{};
   allocator_info.physicalDevice = physical_device;
   allocator_info.device         = device;
@@ -12,7 +32,17 @@ VmaAllocationManager VmaAllocationManager::create(vk::PhysicalDevice physical_de
   allocator_info.flags          = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
   VmaAllocator allocator = nullptr;
-  vmaCreateAllocator(&allocator_info, &allocator);
+
+  auto result = vk::Result(vmaCreateAllocator(&allocator_info, &allocator));
+
+  if (result != vk::Result::eSuccess) {
+    util::Logger::err("Failed to create a VMA Allocation Manager.");
+    return std::unexpected(Error{
+        .msg     = "VMA Allocation Manager creation failed",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = result,
+    });
+  }
 
   return VmaAllocationManager(allocator);
 }
@@ -65,6 +95,8 @@ Result<VmaImage, Error> VmaAllocationManager::create_image(const vk::ImageCreate
 }
 
 void VmaAllocationManager::destroy() {
+  assert(allocator_ != nullptr && "Allocator must not be NULL");
+
   for (const auto& o : vma_objects_) {
     std::visit(util::match{
                    [this](VmaBuffer buffer) { vmaDestroyBuffer(allocator_, buffer.vk_buffer, buffer.allocation); },
@@ -72,6 +104,7 @@ void VmaAllocationManager::destroy() {
                },
                o);
   }
+  vma_objects_.clear();
   vmaDestroyAllocator(allocator_);
   allocator_ = nullptr;
 }

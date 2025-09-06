@@ -18,11 +18,15 @@ class VmaAllocationManager {
   VmaAllocationManager() = delete;
   explicit VmaAllocationManager(std::nullptr_t) {}
 
-  static VmaAllocationManager create(vk::PhysicalDevice physical_device, vk::Device device, vk::Instance instance);
+  VmaAllocationManager(VmaAllocationManager&&) noexcept;
+  VmaAllocationManager& operator=(VmaAllocationManager&&) noexcept;
+  VmaAllocationManager(const VmaAllocationManager&)            = delete;
+  VmaAllocationManager& operator=(const VmaAllocationManager&) = delete;
+
+  static Result<VmaAllocationManager, Error> create(vk::PhysicalDevice physical_device, vk::Device device,
+                                                    vk::Instance instance);
 
   ~VmaAllocationManager();
-
-  VmaAllocator allocator() const { return allocator_; }
 
   [[nodiscard]] Result<VmaBuffer, Error> create_buffer(const vk::BufferCreateInfo& buffer_create_info,
                                                        const VmaAllocationCreateInfo& alloc_create_info,
@@ -42,6 +46,8 @@ class VmaAllocationManager {
   void delete_image(VmaImage image);
 
   void destroy();
+
+  VmaAllocator allocator() const { return allocator_; }
 
  private:
   explicit VmaAllocationManager(VmaAllocator allocator) : allocator_(allocator) {}
