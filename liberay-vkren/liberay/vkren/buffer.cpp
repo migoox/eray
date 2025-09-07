@@ -1,9 +1,16 @@
+#include <vulkan/vulkan_core.h>
+
+#include <cassert>
 #include <expected>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
+#include <liberay/vkren/device.hpp>
 #include <liberay/vkren/error.hpp>
+#include <liberay/vkren/vma_allocation_manager.hpp>
+#include <liberay/vkren/vma_raii_object.hpp>
+#include <optional>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
@@ -62,8 +69,8 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create(const Dev
   return ExclusiveBufferResource(std::move(*buffer_opt), std::move(*buffer_mem_opt), info.size_bytes, info.buff_usage,
                                  info.mem_properties, &device);
 }
-Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_staging_buffer(const Device& device,
-                                                                                      util::MemoryRegion src_region) {
+Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_staging(const Device& device,
+                                                                               util::MemoryRegion src_region) {
   auto staging_buff_opt =
       vkren::ExclusiveBufferResource::create(device, vkren::ExclusiveBufferResource::CreateInfo{
                                                          .size_bytes = src_region.size_bytes(),
@@ -83,8 +90,8 @@ Result<ExclusiveBufferResource, Error> ExclusiveBufferResource::create_and_uploa
     util::panic("Region size and creation info size mismatch");
   }
 
-  auto staging_buffer = vkren::ExclusiveBufferResource::create_staging_buffer(device, src_region)
-                            .or_panic("Staging buffer creation failed");
+  auto staging_buffer =
+      vkren::ExclusiveBufferResource::create_staging(device, src_region).or_panic("Staging buffer creation failed");
   auto new_info = info;
   new_info.buff_usage |= vk::BufferUsageFlagBits::eTransferDst;
   auto result = vkren::ExclusiveBufferResource::create(device, new_info);
@@ -119,6 +126,274 @@ void ExclusiveBufferResource::copy_from(const vk::raii::Buffer& src_buff, vk::Bu
   auto cmd_cpy_buff = p_device_->begin_single_time_commands();
   cmd_cpy_buff.copyBuffer(src_buff, buffer_, cpy_info);
   p_device_->end_single_time_commands(cmd_cpy_buff);
+}
+
+Result<BufferResource, Error> BufferResource::create_staging_buffer(Device& device,
+                                                                    const util::MemoryRegion& src_region) {
+  auto buf_create_info = vk::BufferCreateInfo{
+      .sType = vk::StructureType::eBufferCreateInfo,
+      .size  = src_region.size_bytes(),
+      .usage = vk::BufferUsageFlagBits::eTransferSrc,
+  };
+
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
+  alloc_create_info.flags                   = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
+  }
+
+  vmaCopyMemoryToAllocation(device.vma_alloc_manager().allocator(), src_region.data(), buff_opt->allocation, 0,
+                            src_region.size_bytes());
+
+  return BufferResource{
+      ._buffer             = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
+      ._p_device           = &device,
+      .size_bytes          = src_region.size_bytes(),
+      .usage               = buf_create_info.usage,
+      .transfer_src        = true,
+      .persistently_mapped = false,
+      .mappable            = true,
+  };
+}
+
+Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_buffer(Device& device,
+                                                                                       vk::DeviceSize size_bytes) {
+  auto buf_create_info = vk::BufferCreateInfo{
+      .sType = vk::StructureType::eBufferCreateInfo,
+      .size  = size_bytes,
+      .usage = vk::BufferUsageFlagBits::eTransferDst,
+  };
+
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
+  alloc_create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+  VmaAllocationInfo alloc_info;
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info, alloc_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
+  }
+
+  if (!alloc_info.pMappedData) {
+    return std::unexpected(Error{
+        .msg  = "Persistent mapping failed: allocation did not provide pMappedData",
+        .code = ErrorCode::VulkanObjectCreationFailure{},
+    });
+  }
+
+  return PersistentlyMappedBufferResource{
+      .buffer =
+          BufferResource{
+              ._buffer      = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
+              ._p_device    = &device,
+              .size_bytes   = size_bytes,
+              .usage        = buf_create_info.usage,
+              .transfer_src = false,
+              .persistently_mapped = true,
+              .mappable            = true,
+          },
+      .mapped_data = alloc_info.pMappedData,
+  };
+}
+
+Result<BufferResource, Error> BufferResource::create_gpu_local_buffer(Device& device, vk::DeviceSize size_bytes,
+                                                                      vk::BufferUsageFlagBits usage) {
+  auto buf_create_info = vk::BufferCreateInfo{
+      .sType       = vk::StructureType::eBufferCreateInfo,
+      .size        = size_bytes,
+      .usage       = usage | vk::BufferUsageFlagBits::eTransferDst,
+      .sharingMode = vk::SharingMode::eExclusive,
+  };
+
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
+  }
+
+  return BufferResource{
+      ._buffer             = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
+      ._p_device           = &device,
+      .size_bytes          = size_bytes,
+      .usage               = buf_create_info.usage,
+      .transfer_src        = false,
+      .persistently_mapped = false,
+      .mappable            = false,
+  };
+}
+
+Result<void, Error> BufferResource::write_via_staging_buffer(const util::MemoryRegion& src_region,
+                                                             vk::DeviceSize offset) const {
+  assert(offset < size_bytes && "Offset exceeds the buffer size");
+  assert(src_region.size_bytes() <= size_bytes - offset && "Region size exceeds available space in the buffer");
+
+  auto staging_buff = create_staging_buffer(*_p_device, src_region);
+  if (!staging_buff) {
+    return std::unexpected(staging_buff.error());
+  }
+
+  auto cmd_cpy_buff = _p_device->begin_single_time_commands();
+  cmd_cpy_buff.copyBuffer(staging_buff->_buffer._vk_handle, _buffer._vk_handle,
+                          vk::BufferCopy(0, offset, src_region.size_bytes()));
+  _p_device->end_single_time_commands(cmd_cpy_buff);
+
+  return {};
+}
+
+Result<BufferResource, Error> BufferResource::create_uniform_buffer(Device& device, vk::DeviceSize size_bytes) {
+  vk::BufferCreateInfo buf_create_info = {
+      .sType       = vk::StructureType::eBufferCreateInfo,
+      .size        = size_bytes,
+      .usage       = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
+      .sharingMode = vk::SharingMode::eExclusive,
+  };
+
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
+  alloc_create_info.flags                   = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
+                            VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+  VmaAllocationInfo alloc_info;
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info, alloc_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
+  }
+
+  VkMemoryPropertyFlags mem_prop_flags = 0;
+  vmaGetAllocationMemoryProperties(device.vma_alloc_manager().allocator(), buff_opt->allocation, &mem_prop_flags);
+  bool mappable_flag = false;
+  if (mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+    mappable_flag = true;
+  }
+
+  return BufferResource{
+      ._buffer             = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
+      ._p_device           = &device,
+      .size_bytes          = size_bytes,
+      .usage               = buf_create_info.usage,
+      .transfer_src        = false,
+      .persistently_mapped = alloc_info.pMappedData != nullptr,
+      .mappable            = mappable_flag,
+  };
+}
+
+[[nodiscard]] Result<PersistentlyMappedBufferResource, Error> BufferResource::create_persistently_mapped_uniform_buffer(
+    Device& device, vk::DeviceSize size_bytes) {
+  vk::BufferCreateInfo buf_create_info = {
+      .sType       = vk::StructureType::eBufferCreateInfo,
+      .size        = size_bytes,
+      .usage       = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
+      .sharingMode = vk::SharingMode::eExclusive,
+  };
+
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
+  alloc_create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+  VmaAllocationInfo alloc_info;
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info, alloc_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
+  }
+
+  if (!alloc_info.pMappedData) {
+    return std::unexpected(Error{
+        .msg  = "Persistent mapping failed: allocation did not provide pMappedData",
+        .code = ErrorCode::VulkanObjectCreationFailure{},
+    });
+  }
+
+  return PersistentlyMappedBufferResource{
+      .buffer =
+          BufferResource{
+              ._buffer      = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
+              ._p_device    = &device,
+              .size_bytes   = size_bytes,
+              .usage        = buf_create_info.usage,
+              .transfer_src = false,
+              .persistently_mapped = true,
+              .mappable            = true,
+          },
+      .mapped_data = alloc_info.pMappedData,
+  };
+}
+
+Result<void, Error> BufferResource::write(const util::MemoryRegion& src_region, vk::DeviceSize offset) const {
+  assert(offset < size_bytes && "Offset exceeds the buffer size");
+  assert(src_region.size_bytes() <= size_bytes - offset && "Region size exceeds available space in the buffer");
+
+  if (mappable) {
+    auto res = vmaCopyMemoryToAllocation(_p_device->vma_alloc_manager().allocator(), src_region.data(),
+                                         _buffer._allocation, offset, src_region.size_bytes());
+
+    if (res != VK_SUCCESS) {
+      return std::unexpected(Error{
+          .msg     = "Failed to fill buffer",
+          .code    = ErrorCode::VulkanObjectCreationFailure{},
+          .vk_code = vk::Result(res),
+      });
+    }
+  } else {
+    return write_via_staging_buffer(src_region, offset);
+  }
+
+  return {};
+}
+
+Result<void*, Error> BufferResource::map() const {
+  if (!mappable) {
+    util::Logger::err("Buffer is not mappable, but map has been requested!");
+    return std::unexpected(Error{
+        .msg  = "Buffer is not mappable",
+        .code = ErrorCode::MemoryMappingNotSupported{},
+    });
+  }
+
+  auto alloc_info = this->alloc_info();
+  // If it’s already persistently mapped (created with VMA_ALLOCATION_CREATE_MAPPED_BIT),
+  // VMA provides a stable pointer here.
+  if (alloc_info.pMappedData) {
+    return alloc_info.pMappedData;
+  }
+
+  void* ptr    = nullptr;
+  VkResult res = vmaMapMemory(_p_device->vma_alloc_manager().allocator(), _buffer._allocation, &ptr);
+  if (res != VK_SUCCESS) {
+    util::Logger::err("Could map memory with VMA");
+    return std::unexpected(Error{
+        .msg     = "VMA mapping failed",
+        .code    = ErrorCode::MemoryMappingFailure{},
+        .vk_code = vk::Result(res),
+    });
+  }
+
+  return ptr;
+}
+
+void BufferResource::unmap() const {
+  auto alloc_info = this->alloc_info();
+  // If it’s already persistently mapped (created with VMA_ALLOCATION_CREATE_MAPPED_BIT),
+  // VMA provides a stable pointer here.
+  if (alloc_info.pMappedData) {
+    return;
+  }
+
+  vmaUnmapMemory(_p_device->vma_alloc_manager().allocator(), _buffer._allocation);
+}
+
+std::optional<void*> BufferResource::mapping() const {
+  auto info = this->alloc_info();
+  if (info.pMappedData == nullptr) {
+    return std::nullopt;
+  }
+
+  return info.pMappedData;
 }
 
 }  // namespace eray::vkren

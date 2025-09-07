@@ -14,10 +14,11 @@ if (NOT Vulkan_FOUND)
 endif()
 message(STATUS "Vulkan Include Directory: ${Vulkan_INCLUDE_DIR}")
 
+add_subdirectory(third_party/vma)
 
 configure_library(
     NAME liberay-vkren
-    DEPS_PUBLIC liberay-util liberay-math liberay-res liberay-os glfw Vulkan::Vulkan
+    DEPS_PUBLIC liberay-util liberay-math liberay-res liberay-os glfw Vulkan::Vulkan VMA
     COMPILE_DEFINITIONS
       VULKAN_HPP_NO_EXCEPTIONS
       VULKAN_HPP_NO_STRUCT_CONSTRUCTORS

@@ -1,127 +1,135 @@
 #pragma once
 
-#include <cstddef>
+#include <vulkan/vulkan_core.h>
+
 #include <liberay/res/image.hpp>
 #include <liberay/util/memory_region.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/image_description.hpp>
+#include <liberay/vkren/vma_raii_object.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
-/**
- * @brief Represents an image with dedicated chunk of device memory. The buffer resource owns both -- buffer object and
- * the chunk of memory.
- *
- * @note This buffer abstraction is trivial and according to https://developer.nvidia.com/vulkan-memory-management,
- * should not be used frequently. Moreover since each image has it's own DeviceMemory in this scheme, there can be
- * up to 4096 ExclusiveImageResources in your app.
- *
- * @warning Lifetime is bound by the device lifetime.
- *
- */
-class ExclusiveImage2DResource {
- public:
-  ExclusiveImage2DResource() = delete;
-  explicit ExclusiveImage2DResource(std::nullptr_t) {}
-
-  struct CreateInfo {
-    vk::DeviceSize size_bytes;
-    vk::ImageUsageFlags image_usage;
-    ImageDescription desc;
-    vk::ImageTiling tiling = vk::ImageTiling::eOptimal;
-    vk::MemoryPropertyFlags mem_properties;
-    vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1;
-  };
-
-  [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create(const Device& device, const CreateInfo& info);
+struct ImageResource {
+  VmaRaiiImage _image = VmaRaiiImage(nullptr);
+  ImageDescription description;
+  observer_ptr<Device> _p_device = nullptr;
+  uint32_t mip_levels;
+  vk::ImageAspectFlags aspect;
+  vk::ImageUsageFlags usage;
 
   /**
-   * @brief If desc.mip_levels > 1 than the mipmaps will be generated with Vulkan Blitting.
+   * @brief Any resources that you frequently write and read on GPU, e.g. images used as color attachments (aka "render
+   * targets"), depth-stencil attachments, images/buffers used as storage image/buffer (aka "Unordered Access View
+   * (UAV)"). The buffer has always usage set to eSampled.
+   *
+   * The layout is VK_IMAGE_LAYOUT_UNDEFINED.
    *
    * @param device
    * @param desc
-   * @param data
-   * @param size_bytes
-   * @return Result<ExclusiveImage2DResource, Error>
+   * @param sample_count
+   * @return Result<Image, Error>
    */
-  [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create_texture(const Device& device,
-                                                                              ImageDescription desc,
-                                                                              util::MemoryRegion region);
+  [[nodiscard]] static Result<ImageResource, Error> create_attachment_image(
+      Device& device, ImageDescription desc, vk::ImageUsageFlags usage, vk::ImageAspectFlags aspect,
+      vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1);
+
+  [[nodiscard]] static Result<ImageResource, Error> create_color_attachment_image(
+      Device& device, const ImageDescription& desc,
+      vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
+    return create_attachment_image(
+        device, desc, vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
+        vk::ImageAspectFlagBits::eColor, sample_count);
+  }
+
+  [[nodiscard]] static Result<ImageResource, Error> create_depth_stencil_attachment_image(
+      Device& device, const ImageDescription& desc,
+      vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
+    return create_attachment_image(device, desc, vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                                   vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil, sample_count);
+  }
 
   /**
-   * @brief Creates texture from CPU image representation. Generates mipmaps with Vulkan Blitting. If Vulkan Blitting is
-   * not supported uses CPU algorithm fallback.
+   * @brief Use this for buffers that are frequently sampled by the GPU, and loaded once from the CPU. The layout is
+   * VK_IMAGE_LAYOUT_UNDEFINED.
    *
    * @param device
    * @param desc
-   * @param generate_mipmaps
-   * @return Result<ExclusiveImage2DResource, Error>
+   * @return Result<ImageResource, Error>
    */
-  [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create_texture(const Device& device,
-                                                                              const res::Image& image,
-                                                                              bool generate_mipmaps = true);
+  [[nodiscard]] static Result<ImageResource, Error> create_texture(
+      Device& device, ImageDescription desc, bool mipmapping = true,
+      vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor);
 
   /**
-   * @brief Expects a buffer containing packed images with LOD ranging 0 to mip levels - 1.
+   * @brief Invokes `vkCmdPipelineBarrier2`. `cmd` must be in the begin state.
    *
-   * @param device
-   * @param desc
-   * @param mipmaps_buffer
-   * @param size_bytes
-   * @return Result<ExclusiveImage2DResource, Error>
+   * @param cmd
+   * @param new_layout
    */
-  [[nodiscard]] static Result<ExclusiveImage2DResource, Error> create_texture_from_mipmaps_buffer(
-      const Device& device, ImageDescription desc, util::MemoryRegion mipmaps_region);
+  void transition_layout(vk::CommandBuffer cmd, vk::ImageLayout current_layout, vk::ImageLayout new_layout);
+
+  void transition_mip_level_layout(vk::CommandBuffer cmd, vk::ImageLayout current_layout, vk::ImageLayout new_layout,
+                                   uint32_t base_level, uint32_t level_count = 1);
 
   /**
-   * @brief Blocks the program execution and copies GPU `src_buff` data to the other GPU buffer.
+   * @brief Automatically detects whether the buffer contains all mipmaps. If so it uploads the buffer to the texture.
+   * If the buffer contains LOD0 only and `mipmapping` is set to true, this function uploads the LOD0 image(s) and
+   * generates the missing mipmaps.
    *
-   * @warning Requires the `src_buff` to be a VK_BUFFER_USAGE_TRANSFER_SRC_BIT set and the current buffer to
-   * have VK_BUFFER_USAGE_TRANSFER_DST_BIT set.
+   * Expects the layout of the image range to be VK_IMAGE_LAYOUT_UNDEFINED. Leaves the layout in the
+   * VK_IMAGE_SHADER_READ_ONLY_OPTIMAL state.
    *
-   * @param src_buff
+   * @param src_region Represents packed region of CPU memory that consists of mip levels. A mip level with LOD `i`
+   * contains all layer images with LOD `i`.
+   * @param offset
+   * @return Result<void, Error>
    */
-  void copy_from(const vk::raii::Buffer& src_buff) const;
+  Result<void, Error> upload(util::MemoryRegion src_region);
 
-  Result<vk::raii::ImageView, Error> create_image_view(
-      vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlagBits::eColor);
+  VmaAllocationInfo alloc_info() const { return _image.alloc_info(); }
 
-  const ImageDescription& desc() const { return desc_; }
-  const vk::raii::Image& image() const { return image_; }
-  const vk::raii::DeviceMemory& memory() const { return memory_; }
-  const Device& device() const { return *p_device_; }
-  vk::DeviceSize mem_size_bytes() const { return mem_size_bytes_; }
-  vk::ImageUsageFlags image_usage() const { return image_usage_; }
-  vk::MemoryPropertyFlags mem_properties() const { return mem_properties_; }
+  vk::Image image() const { return _image._vk_handle; }
 
- private:
-  static Result<void, Error> copy_mip_maps_data(const Device& device, const ExclusiveImage2DResource& image,
-                                                util::MemoryRegion mipmaps_region);
+  Result<vk::raii::ImageView, Error> create_image_view(vk::ImageViewType image_view_type) const;
 
- private:
-  ExclusiveImage2DResource(ImageDescription&& desc, vk::raii::Image&& image, vk::raii::DeviceMemory&& memory,
-                           const Device* p_device, vk::DeviceSize mem_size_bytes, vk::ImageUsageFlags image_usage,
-                           vk::MemoryPropertyFlags mem_properties)
-      : desc_(std::move(desc)),
-        image_(std::move(image)),
-        memory_(std::move(memory)),
-        p_device_(p_device),
-        mem_size_bytes_(mem_size_bytes),
-        image_usage_(image_usage),
-        mem_properties_(mem_properties) {}
+  /**
+   * @brief In case of `vk::ImageType::e2D` returns image view with `vk::ImageViewType::e2D`. Returns image view
+   * `vk::ImageViewType::e3D` otherwise.
+   *
+   * @return Result<vk::raii::ImageView, Error>
+   */
+  Result<vk::raii::ImageView, Error> create_image_view() const;
 
-  ImageDescription desc_{};
-  vk::raii::Image image_               = nullptr;
-  vk::raii::DeviceMemory memory_       = nullptr;
-  observer_ptr<const Device> p_device_ = nullptr;
-  vk::DeviceSize mem_size_bytes_{};
-  vk::ImageUsageFlags image_usage_;
-  vk::MemoryPropertyFlags mem_properties_;
+  /**
+   * @brief Size of the image in level of detail 0. The function ignores the mipmap level and layers.
+   *
+   * @return vk::DeviceSize
+   */
+  vk::DeviceSize lod0_size_bytes() const { return description.lod0_size_bytes(); }
+
+  /**
+   * @brief Full size in bytes, includes mipmaps and layers.
+   *
+   * @return vk::DeviceSize
+   */
+  vk::DeviceSize find_full_size_bytes() const { return description.find_full_size_bytes(); }
+
+  /**
+   * @brief Returns true iff the image resource has mipmappnig enabled.
+   *
+   * @return true
+   * @return false
+   */
+  bool mipmapping_enabled() const { return mip_levels > 1; }
+
+  vk::ImageSubresourceRange full_resource_range() const;
 };
 
 }  // namespace eray::vkren

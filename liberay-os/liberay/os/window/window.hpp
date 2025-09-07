@@ -28,8 +28,8 @@ class Window {
   };
 
   struct Dimensions {
-    int width;
-    int height;
+    uint32_t width;
+    uint32_t height;
   };
 
   explicit Window(const WindowProperties& props) : props_(std::move(props)) {
@@ -101,8 +101,8 @@ class Window {
 
  protected:
   bool on_win_resized(const WindowResizedEvent& ev) {
-    props_.width  = ev.width();
-    props_.height = ev.height();
+    props_.width  = static_cast<uint32_t>(ev.width());
+    props_.height = static_cast<uint32_t>(ev.height());
     return true;
   }
 

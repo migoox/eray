@@ -1,4 +1,7 @@
+#include <vulkan/vulkan.h>
+
 #include <expected>
+#include <liberay/os/window/events/event.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
@@ -7,24 +10,36 @@
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/swap_chain.hpp>
+#include <memory>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_structs.hpp>
+#include <vulkan/vulkan_handles.hpp>
 
 namespace eray::vkren {
 
-Result<SwapChain, Error> SwapChain::create(const Device& device, uint32_t width, uint32_t height,
+Result<SwapChain, Error> SwapChain::create(Device& device, std::shared_ptr<os::Window> window,
                                            vk::SampleCountFlagBits sample_count) noexcept {
-  auto swap_chain               = SwapChain();
+  auto swap_chain = SwapChain();
+
+  window->set_event_callback<eray::os::FramebufferResizedEvent>([&swap_chain](const auto&) -> bool {
+    swap_chain.framebuffer_resized_ = true;
+    return true;
+  });
+
+  swap_chain.p_device_          = &device;
+  auto framebuffer_size         = window->framebuffer_size();
+  swap_chain.window_            = std::move(window);
   swap_chain.msaa_sample_count_ = sample_count;
-  TRY(swap_chain.create_swap_chain(device, width, height));
+
+  TRY(swap_chain.create_swap_chain(device, framebuffer_size.width, framebuffer_size.height));
   TRY(swap_chain.create_image_views(device));
-  TRY(swap_chain.create_color_buffer(device));
-  TRY(swap_chain.create_depth_stencil_buffer(device));
+  TRY(swap_chain.create_color_attachment_image(device));
+  TRY(swap_chain.create_depth_stencil_attachment_image(device));
+
   return swap_chain;
 }
 
-Result<void, Error> SwapChain::create_swap_chain(const Device& device, uint32_t width, uint32_t height) noexcept {
+Result<void, Error> SwapChain::create_swap_chain(Device& device, uint32_t width, uint32_t height) noexcept {
   // Surface formats (pixel format, e.g. B8G8R8A8, color space e.g. SRGB)
   auto available_formats       = device.physical_device().getSurfaceFormatsKHR(device.surface());
   auto available_present_modes = device.physical_device().getSurfacePresentModesKHR(device.surface());
@@ -171,7 +186,7 @@ Result<void, Error> SwapChain::create_swap_chain(const Device& device, uint32_t 
   return {};
 }
 
-Result<void, Error> SwapChain::create_image_views(const vkren::Device& device) noexcept {
+Result<void, Error> SwapChain::create_image_views(vkren::Device& device) noexcept {
   image_views_.clear();
 
   auto image_view_info =
@@ -215,29 +230,17 @@ Result<void, Error> SwapChain::create_image_views(const vkren::Device& device) n
   return {};
 }
 
-Result<void, Error> SwapChain::create_color_buffer(const vkren::Device& device) noexcept {
-  auto img_info = vkren::ExclusiveImage2DResource::CreateInfo{
-      .size_bytes  = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
-      .image_usage = vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
-      .desc =
-          ImageDescription{
-              .format     = format_,
-              .width      = extent_.width,
-              .height     = extent_.height,
-              .mip_levels = 1,
-          },
-      .tiling         = vk::ImageTiling::eOptimal,
-      .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-      .sample_count   = msaa_sample_count_,
-  };
-  auto img_opt = ExclusiveImage2DResource::create(device, img_info);
+Result<void, Error> SwapChain::create_color_attachment_image(vkren::Device& device) noexcept {
+  auto img_opt = ImageResource::create_color_attachment_image(
+      device, ImageDescription::image2d_desc(color_attachment_format(), extent_.width, extent_.height),
+      msaa_sample_count_);
   if (!img_opt) {
     util::Logger::err("Could not create an image resource for color attachment");
     return std::unexpected(img_opt.error());
   }
   color_image_ = std::move(*img_opt);
 
-  auto view_opt = color_image_.create_image_view(vk::ImageAspectFlagBits::eColor);
+  auto view_opt = color_image_.create_image_view();
   if (!view_opt) {
     util::Logger::err("Could not create image view for color attachment");
     return std::unexpected(view_opt.error());
@@ -247,7 +250,7 @@ Result<void, Error> SwapChain::create_color_buffer(const vkren::Device& device) 
   return {};
 }
 
-Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& device) noexcept {
+Result<void, Error> SwapChain::create_depth_stencil_attachment_image(vkren::Device& device) noexcept {
   auto format_opt = find_supported_depth_stencil_format(
       device, {vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint}, vk::ImageTiling::eOptimal,
       vk::FormatFeatureFlagBits::eDepthStencilAttachment);
@@ -257,28 +260,16 @@ Result<void, Error> SwapChain::create_depth_stencil_buffer(const vkren::Device& 
   }
   depth_stencil_format_ = *format_opt;
 
-  auto img_info = vkren::ExclusiveImage2DResource::CreateInfo{
-      .size_bytes  = static_cast<vk::DeviceSize>(4 * extent_.width * extent_.height),
-      .image_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
-      .desc =
-          ImageDescription{
-              .format     = depth_stencil_format_,
-              .width      = extent_.width,
-              .height     = extent_.height,
-              .mip_levels = 1,
-          },
-      .tiling         = vk::ImageTiling::eOptimal,
-      .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-      .sample_count   = msaa_sample_count_,
-  };
-  auto img_opt = vkren::ExclusiveImage2DResource::create(device, img_info);
+  auto img_opt = ImageResource::create_depth_stencil_attachment_image(
+      device, ImageDescription::image2d_desc(depth_stencil_format_, extent_.width, extent_.height), msaa_sample_count_);
   if (!img_opt) {
     util::Logger::err("Could not create an image resource for depth buffer");
     return std::unexpected(img_opt.error());
   }
+
   depth_stencil_image_ = std::move(*img_opt);
 
-  auto view_opt = depth_stencil_image_.create_image_view(vk::ImageAspectFlagBits::eDepth);
+  auto view_opt = depth_stencil_image_.create_image_view();
   if (!view_opt) {
     util::Logger::err("Could not create image view for depth buffer");
     return std::unexpected(view_opt.error());
@@ -338,23 +329,26 @@ vk::PresentModeKHR SwapChain::choose_swap_presentMode(const std::vector<vk::Pres
   return vk::PresentModeKHR::eFifo;
 }
 
-Result<void, Error> SwapChain::recreate(const Device& device_, uint32_t width, uint32_t height) {
-  device_->waitIdle();
+Result<void, Error> SwapChain::recreate() {
+  (*p_device_)->waitIdle();
 
   cleanup();
-  if (auto result = create_swap_chain(device_, width, height); !result) {
+
+  auto framebuffer_size = window_->framebuffer_size();
+  if (auto result = create_swap_chain(*p_device_, framebuffer_size.width, framebuffer_size.height); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: Swap chain creation failed.");
     return std::unexpected(result.error());
   }
-  if (auto result = create_image_views(device_); !result) {
+  if (auto result = create_image_views(*p_device_); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: Image views creation failed.");
     return std::unexpected(result.error());
   }
-  if (auto result = create_color_buffer(device_); !result) {
+
+  if (auto result = create_color_attachment_image(*p_device_); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: color buffer attachment creation failed.");
     return std::unexpected(result.error());
   }
-  if (auto result = create_depth_stencil_buffer(device_); !result) {
+  if (auto result = create_depth_stencil_attachment_image(*p_device_); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: depth buffer attachment creation failed.");
     return std::unexpected(result.error());
   }
@@ -365,6 +359,222 @@ Result<void, Error> SwapChain::recreate(const Device& device_, uint32_t width, u
 void SwapChain::cleanup() {
   image_views_.clear();
   swap_chain_ = nullptr;
+}
+
+void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index,
+                                vk::ClearColorValue clear_color, vk::ClearDepthStencilValue clear_depth_stencil) {
+  cmd_buff.begin({});
+
+  // == Swap Chain Images ==============================================================================================
+  auto swap_chain_image_barrier = vk::ImageMemoryBarrier2{
+      .srcStageMask        = vk::PipelineStageFlagBits2::eTopOfPipe,
+      .srcAccessMask       = {},
+      .dstStageMask        = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+      .dstAccessMask       = vk::AccessFlagBits2::eColorAttachmentWrite,
+      .oldLayout           = vk::ImageLayout::eUndefined,
+      .newLayout           = vk::ImageLayout::eColorAttachmentOptimal,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image               = images_[image_index],  //
+      .subresourceRange =
+          vk::ImageSubresourceRange{
+              .aspectMask     = vk::ImageAspectFlagBits::eColor,
+              .baseMipLevel   = 0,
+              .levelCount     = 1,
+              .baseArrayLayer = 0,
+              .layerCount     = 1,
+          },
+  };
+
+  auto swap_chain_image_dependency_info = vk::DependencyInfo{
+      .dependencyFlags         = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers    = &swap_chain_image_barrier,
+  };
+
+  cmd_buff.pipelineBarrier2(swap_chain_image_dependency_info);
+
+  // == Depth Stencil ==================================================================================================
+  auto depth_stencil_attachment_barrier = vk::ImageMemoryBarrier2{
+      .srcStageMask  = vk::PipelineStageFlagBits2::eTopOfPipe,
+      .srcAccessMask = {},
+      .dstStageMask  = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+      .dstAccessMask =
+          vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+      .oldLayout           = vk::ImageLayout::eUndefined,
+      .newLayout           = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image               = depth_stencil_image_.image(),  //
+      .subresourceRange    = depth_stencil_image_.full_resource_range(),
+  };
+
+  auto depth_stencil_dependency_info = vk::DependencyInfo{
+      .dependencyFlags         = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers    = &depth_stencil_attachment_barrier,
+  };
+
+  cmd_buff.pipelineBarrier2(depth_stencil_dependency_info);
+
+  auto depth_stencil_attachment_info = vk::RenderingAttachmentInfo{
+      .imageView   = depth_stencil_image_view_,
+      .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      .loadOp      = vk::AttachmentLoadOp::eClear,
+      .storeOp     = vk::AttachmentStoreOp::eStore,
+      .clearValue  = clear_depth_stencil,
+  };
+
+  // == Color Attachment ===============================================================================================
+  auto color_attachment_info = vk::RenderingAttachmentInfo{
+      .imageView   = image_views_[image_index],
+      .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+      .loadOp      = vk::AttachmentLoadOp::eClear,
+      .storeOp     = vk::AttachmentStoreOp::eStore,
+      .clearValue  = clear_color,
+  };
+
+  if (msaa_enabled()) {
+    // Don't use separate color attachment if MSAA disabled. Vulkan prohibits
+    //
+    //  color_attachment_image_attachment_info.resolveMode = vk::ResolveModeFlagBits::eAverage;
+    //
+    // in such case.
+    //
+
+    auto color_attachment_barrier = vk::ImageMemoryBarrier2{
+        .srcStageMask        = vk::PipelineStageFlagBits2::eTopOfPipe,
+        .srcAccessMask       = {},
+        .dstStageMask        = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        .dstAccessMask       = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+        .oldLayout           = vk::ImageLayout::eUndefined,
+        .newLayout           = vk::ImageLayout::eColorAttachmentOptimal,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image               = color_image_.image(),  //
+        .subresourceRange    = color_image_.full_resource_range(),
+    };
+
+    auto color_attachment_dependency_info = vk::DependencyInfo{
+        .dependencyFlags         = {},
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers    = &color_attachment_barrier,
+    };
+    cmd_buff.pipelineBarrier2(color_attachment_dependency_info);
+
+    color_attachment_info.imageView          = color_image_view_;
+    color_attachment_info.resolveMode        = vk::ResolveModeFlagBits::eAverage;
+    color_attachment_info.resolveImageView   = image_views_[image_index];
+    color_attachment_info.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+  }
+
+  cmd_buff.beginRendering(vk::RenderingInfo{
+      .renderArea =
+          vk::Rect2D{
+              .offset = {.x = 0, .y = 0},
+              .extent = extent(),
+          },
+      .layerCount           = 1,
+      .colorAttachmentCount = 1,
+      .pColorAttachments    = &color_attachment_info,
+      .pDepthAttachment     = &depth_stencil_attachment_info,
+  });
+}
+
+void SwapChain::end_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index) {
+  cmd_buff.endRendering();
+
+  auto swap_chain_image_barrier = vk::ImageMemoryBarrier2{
+      .srcStageMask        = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+      .srcAccessMask       = vk::AccessFlagBits2::eColorAttachmentWrite,
+      .dstStageMask        = vk::PipelineStageFlagBits2::eBottomOfPipe,
+      .dstAccessMask       = {},
+      .oldLayout           = vk::ImageLayout::eColorAttachmentOptimal,
+      .newLayout           = vk::ImageLayout::ePresentSrcKHR,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image               = images_[image_index],  //
+      .subresourceRange =
+          vk::ImageSubresourceRange{
+              .aspectMask     = vk::ImageAspectFlagBits::eColor,
+              .baseMipLevel   = 0,
+              .levelCount     = 1,
+              .baseArrayLayer = 0,
+              .layerCount     = 1,
+          },
+  };
+
+  auto swap_chain_image_dependency_info = vk::DependencyInfo{
+      .dependencyFlags         = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers    = &swap_chain_image_barrier,
+  };
+
+  cmd_buff.pipelineBarrier2(swap_chain_image_dependency_info);
+  cmd_buff.end();
+}
+
+Result<SwapChain::AcquireResult, Error> SwapChain::acquire_next_image(uint64_t timeout, vk::Semaphore semaphore,
+                                                                      vk::Fence fence) {
+  vk::Device device           = **p_device_;
+  vk::SwapchainKHR swap_chain = **this;
+  uint32_t image_index        = 0;
+  // When vk::Result::eErrorOutOfDateKHR is encountered the swap_chain_.acquireNextImage(timeout,
+  // semaphore, fence); fails because of assertion failure. For that reason C-API is used instead.
+  auto result = vk::Result(vkAcquireNextImageKHR(device, swap_chain, timeout, semaphore, fence, &image_index));
+
+  if (result == vk::Result::eErrorOutOfDateKHR) {
+    // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
+    // happens after window resize.
+    return recreate().transform([]() {
+      return AcquireResult{
+          .status      = AcquireResult::Status::Resized,
+          .image_index = 0,
+      };
+    });
+  }
+
+  if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
+    // The swap chain cannot be used even if we accept that the surface properties are no longer matched exactly
+    // (eSuboptimalKHR).
+    eray::util::Logger::err("Failed to present swap chain image");
+    return std::unexpected(Error{
+        .msg     = "Swap chain image acquire failed",
+        .code    = ErrorCode::SwapChainImageAcquireFailure{},
+        .vk_code = result,
+    });
+  }
+
+  return AcquireResult{
+      .status      = AcquireResult::Status::Success,
+      .image_index = image_index,
+  };
+  ;
+}
+
+SwapChain::SwapChain(std::nullptr_t) {}
+
+Result<void, Error> SwapChain::present_image(vk::PresentInfoKHR present_info) {
+  // When vk::Result::eErrorOutOfDateKHR is encountered the p_device_->presentation_queue().presentKHR(present_info);
+  // fails because of assertion failure. For that reason C-API is used instead.
+  vk::Queue queue = p_device_->presentation_queue();
+  auto result     = vk::Result(vkQueuePresentKHR(queue, present_info));
+
+  if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebuffer_resized_) {
+    framebuffer_resized_ = false;
+    return recreate();
+  }
+
+  if (result != vk::Result::eSuccess) {
+    eray::util::Logger::err("Failed to present swap chain image");
+    return std::unexpected(Error{
+        .msg     = "Failed to present an image",
+        .code    = ErrorCode::PresentationFailure{},
+        .vk_code = result,
+    });
+  }
+
+  return {};
 }
 
 }  // namespace eray::vkren

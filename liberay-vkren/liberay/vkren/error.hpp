@@ -22,16 +22,25 @@ class ErrorCode {
   struct ValidationLayerNotSupported {};
   struct PhysicalDeviceNotSufficient {};
   struct SurfaceCreationFailure {};
+  struct MemoryMappingFailure {};
+  struct MemoryMappingNotSupported {};
+  struct NotATransferDestination {};
+  struct SwapChainImageAcquireFailure {};
+  struct PresentationFailure {};
 
-  using Enum = std::variant<        //
-      VulkanObjectCreationFailure,  //
-      NoSuitableMemoryTypeFailure,  //
-      MemoryAllocationFailure,      //
-      ExtensionNotSupported,        //
-      ValidationLayerNotSupported,  //
-      ProfileNotSupported,          //
-      PhysicalDeviceNotSufficient,  //
-      SurfaceCreationFailure        //
+  using Enum = std::variant<         //
+      VulkanObjectCreationFailure,   //
+      NoSuitableMemoryTypeFailure,   //
+      MemoryAllocationFailure,       //
+      ExtensionNotSupported,         //
+      ValidationLayerNotSupported,   //
+      ProfileNotSupported,           //
+      PhysicalDeviceNotSufficient,   //
+      SurfaceCreationFailure,        //
+      MemoryMappingFailure,          //
+      MemoryMappingNotSupported,     //
+      SwapChainImageAcquireFailure,  //
+      PresentationFailure            //
       >;
 };
 

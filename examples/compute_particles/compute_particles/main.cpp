@@ -28,7 +28,6 @@
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
-#include <variant>
 #include <vector>
 #include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
@@ -40,21 +39,11 @@
 
 namespace vkren = eray::vkren;
 
-struct SwapchainRecreationFailure {};
-struct SwapChainImageAcquireFailure {};
-
-using DrawFrameError = std::variant<SwapchainRecreationFailure, SwapChainImageAcquireFailure>;
-
 class ComputeParticlesApplication {
  public:
   explicit ComputeParticlesApplication(std::unique_ptr<eray::os::Window>&& window) : window_(std::move(window)) {}
 
   void run() {
-    window_->set_event_callback<eray::os::FramebufferResizedEvent>([this](const auto&) -> bool {
-      framebuffer_resized_ = true;
-      return true;
-    });
-
     init_vk();
     main_loop();
     cleanup();
@@ -90,10 +79,7 @@ class ComputeParticlesApplication {
 
     while (!window_->should_close()) {
       window_->poll_events();
-      if (!draw_frame()) {
-        eray::util::Logger::err("Closing window: Failed to draw a frame");
-        break;
-      }
+      draw_frame();
       auto curr_time   = std::chrono::high_resolution_clock::now();
       last_frame_time_ = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - prev_time).count();
       prev_time        = curr_time;
@@ -104,8 +90,17 @@ class ComputeParticlesApplication {
     device_->waitIdle();
   }
 
-  std::expected<void, DrawFrameError> draw_frame() {
-    auto [result, image_index] = swap_chain_->acquireNextImage(UINT64_MAX, nullptr, *in_flight_fences_[current_frame_]);
+  void draw_frame() {
+    uint32_t image_index = 0;
+    if (auto acquire_opt = swap_chain_.acquire_next_image(UINT64_MAX, nullptr, *in_flight_fences_[current_frame_])) {
+      if (acquire_opt->status != vkren::SwapChain::AcquireResult::Status::Success) {
+        return;
+      }
+      image_index = acquire_opt->image_index;
+    } else {
+      eray::util::panic("Failed to acquire next image!");
+    }
+
     while (vk::Result::eTimeout == device_->waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
     }
     device_->resetFences(*in_flight_fences_[current_frame_]);
@@ -142,20 +137,6 @@ class ComputeParticlesApplication {
 
     // == Graphics Submission ==========================================================================================
     {
-      if (result == vk::Result::eErrorOutOfDateKHR) {
-        // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
-        // happens after window resize.
-        TRY(recreate_swap_chain());
-        return {};
-      }
-
-      if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
-        // The swap chain cannot be used even if we accept that the surface properties are no longer matched exactly
-        // (eSuboptimalKHR).
-        eray::util::Logger::err("Failed to present swap chain image");
-        return std::unexpected(SwapChainImageAcquireFailure{});
-      }
-
       record_graphics_command_buffer(current_frame_, image_index);
 
       vk::PipelineStageFlags wait_destination_stage_mask[] = {vk::PipelineStageFlagBits::eVertexInput,
@@ -196,20 +177,13 @@ class ComputeParticlesApplication {
           .pSwapchains        = &**swap_chain_,
           .pImageIndices      = &image_index,
       };
-      result = device_.presentation_queue().presentKHR(present_info);
 
-      if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebuffer_resized_) {
-        framebuffer_resized_ = false;
-        TRY(recreate_swap_chain());
-      } else if (result != vk::Result::eSuccess) {
-        eray::util::Logger::err("Failed to present swap chain image");
-        return std::unexpected(SwapChainImageAcquireFailure{});
+      if (!swap_chain_.present_image(present_info)) {
+        eray::util::Logger::err("Failed to present an image!");
       }
     }
 
     current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
-
-    return {};
   }
 
   void update_ubo(uint32_t frame_index) {
@@ -222,19 +196,8 @@ class ComputeParticlesApplication {
   void cleanup() { swap_chain_.cleanup(); }
 
   void create_swap_chain() {
-    auto size   = window_->framebuffer_size();
-    swap_chain_ = vkren::SwapChain::create(device_, static_cast<uint32_t>(size.width),
-                                           static_cast<uint32_t>(size.height), device_.max_usable_sample_count())
+    swap_chain_ = vkren::SwapChain::create(device_, window_, device_.max_usable_sample_count())
                       .or_panic("Could not create a swap chain");
-  }
-
-  std::expected<void, SwapchainRecreationFailure> recreate_swap_chain() {
-    auto size = window_->framebuffer_size();
-    if (!swap_chain_.recreate(device_, static_cast<uint32_t>(size.width), static_cast<uint32_t>(size.height))) {
-      return std::unexpected(SwapchainRecreationFailure{});
-    }
-
-    return {};
   }
 
   void create_graphics_pipeline() {
@@ -437,8 +400,8 @@ class ComputeParticlesApplication {
         ParticleSystem::create_on_circle(static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight));
     auto region =
         eray::util::MemoryRegion{particle_system.particles.data(), particle_system.particles.size() * sizeof(Particle)};
-    auto staging_buff = vkren::ExclusiveBufferResource::create_staging_buffer(device_, region)
-                            .or_panic("Could not create a Staging Buffer");
+    auto staging_buff =
+        vkren::ExclusiveBufferResource::create_staging(device_, region).or_panic("Could not create a Staging Buffer");
 
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
       auto temp = vkren::ExclusiveBufferResource::create(
@@ -1023,9 +986,7 @@ class ComputeParticlesApplication {
 
   std::vector<vkren::ExclusiveBufferResource> ssbuffers_;
 
-  std::unique_ptr<eray::os::Window> window_;
-
-  bool framebuffer_resized_ = false;
+  std::shared_ptr<eray::os::Window> window_;
 
   float last_frame_time_{};
 

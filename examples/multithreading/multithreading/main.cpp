@@ -634,8 +634,8 @@ class ComputeParticlesMultithreadingApplication {
         ParticleSystem::create_on_circle(static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight));
     auto region =
         eray::util::MemoryRegion{particle_system.particles.data(), particle_system.particles.size() * sizeof(Particle)};
-    auto staging_buff = vkren::ExclusiveBufferResource::create_staging_buffer(device_, region)
-                            .or_panic("Could not create a Staging Buffer");
+    auto staging_buff =
+        vkren::ExclusiveBufferResource::create_staging(device_, region).or_panic("Could not create a Staging Buffer");
 
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
       auto temp = vkren::ExclusiveBufferResource::create(

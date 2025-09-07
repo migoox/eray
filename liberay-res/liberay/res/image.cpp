@@ -85,8 +85,15 @@ uint32_t Image::pixel(uint32_t x, uint32_t y) const { return data_[x + y * width
 
 uint32_t Image::calculate_mip_levels() const { return calculate_mip_levels(width_, height_); }
 
-uint32_t Image::calculate_mip_levels(uint32_t width, uint32_t height) {
-  return static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+uint32_t Image::calculate_mip_levels(uint32_t width, uint32_t height, std::uint32_t depth) {
+  uint32_t largest = std::max({width, height, depth});
+  uint32_t levels  = 0;
+  while (largest > 0) {
+    largest >>= 1;
+    levels++;
+  }
+
+  return levels;
 }
 
 MipMappedImage Image::generate_mipmaps_buffer() const {
