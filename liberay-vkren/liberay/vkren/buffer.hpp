@@ -220,6 +220,14 @@ struct BufferResource {
   std::optional<void*> mapping() const;
 
   vk::Buffer buffer() const { return _buffer._vk_handle; }
+
+  vk::DescriptorBufferInfo desc_buffer_info(size_t offset = 0) const {
+    return vk::DescriptorBufferInfo{
+        .buffer = buffer(),
+        .offset = offset,
+        .range  = size_bytes,
+    };
+  }
 };
 
 /**
