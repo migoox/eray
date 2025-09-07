@@ -337,7 +337,7 @@ class DepthBufferApplication {
       glfwWaitEvents();
     }
 
-    if (!swap_chain_.recreate(static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
+    if (!swap_chain_.resize(static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
       return std::unexpected(SwapchainRecreationFailure{});
     }
 

@@ -1,4 +1,7 @@
+#include <vulkan/vulkan.h>
+
 #include <expected>
+#include <liberay/os/window/events/event.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
@@ -10,6 +13,7 @@
 #include <memory>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_handles.hpp>
 
 namespace eray::vkren {
 
@@ -339,6 +343,7 @@ Result<void, Error> SwapChain::recreate() {
     eray::util::Logger::err("Could not recreate a swap chain: Image views creation failed.");
     return std::unexpected(result.error());
   }
+
   if (auto result = create_color_buffer(*p_device_); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: color buffer attachment creation failed.");
     return std::unexpected(result.error());
@@ -511,7 +516,12 @@ void SwapChain::end_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t 
 
 Result<SwapChain::AcquireResult, Error> SwapChain::acquire_next_image(uint64_t timeout, vk::Semaphore semaphore,
                                                                       vk::Fence fence) {
-  auto [result, image_index] = swap_chain_.acquireNextImage(timeout, semaphore, fence);
+  vk::Device device           = **p_device_;
+  vk::SwapchainKHR swap_chain = **this;
+  uint32_t image_index        = 0;
+  // When vk::Result::eErrorOutOfDateKHR is encountered the swap_chain_.acquireNextImage(timeout,
+  // semaphore, fence); fails because of assertion failure. For that reason C-API is used instead.
+  auto result = vk::Result(vkAcquireNextImageKHR(device, swap_chain, timeout, semaphore, fence, &image_index));
 
   if (result == vk::Result::eErrorOutOfDateKHR) {
     // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
@@ -545,7 +555,10 @@ Result<SwapChain::AcquireResult, Error> SwapChain::acquire_next_image(uint64_t t
 SwapChain::SwapChain(std::nullptr_t) {}
 
 Result<void, Error> SwapChain::present_image(vk::PresentInfoKHR present_info) {
-  auto result = p_device_->presentation_queue().presentKHR(present_info);
+  // When vk::Result::eErrorOutOfDateKHR is encountered the p_device_->presentation_queue().presentKHR(present_info);
+  // fails because of assertion failure. For that reason C-API is used instead.
+  vk::Queue queue = p_device_->presentation_queue();
+  auto result     = vk::Result(vkQueuePresentKHR(queue, present_info));
 
   if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebuffer_resized_) {
     framebuffer_resized_ = false;

@@ -101,8 +101,8 @@ class Window {
 
  protected:
   bool on_win_resized(const WindowResizedEvent& ev) {
-    props_.width  = ev.width();
-    props_.height = ev.height();
+    props_.width  = static_cast<uint32_t>(ev.width());
+    props_.height = static_cast<uint32_t>(ev.height());
     return true;
   }
 
