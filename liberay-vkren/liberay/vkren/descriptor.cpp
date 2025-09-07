@@ -132,6 +132,10 @@ Result<vk::DescriptorSet, Error> DescriptorAllocator::allocate(vk::DescriptorSet
     });
   });
 
+  if (!ds_opt) {
+    return std::unexpected(ds_opt.error());
+  }
+
   ready_pools_.push_back(std::move(*pool_to_use));
 
   return std::move(ds_opt->front());
