@@ -123,6 +123,12 @@ class SwapChain {
                                                                 vk::Semaphore semaphore = VK_NULL_HANDLE,
                                                                 vk::Fence fence         = VK_NULL_HANDLE);
 
+  /**
+   * @brief Calls `vkQueuePresentKHR` on the presentation queue and resizes the swap chain if necessary.
+   *
+   * @param present_info
+   * @return Result<void, Error>
+   */
   Result<void, Error> present_image(vk::PresentInfoKHR present_info);
 
   Result<void, Error> recreate();
