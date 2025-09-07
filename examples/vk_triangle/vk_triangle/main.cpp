@@ -1012,7 +1012,7 @@ class TriangleApplication {
   std::expected<void, VulkanInitError> create_vertex_buffer() {
     // == 1. Create Buffer Object ======================================================================================
 
-    auto vb = VertexBuffer::create_triangle();
+    auto vb = VertexBuffer::create();
     if (auto result = device_.createBuffer(vb.create_info(vk::SharingMode::eExclusive))) {
       vertex_buffer_ = std::move(*result);
     } else {

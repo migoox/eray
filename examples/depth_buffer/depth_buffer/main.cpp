@@ -35,6 +35,8 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
+#include "liberay/vkren/descriptor.hpp"
+
 struct GLFWWindowCreationFailure {};
 
 namespace vkren = eray::vkren;
@@ -436,29 +438,17 @@ class DepthBufferApplication {
   }
 
   void create_buffers() {
-    auto vb = VertexBuffer::create_triangle();
+    auto vb = VertexBuffer::create();
 
     auto vertices_region = eray::util::MemoryRegion{vb.vertices.data(), vb.vertices_size_bytes()};
-    vert_buffer_         = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
-                       device_,
-                       vkren::ExclusiveBufferResource::CreateInfo{
-                                   .size_bytes = vb.vertices_size_bytes(),
-                                   .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                                   .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                       },
-                       vertices_region)
-                               .or_panic("Could not create a Vertex Buffer");
+    vert_buffer_         = vkren::BufferResource::create_vertex_buffer(device_, vertices_region.size_bytes())
+                       .or_panic("Could not create the vertex buffer");
+    vert_buffer_.write(vertices_region).or_panic("Could not fill the vertex buffer");
 
     auto indices_region = eray::util::MemoryRegion{vb.indices.data(), vb.indices_size_bytes()};
-    ind_buffer_         = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
-                      device_,
-                      vkren::ExclusiveBufferResource::CreateInfo{
-                                  .size_bytes = vb.indices_size_bytes(),
-                                  .buff_usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                                  .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                      },
-                      indices_region)
-                              .or_panic("Could not create an Index Buffer");
+    ind_buffer_         = vkren::BufferResource::create_index_buffer(device_, indices_region.size_bytes())
+                      .or_panic("Could not create a Vertex Buffer");
+    ind_buffer_.write(indices_region).or_panic("Could not fill the index buffer");
 
     // Copying to uniform buffer each frame means that staging buffer makes no sense.
     // We should have multiple buffers, because multiple frames may be in flight at the same time and
@@ -467,24 +457,12 @@ class DepthBufferApplication {
 
     uniform_buffers_.clear();
     uniform_buffers_mapped_.clear();
-    {
-      vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
-      for (auto i = 0; i < kMaxFramesInFlight; ++i) {
-        auto ubo = vkren::ExclusiveBufferResource::create(  //
-                       device_,
-                       vkren::ExclusiveBufferResource::CreateInfo{
-                           .size_bytes = buffer_size,
-                           .buff_usage = vk::BufferUsageFlagBits::eUniformBuffer,
-                           .mem_properties =
-                               vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                       })
-                       .or_panic();
-
-        // This technique is called persistent mapping, the buffer stays mapped for the application's whole life-time.
-        // It increases performance as the mapping process is not free.
-        uniform_buffers_mapped_.emplace_back(ubo.memory().mapMemory(0, buffer_size));
-        uniform_buffers_.emplace_back(std::move(ubo));
-      }
+    vk::DeviceSize size_bytes = sizeof(UniformBufferObject);
+    for (auto i = 0; i < kMaxFramesInFlight; ++i) {
+      auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(device_, size_bytes)
+                     .or_panic("Could not create the uniform buffer");
+      uniform_buffers_.emplace_back(std::move(ubo.buffer));
+      uniform_buffers_mapped_.emplace_back(ubo.mapped_data);
     }
   }
 
@@ -712,8 +690,8 @@ class DepthBufferApplication {
 
     // We can specify type of the pipeline
     graphics_command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
-    graphics_command_buffers_[frame_index].bindVertexBuffers(0, *vert_buffer_.buffer(), {0});
-    graphics_command_buffers_[frame_index].bindIndexBuffer(*ind_buffer_.buffer(), 0, vk::IndexType::eUint16);
+    graphics_command_buffers_[frame_index].bindVertexBuffers(0, vert_buffer_.buffer(), {0});
+    graphics_command_buffers_[frame_index].bindIndexBuffer(ind_buffer_.buffer(), 0, vk::IndexType::eUint16);
 
     // Describes the region of framebuffer that the output will be rendered to
     graphics_command_buffers_[frame_index].setViewport(
@@ -736,9 +714,8 @@ class DepthBufferApplication {
     // to specify if we want to bind descriptor sets to the graphics or compute pipeline. The next parameter is the
     // layout that the descriptors are based on. The next three parameters specify the index of the first descriptor
     // set, the number of sets to bind and the array of sets to bind.
-    graphics_command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                                              graphics_pipeline_layout_, 0,
-                                                              *compute_descriptor_sets_[frame_index], nullptr);
+    graphics_command_buffers_[frame_index].bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, graphics_pipeline_layout_, 0, *descriptor_sets_[frame_index], nullptr);
 
     graphics_command_buffers_[frame_index].drawIndexed(12, 1, 0, 0, 0);
 
@@ -767,50 +744,16 @@ class DepthBufferApplication {
         .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
         .pSetLayouts        = layouts.data(),
     };
-    compute_descriptor_sets_.clear();
-    compute_descriptor_sets_ = vkren::Result(device_->allocateDescriptorSets(descriptor_set_alloc_info))
-                                   .or_panic("Could not create descriptor sets");
+    descriptor_sets_.clear();
+    descriptor_sets_ = vkren::Result(device_->allocateDescriptorSets(descriptor_set_alloc_info))
+                           .or_panic("Could not create descriptor sets");
 
+    auto writer = vkren::DescriptorWriter::create(device_);
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
-      auto buffer_info = vk::DescriptorBufferInfo{
-          .buffer = uniform_buffers_[i].buffer(),
-          .offset = 0,
-          .range  = sizeof(UniformBufferObject),  // It's also possible to use vk::WholeSize
-      };
-      auto image_info = vk::DescriptorImageInfo{
-          .sampler     = txt_sampler_,
-          .imageView   = txt_view_,
-          .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-      };
-
-      auto descriptor_write = std::array{
-          vk::WriteDescriptorSet{
-              // Specifies the descriptor set to update
-              .dstSet = compute_descriptor_sets_[i],
-
-              // Specifies the binding of the descriptor set to update
-              .dstBinding = 0,
-
-              // It's possible to update multiple descriptors at once in an array, starting at index dstArrayElement
-              .dstArrayElement = 0,
-
-              // Specifies how many descriptor arrays we want to update
-              .descriptorCount = 1,
-
-              .descriptorType = vk::DescriptorType::eUniformBuffer,
-              .pBufferInfo    = &buffer_info,
-          },
-          vk::WriteDescriptorSet{
-              .dstSet          = compute_descriptor_sets_[i],
-              .dstBinding      = 1,
-              .dstArrayElement = 0,
-              .descriptorCount = 1,
-              .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
-              .pImageInfo      = &image_info,
-          },
-      };
-
-      device_->updateDescriptorSets(descriptor_write, {});
+      writer.write_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
+      writer.write_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
+      writer.update_set(descriptor_sets_[i]);
+      writer.clear();
     }
   }
 
@@ -932,14 +875,14 @@ class DepthBufferApplication {
    */
   std::array<vk::raii::Fence, kMaxFramesInFlight> in_flight_fences_ = {nullptr, nullptr};
 
-  eray::vkren::ExclusiveBufferResource vert_buffer_ = vkren::ExclusiveBufferResource(nullptr);
-  eray::vkren::ExclusiveBufferResource ind_buffer_  = vkren::ExclusiveBufferResource(nullptr);
+  vkren::BufferResource vert_buffer_;
+  vkren::BufferResource ind_buffer_;
 
-  std::vector<eray::vkren::ExclusiveBufferResource> uniform_buffers_;
+  std::vector<vkren::BufferResource> uniform_buffers_;
   std::vector<void*> uniform_buffers_mapped_;
 
   vk::raii::DescriptorPool descriptor_pool_ = nullptr;
-  std::vector<vk::raii::DescriptorSet> compute_descriptor_sets_;
+  std::vector<vk::raii::DescriptorSet> descriptor_sets_;
 
   vkren::ImageResource txt_image_;
   vk::raii::ImageView txt_view_  = nullptr;
