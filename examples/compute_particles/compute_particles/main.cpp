@@ -28,7 +28,6 @@
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
-#include <variant>
 #include <vector>
 #include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
@@ -39,11 +38,6 @@
 #include <vulkan/vulkan_to_string.hpp>
 
 namespace vkren = eray::vkren;
-
-struct SwapchainRecreationFailure {};
-struct SwapChainImageAcquireFailure {};
-
-using DrawFrameError = std::variant<SwapchainRecreationFailure, SwapChainImageAcquireFailure>;
 
 class ComputeParticlesApplication {
  public:
@@ -85,10 +79,7 @@ class ComputeParticlesApplication {
 
     while (!window_->should_close()) {
       window_->poll_events();
-      if (!draw_frame()) {
-        eray::util::Logger::err("Closing window: Failed to draw a frame");
-        break;
-      }
+      draw_frame();
       auto curr_time   = std::chrono::high_resolution_clock::now();
       last_frame_time_ = std::chrono::duration<float, std::chrono::seconds::period>(curr_time - prev_time).count();
       prev_time        = curr_time;
@@ -99,16 +90,15 @@ class ComputeParticlesApplication {
     device_->waitIdle();
   }
 
-  std::expected<void, DrawFrameError> draw_frame() {
+  void draw_frame() {
     uint32_t image_index = 0;
     if (auto acquire_opt = swap_chain_.acquire_next_image(UINT64_MAX, nullptr, *in_flight_fences_[current_frame_])) {
       if (acquire_opt->status != vkren::SwapChain::AcquireResult::Status::Success) {
-        return {};
+        return;
       }
       image_index = acquire_opt->image_index;
     } else {
-      eray::util::Logger::err("Failed to acquire next image!");
-      return {};
+      eray::util::panic("Failed to acquire next image!");
     }
 
     while (vk::Result::eTimeout == device_->waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
@@ -194,8 +184,6 @@ class ComputeParticlesApplication {
     }
 
     current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
-
-    return {};
   }
 
   void update_ubo(uint32_t frame_index) {

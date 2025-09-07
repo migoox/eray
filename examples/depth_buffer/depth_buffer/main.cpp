@@ -20,12 +20,12 @@
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/device.hpp>
+#include <liberay/vkren/glfw/vk_glfw_window_creator.hpp>
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <ranges>
-#include <variant>
 #include <vector>
 #include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
@@ -39,147 +39,46 @@ struct GLFWWindowCreationFailure {};
 
 namespace vkren = eray::vkren;
 
-struct VulkanExtensionNotSupported {
-  std::string glfw_extension;
-};
-struct SomeOfTheRequestedVulkanLayersAreNotSupported {};
-struct FailedToEnumeratePhysicalDevices {
-  vk::Result result;
-};
-struct NoSuitablePhysicalDevicesFound {};
-struct VulkanUnsupportedQueueFamily {
-  std::string queue_family_name;
-};
-
-struct VulkanObjectCreationError {
-  std::optional<vk::Result> result;
-  std::string what() {
-    if (result) {
-      return std::format("Creation error: {}", vk::to_string(*result));
-    }
-    return "Uknown creation error";
-  }
-};
-struct NoSuitableMemoryType {};
-struct VulkanSwapChainSupportIsNotSufficient {};
-
-struct FileDoesNotExistError {};
-
-struct FileStreamOpenFailure {};
-
-struct FileError {
-  std::variant<FileDoesNotExistError, FileStreamOpenFailure> kind;
-  std::filesystem::path path;
-};
-
-using VulkanInitError =
-    std::variant<VulkanExtensionNotSupported, SomeOfTheRequestedVulkanLayersAreNotSupported,
-                 FailedToEnumeratePhysicalDevices, NoSuitablePhysicalDevicesFound, VulkanUnsupportedQueueFamily,
-                 VulkanSwapChainSupportIsNotSufficient, FileError, VulkanObjectCreationError, NoSuitableMemoryType>;
-using AppError = std::variant<GLFWWindowCreationFailure, VulkanInitError>;
-
-struct SwapchainRecreationFailure {};
-struct SwapChainImageAcquireFailure {};
-
-using DrawFrameError = std::variant<SwapchainRecreationFailure, SwapChainImageAcquireFailure>;
-
 class DepthBufferApplication {
  public:
-  std::expected<void, AppError> run() {
-    TRY(initWindow());
-    TRY(init_vk())
+  explicit DepthBufferApplication(std::unique_ptr<eray::os::Window>&& window) : window_(std::move(window)) {}
+
+  void run() {
+    init_vk();
     main_loop();
     cleanup();
-
-    return {};
   }
 
   static constexpr uint32_t kWinWidth  = 800;
   static constexpr uint32_t kWinHeight = 600;
 
  private:
-  std::expected<void, VulkanInitError> init_vk() {
+  void init_vk() {
     create_device();
     create_swap_chain();
     create_descriptor_set_layout();
     create_graphics_pipeline();
     create_compute_pipeline();
-    TRY(create_command_pool())
-    TRY(create_buffers())
-    TRY(create_command_buffers())
+    create_command_pool();
+    create_buffers();
+    create_command_buffers();
     create_txt_img();
     create_descriptor_pool();
     create_descriptor_sets();
-    TRY(create_sync_objs())
-
-    return {};
+    create_sync_objs();
   }
 
   void create_device() {
-    // == Global Extensions ============================================================================================
-    auto required_global_extensions = std::vector<const char*>();
-    {
-      uint32_t glfw_extensions_count = 0;
-      if (auto* glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extensions_count)) {
-        required_global_extensions = std::vector<const char*>(glfw_extensions, glfw_extensions + glfw_extensions_count);
-        eray::util::Logger::info("{}", required_global_extensions);
-      } else {
-        eray::util::panic("Could not get required instance extensions from GLFW");
-      }
-    }
-
-    // == Surface Creator ==============================================================================================
-    auto surface_creator = [this](const vk::raii::Instance& instance) -> std::optional<vk::raii::SurfaceKHR> {
-      VkSurfaceKHR surface{};
-      if (glfwCreateWindowSurface(*instance, window_, nullptr, &surface)) {
-        eray::util::Logger::info("Could not create a window surface");
-        return std::nullopt;
-      }
-
-      return vk::raii::SurfaceKHR(instance, surface);
-    };
-
-    // == Device Creation ==============================================================================================
-    auto desktop_template                 = vkren::Device::CreateInfo::DesktopProfile{};
-    auto device_info                      = desktop_template.get(surface_creator, required_global_extensions);
-    device_info.app_info.pApplicationName = "Depth Buffer Example";
+    auto desktop_profile                  = vkren::Device::CreateInfo::DesktopProfile{};
+    auto device_info                      = desktop_profile.get(*window_);
+    device_info.app_info.pApplicationName = "Compute Particles Example";
     device_ = vkren::Device::create(context_, device_info).or_panic("Could not create a logical device wrapper");
   }
 
-  std::expected<void, GLFWWindowCreationFailure> initWindow() {
-    glfwInit();
-
-    if (!glfwVulkanSupported()) {
-      eray::util::panic("GLFW could not load Vulkan");
-    }
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-
-    glfwSetErrorCallback([](int error_code, const char* description) {
-      eray::util::Logger::err("GLFW Error #{0}: {1}", error_code, description);
-    });
-
-    window_ = glfwCreateWindow(kWinWidth, kWinHeight, "Vulkan", nullptr, nullptr);
-    if (!window_) {
-      return std::unexpected(GLFWWindowCreationFailure{});
-    }
-
-    glfwSetWindowUserPointer(window_, this);
-    glfwSetFramebufferSizeCallback(window_, framebuffer_resize_callback);
-
-    eray::util::Logger::succ("Successfully created a GLFW Window");
-
-    return {};
-  }
-
   void main_loop() {
-    while (!glfwWindowShouldClose(window_)) {
-      glfwPollEvents();
-      if (!draw_frame()) {
-        eray::util::Logger::err("Closing window: Failed to draw a frame");
-        break;
-      }
+    while (!window_->should_close()) {
+      window_->poll_events();
+      draw_frame();
     }
 
     // Since draw frame operations are async, when the main loop ends the drawing operations may still be going on.
@@ -187,7 +86,7 @@ class DepthBufferApplication {
     device_->waitIdle();
   }
 
-  std::expected<void, DrawFrameError> draw_frame() {
+  void draw_frame() {
     // A binary (there is also a timeline semaphore) semaphore is used to add order between queue operations (work
     // submitted to the queue). Semaphores are used for both -- to order work inside the same queue and between
     // different queues. The waiting happens on GPU only, the host (CPU) is not blocked.
@@ -200,12 +99,15 @@ class DepthBufferApplication {
 
     // Get the image from the swap chain. When the image will be ready the present semaphore will be signaled.
     uint32_t image_index{};
-    if (auto res =
+    if (auto acquire_opt =
             swap_chain_.acquire_next_image(UINT64_MAX, *present_finished_semaphores_[current_semaphore_], nullptr)) {
-      image_index = *res;
+      if (acquire_opt->status != vkren::SwapChain::AcquireResult::Status::Success) {
+        return;
+      }
+      image_index = acquire_opt->image_index;
     } else {
-      eray::util::Logger::err("Could not acquire next swap chain image");
-      return {};
+      eray::util::panic("Failed to acquire next image!");
+      return;
     }
 
     update_ubo(current_frame_);
@@ -243,19 +145,12 @@ class DepthBufferApplication {
         .pResults           = nullptr,
     };
 
-    result = device_.presentation_queue().presentKHR(present_info);
-    if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebuffer_resized_) {
-      framebuffer_resized_ = false;
-      TRY(recreate_swap_chain());
-    } else if (result != vk::Result::eSuccess) {
-      eray::util::Logger::err("Failed to present swap chain image");
-      return std::unexpected(SwapChainImageAcquireFailure{});
+    if (!swap_chain_.present_image(present_info)) {
+      eray::util::Logger::err("Failed to present an image!");
     }
 
     current_semaphore_ = (current_semaphore_ + 1) % present_finished_semaphores_.size();
     current_frame_     = (current_frame_ + 1) % kMaxFramesInFlight;
-
-    return {};
   }
 
   void create_descriptor_set_layout() {
@@ -310,38 +205,12 @@ class DepthBufferApplication {
   void cleanup() {
     swap_chain_.cleanup();
 
-    glfwDestroyWindow(window_);
-    glfwTerminate();
-
     eray::util::Logger::succ("Finished cleanup");
   }
 
   void create_swap_chain() {
-    // Unfortunately, if you are using a high DPI display (like Apple’s Retina display), screen coordinates don’t
-    // correspond to pixels. For that reason we use glfwGetFrameBufferSize to get size in pixels. (Note:
-    // glfwGetWindowSize returns size in screen coordinates).
-    int width{};
-    int height{};
-    glfwGetFramebufferSize(window_, &width, &height);
-    swap_chain_ = vkren::SwapChain::create(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                           device_.max_usable_sample_count())
+    swap_chain_ = vkren::SwapChain::create(device_, window_, device_.max_usable_sample_count())
                       .or_panic("Could not create a swap chain");
-  }
-
-  std::expected<void, SwapchainRecreationFailure> recreate_swap_chain() {
-    int width  = 0;
-    int height = 0;
-    glfwGetFramebufferSize(window_, &width, &height);
-    while (width == 0 || height == 0) {
-      glfwGetFramebufferSize(window_, &width, &height);
-      glfwWaitEvents();
-    }
-
-    if (!swap_chain_.resize(static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
-      return std::unexpected(SwapchainRecreationFailure{});
-    }
-
-    return {};
   }
 
   void create_graphics_pipeline() {
@@ -546,7 +415,7 @@ class DepthBufferApplication {
     //                                   .or_panic("Could not create a particle shader module");
   }
 
-  std::expected<void, VulkanInitError> create_command_pool() {
+  void create_command_pool() {
     auto command_pool_info = vk::CommandPoolCreateInfo{
         // There are two possible flags for command pools:
         // - VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: Hint that command buffers are rerecorded with new commands very often
@@ -561,20 +430,11 @@ class DepthBufferApplication {
         .queueFamilyIndex = device_.graphics_queue_family(),
     };
 
-    if (auto result = device_->createCommandPool(command_pool_info)) {
-      command_pool_ = std::move(*result);
-    } else {
-      eray::util::Logger::err("Could not create a command pool. {}", vk::to_string(result.error()));
-
-      return std::unexpected(VulkanObjectCreationError{
-          .result = result.error(),
-      });
-    }
-
-    return {};
+    command_pool_ =
+        vkren::Result(device_->createCommandPool(command_pool_info)).or_panic("Could not create a command pool");
   }
 
-  std::expected<void, VulkanInitError> create_buffers() {
+  void create_buffers() {
     auto vb = VertexBuffer::create_triangle();
 
     auto vertices_region = eray::util::MemoryRegion{vb.vertices.data(), vb.vertices_size_bytes()};
@@ -625,11 +485,9 @@ class DepthBufferApplication {
         uniform_buffers_.emplace_back(std::move(ubo));
       }
     }
-
-    return {};
   }
 
-  std::expected<void, VulkanInitError> create_command_buffers() {
+  void create_command_buffers() {
     auto alloc_info = vk::CommandBufferAllocateInfo{
         .commandPool = command_pool_,  //
 
@@ -643,19 +501,12 @@ class DepthBufferApplication {
         .commandBufferCount = kMaxFramesInFlight,                //
     };
 
-    if (auto result = device_->allocateCommandBuffers(alloc_info)) {
-      std::ranges::move(*result | std::views::take(kMaxFramesInFlight), graphics_command_buffers_.begin());
-    } else {
-      eray::util::Logger::err("Command buffer allocation failure. {}", vk::to_string(result.error()));
-      return std::unexpected(VulkanObjectCreationError{
-          .result = result.error(),
-      });
-    }
-
-    return {};
+    auto result =
+        vkren::Result(device_->allocateCommandBuffers(alloc_info)).or_panic("Could not allocate a command buffer");
+    std::ranges::move(result | std::views::take(kMaxFramesInFlight), graphics_command_buffers_.begin());
   }
 
-  std::expected<void, VulkanInitError> create_sync_objs() {
+  void create_sync_objs() {
     present_finished_semaphores_.clear();
     render_finished_semaphores_.clear();
 
@@ -663,8 +514,7 @@ class DepthBufferApplication {
       if (auto result = device_->createSemaphore(vk::SemaphoreCreateInfo{})) {
         present_finished_semaphores_.emplace_back(std::move(*result));
       } else {
-        eray::util::Logger::err("Failed to create a  sempahore. {}", vk::to_string(result.error()));
-        return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+        eray::util::panic("Could not create a semaphore");
       }
     }
 
@@ -672,8 +522,7 @@ class DepthBufferApplication {
       if (auto result = device_->createSemaphore(vk::SemaphoreCreateInfo{})) {
         render_finished_semaphores_.emplace_back(std::move(*result));
       } else {
-        eray::util::Logger::err("Failed to create a sempahore. {}", vk::to_string(result.error()));
-        return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+        eray::util::panic("Could not create a semaphore");
       }
     }
 
@@ -681,12 +530,9 @@ class DepthBufferApplication {
       if (auto result = device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled})) {
         in_flight_fences_[i] = std::move(*result);
       } else {
-        eray::util::Logger::err("Failed to create a fence. {}", vk::to_string(result.error()));
-        return std::unexpected(VulkanObjectCreationError{.result = result.error()});
+        eray::util::panic("Could not create a fence");
       }
     }
-
-    return {};
   }
 
   void create_txt_img() {
@@ -1102,7 +948,7 @@ class DepthBufferApplication {
    * @brief GLFW window pointer.
    *
    */
-  GLFWwindow* window_ = nullptr;
+  std::shared_ptr<eray::os::Window> window_ = nullptr;
 
   /**
    * @brief Although many drivers and platforms trigger VK_ERROR_OUT_OF_DATE_KHR automatically after a window resize,
@@ -1128,13 +974,21 @@ class DepthBufferApplication {
 };
 
 int main() {
-  eray::util::Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-  eray::util::Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+  using Logger = eray::util::Logger;
+  using System = eray::os::System;
 
-  auto app = DepthBufferApplication();
-  if (auto result = app.run(); !result) {
-    eray::util::panic("Error");
+  Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
+  Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+
+  auto window_creator =
+      eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");
+  System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
+  {
+    auto window = System::instance().create_window().or_panic("Could not create a window");
+    auto app    = DepthBufferApplication(std::move(window));
+    app.run();
   }
+  eray::os::System::instance().terminate();
 
   return 0;
 }
