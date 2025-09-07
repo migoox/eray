@@ -164,8 +164,8 @@ void DescriptorWriter::write_image(uint32_t binding, vk::ImageView image, vk::Sa
 
   auto write = vk::WriteDescriptorSet{
       .sType           = vk::StructureType::eWriteDescriptorSet,
-      .dstBinding      = binding,
       .dstSet          = VK_NULL_HANDLE,
+      .dstBinding      = binding,
       .descriptorCount = 1,
       .descriptorType  = type,
       .pImageInfo      = &info,
@@ -188,8 +188,8 @@ void DescriptorWriter::write_buffer(uint32_t binding, vk::Buffer buffer, size_t 
 
   auto write = vk::WriteDescriptorSet{
       .sType           = vk::StructureType::eWriteDescriptorSet,
-      .dstBinding      = binding,
       .dstSet          = VK_NULL_HANDLE,
+      .dstBinding      = binding,
       .descriptorCount = 1,
       .descriptorType  = type,
       .pBufferInfo     = &info,
