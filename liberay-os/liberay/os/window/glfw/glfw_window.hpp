@@ -11,7 +11,10 @@ class GLFWWindow final : public Window {
  public:
   GLFWWindow() = delete;
   GLFWWindow(void* glfw_window_ptr, const WindowProperties& props, WindowAPI window_api);
-  ERAY_DELETE_COPY_AND_MOVE(GLFWWindow)
+  GLFWWindow(const GLFWWindow&)                = delete;
+  GLFWWindow(GLFWWindow&&) noexcept            = delete;
+  GLFWWindow& operator=(const GLFWWindow&)     = delete;
+  GLFWWindow& operator=(GLFWWindow&&) noexcept = delete;
   ~GLFWWindow() final;
 
   void poll_events() final;
@@ -34,6 +37,8 @@ class GLFWWindow final : public Window {
   bool should_close() const final;
 
   void* win_handle() const final { return glfw_window_ptr_; }
+
+  void destroy() override;
 
  private:
   void init_dispatcher();

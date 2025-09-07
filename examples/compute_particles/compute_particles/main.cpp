@@ -28,6 +28,7 @@
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
+#include <memory>
 #include <vector>
 #include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
@@ -41,9 +42,10 @@ namespace vkren = eray::vkren;
 
 class ComputeParticlesApplication {
  public:
-  explicit ComputeParticlesApplication(std::unique_ptr<eray::os::Window>&& window) : window_(std::move(window)) {}
+  ComputeParticlesApplication() = default;
 
   void run() {
+    window_ = eray::os::System::instance().create_window().or_panic("Could not create a window");
     init_vk();
     main_loop();
     cleanup();
@@ -1016,11 +1018,10 @@ int main() {
   auto window_creator =
       eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");
   System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
-  {
-    auto window = System::instance().create_window().or_panic("Could not create a window");
-    auto app    = ComputeParticlesApplication(std::move(window));
-    app.run();
-  }
+
+  auto app = ComputeParticlesApplication();
+  app.run();
+
   eray::os::System::instance().terminate();
 
   return 0;

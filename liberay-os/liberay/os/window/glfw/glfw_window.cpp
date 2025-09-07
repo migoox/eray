@@ -26,11 +26,7 @@ GLFWWindow::GLFWWindow(void* glfw_window_ptr, const WindowProperties& props, Win
   init_dispatcher();
 }
 
-GLFWWindow::~GLFWWindow() {
-  util::Logger::info("Destroying GLFW window...");
-  glfwDestroyWindow(glfw::glfw_win_ptr(glfw_window_ptr_));
-  util::Logger::succ("GLFW window destroyed");
-}
+GLFWWindow::~GLFWWindow() { destroy(); }
 
 void GLFWWindow::init_dispatcher() {
   glfwSetWindowUserPointer(glfw::glfw_win_ptr(glfw_window_ptr_), reinterpret_cast<void*>(this));
@@ -171,5 +167,14 @@ Window::Dimensions GLFWWindow::framebuffer_size() const {
 }
 
 void GLFWWindow::poll_events() { glfwPollEvents(); }
+
+void GLFWWindow::destroy() {
+  if (glfw_window_ptr_) {
+    util::Logger::info("Destroying GLFW window...");
+    glfwDestroyWindow(glfw::glfw_win_ptr(glfw_window_ptr_));
+    util::Logger::succ("GLFW window destroyed");
+    glfw_window_ptr_ = nullptr;
+  }
+}
 
 }  // namespace eray::os

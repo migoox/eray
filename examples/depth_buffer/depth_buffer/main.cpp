@@ -41,9 +41,10 @@ namespace vkren = eray::vkren;
 
 class DepthBufferApplication {
  public:
-  explicit DepthBufferApplication(std::unique_ptr<eray::os::Window>&& window) : window_(std::move(window)) {}
+  DepthBufferApplication() = default;
 
   void run() {
+    window_ = eray::os::System::instance().create_window().or_panic("Could not create a window");
     init_vk();
     main_loop();
     cleanup();
@@ -983,11 +984,10 @@ int main() {
   auto window_creator =
       eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");
   System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
-  {
-    auto window = System::instance().create_window().or_panic("Could not create a window");
-    auto app    = DepthBufferApplication(std::move(window));
-    app.run();
-  }
+
+  auto app = DepthBufferApplication();
+  app.run();
+
   eray::os::System::instance().terminate();
 
   return 0;

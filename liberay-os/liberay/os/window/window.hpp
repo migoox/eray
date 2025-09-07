@@ -99,6 +99,8 @@ class Window {
 
   virtual void* win_handle() const = 0;
 
+  virtual void destroy() = 0;
+
  protected:
   bool on_win_resized(const WindowResizedEvent& ev) {
     props_.width  = static_cast<uint32_t>(ev.width());
