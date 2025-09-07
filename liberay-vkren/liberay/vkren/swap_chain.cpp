@@ -33,8 +33,8 @@ Result<SwapChain, Error> SwapChain::create(Device& device, std::shared_ptr<os::W
 
   TRY(swap_chain.create_swap_chain(device, framebuffer_size.width, framebuffer_size.height));
   TRY(swap_chain.create_image_views(device));
-  TRY(swap_chain.create_color_buffer(device));
-  TRY(swap_chain.create_depth_stencil_buffer(device));
+  TRY(swap_chain.create_color_attachment_image(device));
+  TRY(swap_chain.create_depth_stencil_attachment_image(device));
 
   return swap_chain;
 }
@@ -230,7 +230,7 @@ Result<void, Error> SwapChain::create_image_views(vkren::Device& device) noexcep
   return {};
 }
 
-Result<void, Error> SwapChain::create_color_buffer(vkren::Device& device) noexcept {
+Result<void, Error> SwapChain::create_color_attachment_image(vkren::Device& device) noexcept {
   auto img_opt = ImageResource::create_color_attachment_image(
       device, ImageDescription::image2d_desc(color_attachment_format(), extent_.width, extent_.height),
       msaa_sample_count_);
@@ -250,7 +250,7 @@ Result<void, Error> SwapChain::create_color_buffer(vkren::Device& device) noexce
   return {};
 }
 
-Result<void, Error> SwapChain::create_depth_stencil_buffer(vkren::Device& device) noexcept {
+Result<void, Error> SwapChain::create_depth_stencil_attachment_image(vkren::Device& device) noexcept {
   auto format_opt = find_supported_depth_stencil_format(
       device, {vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint}, vk::ImageTiling::eOptimal,
       vk::FormatFeatureFlagBits::eDepthStencilAttachment);
@@ -344,11 +344,11 @@ Result<void, Error> SwapChain::recreate() {
     return std::unexpected(result.error());
   }
 
-  if (auto result = create_color_buffer(*p_device_); !result) {
+  if (auto result = create_color_attachment_image(*p_device_); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: color buffer attachment creation failed.");
     return std::unexpected(result.error());
   }
-  if (auto result = create_depth_stencil_buffer(*p_device_); !result) {
+  if (auto result = create_depth_stencil_attachment_image(*p_device_); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: depth buffer attachment creation failed.");
     return std::unexpected(result.error());
   }
@@ -417,7 +417,7 @@ void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_
 
   cmd_buff.pipelineBarrier2(depth_stencil_dependency_info);
 
-  auto depth_stencil_buffer_attachment_info = vk::RenderingAttachmentInfo{
+  auto depth_stencil_attachment_info = vk::RenderingAttachmentInfo{
       .imageView   = depth_stencil_image_view_,
       .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
       .loadOp      = vk::AttachmentLoadOp::eClear,
@@ -426,7 +426,7 @@ void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_
   };
 
   // == Color Attachment ===============================================================================================
-  auto color_buffer_attachment_info = vk::RenderingAttachmentInfo{
+  auto color_attachment_info = vk::RenderingAttachmentInfo{
       .imageView   = image_views_[image_index],
       .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
       .loadOp      = vk::AttachmentLoadOp::eClear,
@@ -437,7 +437,7 @@ void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_
   if (msaa_enabled()) {
     // Don't use separate color attachment if MSAA disabled. Vulkan prohibits
     //
-    //  color_buffer_attachment_info.resolveMode = vk::ResolveModeFlagBits::eAverage;
+    //  color_attachment_image_attachment_info.resolveMode = vk::ResolveModeFlagBits::eAverage;
     //
     // in such case.
     //
@@ -462,10 +462,10 @@ void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_
     };
     cmd_buff.pipelineBarrier2(color_attachment_dependency_info);
 
-    color_buffer_attachment_info.imageView          = color_image_view_;
-    color_buffer_attachment_info.resolveMode        = vk::ResolveModeFlagBits::eAverage;
-    color_buffer_attachment_info.resolveImageView   = image_views_[image_index];
-    color_buffer_attachment_info.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    color_attachment_info.imageView          = color_image_view_;
+    color_attachment_info.resolveMode        = vk::ResolveModeFlagBits::eAverage;
+    color_attachment_info.resolveImageView   = image_views_[image_index];
+    color_attachment_info.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
   }
 
   cmd_buff.beginRendering(vk::RenderingInfo{
@@ -476,8 +476,8 @@ void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_
           },
       .layerCount           = 1,
       .colorAttachmentCount = 1,
-      .pColorAttachments    = &color_buffer_attachment_info,
-      .pDepthAttachment     = &depth_stencil_buffer_attachment_info,
+      .pColorAttachments    = &color_attachment_info,
+      .pDepthAttachment     = &depth_stencil_attachment_info,
   });
 }
 

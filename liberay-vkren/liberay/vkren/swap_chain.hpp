@@ -145,8 +145,8 @@ class SwapChain {
 
   Result<void, Error> create_swap_chain(vkren::Device& device, uint32_t width, uint32_t height) noexcept;
   Result<void, Error> create_image_views(vkren::Device& device) noexcept;
-  Result<void, Error> create_color_buffer(vkren::Device& device) noexcept;
-  Result<void, Error> create_depth_stencil_buffer(vkren::Device& device) noexcept;
+  Result<void, Error> create_color_attachment_image(vkren::Device& device) noexcept;
+  Result<void, Error> create_depth_stencil_attachment_image(vkren::Device& device) noexcept;
 
   Result<vk::Format, Error> find_supported_depth_stencil_format(const Device& device,
                                                                 const std::vector<vk::Format>& candidates,
