@@ -186,7 +186,7 @@ class DepthBufferApplication {
         .bindingCount = bindings.size(),
         .pBindings    = bindings.data(),
     };
-    compute_descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
+    descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
   }
 
   void update_ubo(uint32_t image_index) {
@@ -361,7 +361,7 @@ class DepthBufferApplication {
     // of your shaders without having to recreate. The uniform variables must be specified during the pipeline creation.
     auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
         .setLayoutCount         = 1,
-        .pSetLayouts            = &*compute_descriptor_set_layout_,
+        .pSetLayouts            = &*descriptor_set_layout_,
         .pushConstantRangeCount = 0,
     };
 
@@ -738,7 +738,7 @@ class DepthBufferApplication {
   }
 
   void create_descriptor_sets() {
-    auto layouts = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, *compute_descriptor_set_layout_);
+    auto layouts                   = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, *descriptor_set_layout_);
     auto descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo{
         .descriptorPool     = descriptor_pool_,
         .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
@@ -834,7 +834,7 @@ class DepthBufferApplication {
    * shaders to freely access resource like buffers and images
    *
    */
-  vk::raii::DescriptorSetLayout compute_descriptor_set_layout_ = nullptr;
+  vk::raii::DescriptorSetLayout descriptor_set_layout_ = nullptr;
 
   /**
    * @brief Describes the graphics pipeline, including shaders stages, input assembly, rasterization and more.
