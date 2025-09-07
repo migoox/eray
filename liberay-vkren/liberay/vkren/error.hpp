@@ -25,18 +25,22 @@ class ErrorCode {
   struct MemoryMappingFailure {};
   struct MemoryMappingNotSupported {};
   struct NotATransferDestination {};
+  struct SwapChainImageAcquireFailure {};
+  struct PresentationFailure {};
 
-  using Enum = std::variant<        //
-      VulkanObjectCreationFailure,  //
-      NoSuitableMemoryTypeFailure,  //
-      MemoryAllocationFailure,      //
-      ExtensionNotSupported,        //
-      ValidationLayerNotSupported,  //
-      ProfileNotSupported,          //
-      PhysicalDeviceNotSufficient,  //
-      SurfaceCreationFailure,       //
-      MemoryMappingFailure,         //
-      MemoryMappingNotSupported     //
+  using Enum = std::variant<         //
+      VulkanObjectCreationFailure,   //
+      NoSuitableMemoryTypeFailure,   //
+      MemoryAllocationFailure,       //
+      ExtensionNotSupported,         //
+      ValidationLayerNotSupported,   //
+      ProfileNotSupported,           //
+      PhysicalDeviceNotSufficient,   //
+      SurfaceCreationFailure,        //
+      MemoryMappingFailure,          //
+      MemoryMappingNotSupported,     //
+      SwapChainImageAcquireFailure,  //
+      PresentationFailure            //
       >;
 };
 

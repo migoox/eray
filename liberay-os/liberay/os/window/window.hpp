@@ -28,8 +28,8 @@ class Window {
   };
 
   struct Dimensions {
-    int width;
-    int height;
+    uint32_t width;
+    uint32_t height;
   };
 
   explicit Window(const WindowProperties& props) : props_(std::move(props)) {

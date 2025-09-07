@@ -7,19 +7,31 @@
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/swap_chain.hpp>
+#include <memory>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 
 namespace eray::vkren {
 
-Result<SwapChain, Error> SwapChain::create(Device& device, uint32_t width, uint32_t height,
+Result<SwapChain, Error> SwapChain::create(Device& device, std::shared_ptr<os::Window> window,
                                            vk::SampleCountFlagBits sample_count) noexcept {
-  auto swap_chain               = SwapChain();
+  auto swap_chain = SwapChain();
+
+  window->set_event_callback<eray::os::FramebufferResizedEvent>([&swap_chain](const auto&) -> bool {
+    swap_chain.framebuffer_resized_ = true;
+    return true;
+  });
+
+  swap_chain.p_device_          = &device;
+  auto framebuffer_size         = window->framebuffer_size();
+  swap_chain.window_            = std::move(window);
   swap_chain.msaa_sample_count_ = sample_count;
-  TRY(swap_chain.create_swap_chain(device, width, height));
+
+  TRY(swap_chain.create_swap_chain(device, framebuffer_size.width, framebuffer_size.height));
   TRY(swap_chain.create_image_views(device));
   TRY(swap_chain.create_color_buffer(device));
   TRY(swap_chain.create_depth_stencil_buffer(device));
+
   return swap_chain;
 }
 
@@ -313,23 +325,25 @@ vk::PresentModeKHR SwapChain::choose_swap_presentMode(const std::vector<vk::Pres
   return vk::PresentModeKHR::eFifo;
 }
 
-Result<void, Error> SwapChain::recreate(Device& device_, uint32_t width, uint32_t height) {
-  device_->waitIdle();
+Result<void, Error> SwapChain::recreate() {
+  (*p_device_)->waitIdle();
 
   cleanup();
-  if (auto result = create_swap_chain(device_, width, height); !result) {
+
+  auto framebuffer_size = window_->framebuffer_size();
+  if (auto result = create_swap_chain(*p_device_, framebuffer_size.width, framebuffer_size.height); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: Swap chain creation failed.");
     return std::unexpected(result.error());
   }
-  if (auto result = create_image_views(device_); !result) {
+  if (auto result = create_image_views(*p_device_); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: Image views creation failed.");
     return std::unexpected(result.error());
   }
-  if (auto result = create_color_buffer(device_); !result) {
+  if (auto result = create_color_buffer(*p_device_); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: color buffer attachment creation failed.");
     return std::unexpected(result.error());
   }
-  if (auto result = create_depth_stencil_buffer(device_); !result) {
+  if (auto result = create_depth_stencil_buffer(*p_device_); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: depth buffer attachment creation failed.");
     return std::unexpected(result.error());
   }
@@ -493,6 +507,61 @@ void SwapChain::end_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t 
 
   cmd_buff.pipelineBarrier2(swap_chain_image_dependency_info);
   cmd_buff.end();
+}
+
+Result<SwapChain::AcquireResult, Error> SwapChain::acquire_next_image(uint64_t timeout, vk::Semaphore semaphore,
+                                                                      vk::Fence fence) {
+  auto [result, image_index] = swap_chain_.acquireNextImage(timeout, semaphore, fence);
+
+  if (result == vk::Result::eErrorOutOfDateKHR) {
+    // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
+    // happens after window resize.
+    return recreate().transform([]() {
+      return AcquireResult{
+          .status      = AcquireResult::Status::Resized,
+          .image_index = 0,
+      };
+    });
+  }
+
+  if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
+    // The swap chain cannot be used even if we accept that the surface properties are no longer matched exactly
+    // (eSuboptimalKHR).
+    eray::util::Logger::err("Failed to present swap chain image");
+    return std::unexpected(Error{
+        .msg     = "Swap chain image acquire failed",
+        .code    = ErrorCode::SwapChainImageAcquireFailure{},
+        .vk_code = result,
+    });
+  }
+
+  return AcquireResult{
+      .status      = AcquireResult::Status::Success,
+      .image_index = image_index,
+  };
+  ;
+}
+
+SwapChain::SwapChain(std::nullptr_t) {}
+
+Result<void, Error> SwapChain::present_image(vk::PresentInfoKHR present_info) {
+  auto result = p_device_->presentation_queue().presentKHR(present_info);
+
+  if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebuffer_resized_) {
+    framebuffer_resized_ = false;
+    return recreate();
+  }
+
+  if (result != vk::Result::eSuccess) {
+    eray::util::Logger::err("Failed to present swap chain image");
+    return std::unexpected(Error{
+        .msg     = "Failed to present an image",
+        .code    = ErrorCode::PresentationFailure{},
+        .vk_code = result,
+    });
+  }
+
+  return {};
 }
 
 }  // namespace eray::vkren

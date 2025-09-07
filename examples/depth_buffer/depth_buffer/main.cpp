@@ -199,22 +199,15 @@ class DepthBufferApplication {
     }
 
     // Get the image from the swap chain. When the image will be ready the present semaphore will be signaled.
-    auto [result, image_index] =
-        swap_chain_->acquireNextImage(UINT64_MAX, *present_finished_semaphores_[current_semaphore_], nullptr);
-
-    if (result == vk::Result::eErrorOutOfDateKHR) {
-      // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually
-      // happens after window resize.
-      TRY(recreate_swap_chain());
+    uint32_t image_index{};
+    if (auto res =
+            swap_chain_.acquire_next_image(UINT64_MAX, *present_finished_semaphores_[current_semaphore_], nullptr)) {
+      image_index = *res;
+    } else {
+      eray::util::Logger::err("Could not acquire next swap chain image");
       return {};
     }
 
-    if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
-      // The swap chain cannot be used even if we accept that the surface properties are no longer matched exactly
-      // (eSuboptimalKHR).
-      eray::util::Logger::err("Failed to present swap chain image");
-      return std::unexpected(SwapChainImageAcquireFailure{});
-    }
     update_ubo(current_frame_);
 
     device_->resetFences(*in_flight_fences_[current_frame_]);
@@ -344,7 +337,7 @@ class DepthBufferApplication {
       glfwWaitEvents();
     }
 
-    if (!swap_chain_.recreate(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
+    if (!swap_chain_.recreate(static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
       return std::unexpected(SwapchainRecreationFailure{});
     }
 

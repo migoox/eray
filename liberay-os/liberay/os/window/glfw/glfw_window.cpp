@@ -123,8 +123,8 @@ void GLFWWindow::set_title(util::zstring_view title) {
 
 void GLFWWindow::set_window_size(int width, int height) {
   glfwSetWindowSize(glfw::glfw_win_ptr(glfw_window_ptr_), width, height);
-  props_.width  = width;
-  props_.height = height;
+  props_.width  = static_cast<uint32_t>(width);
+  props_.height = static_cast<uint32_t>(height);
 }
 
 void GLFWWindow::set_fullscreen(bool /* fullscreen */) {  // NOLINT
@@ -159,14 +159,15 @@ CursorMode GLFWWindow::mouse_cursor_mode() {
 bool GLFWWindow::should_close() const { return glfwWindowShouldClose(glfw::glfw_win_ptr(glfw_window_ptr_)) != 0; }
 
 Window::Dimensions GLFWWindow::framebuffer_size() const {
-  auto size = Window::Dimensions{.width = 0, .height = 0};
-  glfwGetFramebufferSize(glfw::glfw_win_ptr(glfw_window_ptr_), &size.width, &size.height);
-  while (size.width == 0 || size.height == 0) {
-    glfwGetFramebufferSize(glfw::glfw_win_ptr(glfw_window_ptr_), &size.width, &size.height);
+  int width  = 0;
+  int height = 0;
+  glfwGetFramebufferSize(glfw::glfw_win_ptr(glfw_window_ptr_), &width, &height);
+  while (width == 0 || height == 0) {
+    glfwGetFramebufferSize(glfw::glfw_win_ptr(glfw_window_ptr_), &width, &height);
     glfwWaitEvents();
   }
 
-  return size;
+  return Window::Dimensions{.width = static_cast<uint32_t>(width), .height = static_cast<uint32_t>(height)};
 }
 
 void GLFWWindow::poll_events() { glfwPollEvents(); }
