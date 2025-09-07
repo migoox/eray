@@ -299,9 +299,15 @@ class DepthBufferApplication {
   }
 
   void update_ubo(uint32_t image_index) {
+    static auto start_time = std::chrono::high_resolution_clock::now();
+    auto curr_time         = std::chrono::high_resolution_clock::now();
+    auto time              = std::chrono::duration<float>(curr_time - start_time).count();
+
+    auto s = std::sin(time * 0.7F);
+    s      = (s * s - 0.5F) * 90.F;
     UniformBufferObject ubo{};
-    ubo.model = eray::math::rotation_axis(eray::math::radians(30.0F), eray::math::Vec3f(0.F, 1.F, 0.F));
-    ubo.view  = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -3.F));
+    ubo.model = eray::math::rotation_axis(eray::math::radians(s), eray::math::Vec3f(0.F, 1.F, 0.F));
+    ubo.view  = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -4.F));
     ubo.proj  = eray::math::perspective_vk_rh(
         eray::math::radians(80.0F), static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight), 0.01F, 10.F);
 
