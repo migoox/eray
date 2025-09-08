@@ -11,24 +11,45 @@
 
 namespace eray::vkren {
 
+struct DescriptorPoolSizeRatio {
+  vk::DescriptorType type;
+
+  /**
+   * @brief When you say ratio = 3.0F, for UniformBuffer, that means "on average, each set I allocate will use
+   * approximately ~3 uniform buffers".
+   *
+   */
+  float ratio;
+
+  static std::vector<DescriptorPoolSizeRatio> create_standard_ratios(float storage_image_ratio,
+                                                                     float storage_buffer_ratio,
+                                                                     float uniform_buffer_ratio,
+                                                                     float combined_image_sampler_ratio);
+};
+
 class DescriptorAllocator {
  public:
   DescriptorAllocator() = delete;
   explicit DescriptorAllocator(std::nullptr_t) {}
 
   DescriptorAllocator(const DescriptorAllocator&)                = delete;
-  DescriptorAllocator(DescriptorAllocator&&) noexcept            = delete;
+  DescriptorAllocator(DescriptorAllocator&&) noexcept            = default;
   DescriptorAllocator& operator=(const DescriptorAllocator&)     = delete;
-  DescriptorAllocator& operator=(DescriptorAllocator&&) noexcept = delete;
-
-  struct PoolSizeRatio {
-    vk::DescriptorType type;
-    float ratio;
-  };
+  DescriptorAllocator& operator=(DescriptorAllocator&&) noexcept = default;
 
   static DescriptorAllocator create(Device& device);
+  static Result<DescriptorAllocator, Error> create_and_init(Device& device, uint32_t max_sets,
+                                                            std::span<DescriptorPoolSizeRatio> pool_size_ratios);
 
-  Result<void, Error> init(uint32_t max_sets, std::span<PoolSizeRatio> pool_size_ratios);
+  /**
+   * @brief
+   *
+   * @param max_sets Max sets per pool.
+   * @param pool_size_ratios
+   * @return Result<void, Error>
+   */
+  Result<void, Error> init(uint32_t max_sets, std::span<DescriptorPoolSizeRatio> pool_size_ratios);
+
   void clear_pools();
   void destroy_pools();
 
@@ -38,9 +59,10 @@ class DescriptorAllocator {
   explicit DescriptorAllocator(Device& device) : p_device_(&device) {}
 
   Result<vk::raii::DescriptorPool, Error> get_pool();
-  Result<vk::raii::DescriptorPool, Error> create_pool(uint32_t set_count, std::span<PoolSizeRatio> pool_ratios);
+  Result<vk::raii::DescriptorPool, Error> create_pool(uint32_t set_count,
+                                                      std::span<DescriptorPoolSizeRatio> pool_ratios);
 
-  std::vector<PoolSizeRatio> ratios_;
+  std::vector<DescriptorPoolSizeRatio> ratios_;
 
   /**
    * @brief Contains the pools we know we cant allocate from anymore.
@@ -58,13 +80,13 @@ class DescriptorAllocator {
   observer_ptr<Device> p_device_{};
 };
 
-struct DescriptorWriter {
+struct DescriptorSetWriter {
   std::deque<vk::DescriptorImageInfo> image_infos;
   std::deque<vk::DescriptorBufferInfo> buffer_infos;
   std::vector<vk::WriteDescriptorSet> writes;
   observer_ptr<Device> _p_device;
 
-  static DescriptorWriter create(Device& device);
+  static DescriptorSetWriter create(Device& device);
 
   /**
    * @brief Calls the `write_image` function with VK_DESCRIPTOR_TYPE_SAMPLER type.

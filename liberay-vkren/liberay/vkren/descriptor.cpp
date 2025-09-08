@@ -11,14 +11,20 @@
 
 namespace eray::vkren {
 
+std::vector<DescriptorPoolSizeRatio> DescriptorPoolSizeRatio::create_standard_ratios(
+    float storage_image_ratio, float storage_buffer_ratio, float uniform_buffer_ratio,
+    float combined_image_sampler_ratio) {
+  return std::vector{
+      DescriptorPoolSizeRatio{.type = vk::DescriptorType::eStorageImage, .ratio = storage_image_ratio},
+      DescriptorPoolSizeRatio{.type = vk::DescriptorType::eStorageBuffer, .ratio = storage_buffer_ratio},
+      DescriptorPoolSizeRatio{.type = vk::DescriptorType::eUniformBuffer, .ratio = uniform_buffer_ratio},
+      DescriptorPoolSizeRatio{.type = vk::DescriptorType::eCombinedImageSampler, .ratio = combined_image_sampler_ratio},
+  };
+}
+
 void DescriptorAllocator::clear_pools() {
-  for (auto& p : ready_pools_) {
-    p.reset();
-  }
-  for (auto&& p : full_pools_) {
-    p.reset();
-    ready_pools_.push_back(std::move(p));
-  }
+  ready_pools_.insert(ready_pools_.end(), std::make_move_iterator(full_pools_.begin()),
+                      std::make_move_iterator(full_pools_.end()));
   full_pools_.clear();
 }
 
@@ -41,17 +47,16 @@ Result<vk::raii::DescriptorPool, Error> DescriptorAllocator::get_pool() {
 
   sets_per_pool_ = sets_per_pool_ + sets_per_pool_ / 2;
   sets_per_pool_ = std::min<uint32_t>(sets_per_pool_, 4092);
-
   return std::move(*new_pool);
 }
 
-Result<vk::raii::DescriptorPool, Error> DescriptorAllocator::create_pool(uint32_t set_count,
-                                                                         std::span<PoolSizeRatio> pool_ratios) {
+Result<vk::raii::DescriptorPool, Error> DescriptorAllocator::create_pool(
+    uint32_t set_count, std::span<DescriptorPoolSizeRatio> pool_ratios) {
   auto pool_sizes = std::vector<vk::DescriptorPoolSize>();
-  for (PoolSizeRatio ratio : pool_ratios) {
+  for (DescriptorPoolSizeRatio ratio : pool_ratios) {
     pool_sizes.push_back(vk::DescriptorPoolSize{
         .type            = ratio.type,
-        .descriptorCount = static_cast<uint32_t>(static_cast<float>(set_count) * ratio.ratio),
+        .descriptorCount = std::max(1U, static_cast<uint32_t>(static_cast<float>(set_count) * ratio.ratio)),
     });
   }
 
@@ -76,7 +81,13 @@ Result<vk::raii::DescriptorPool, Error> DescriptorAllocator::create_pool(uint32_
 
 DescriptorAllocator DescriptorAllocator::create(Device& device) { return DescriptorAllocator(device); }
 
-Result<void, Error> DescriptorAllocator::init(uint32_t max_sets, std::span<PoolSizeRatio> pool_size_ratios) {
+Result<DescriptorAllocator, Error> DescriptorAllocator::create_and_init(
+    Device& device, uint32_t max_sets, std::span<DescriptorPoolSizeRatio> pool_size_ratios) {
+  auto allocator = DescriptorAllocator(device);
+  return allocator.init(max_sets, pool_size_ratios).transform([&]() { return std::move(allocator); });
+}
+
+Result<void, Error> DescriptorAllocator::init(uint32_t max_sets, std::span<DescriptorPoolSizeRatio> pool_size_ratios) {
   ratios_.clear();
 
   for (auto r : pool_size_ratios) {
@@ -88,7 +99,7 @@ Result<void, Error> DescriptorAllocator::init(uint32_t max_sets, std::span<PoolS
     return std::unexpected(new_pool.error());
   }
 
-  sets_per_pool_ = max_sets + max_sets / 2;  // grow it next allocation
+  sets_per_pool_ = max_sets;
   ready_pools_.emplace_back(std::move(*new_pool));
 
   return {};
@@ -112,19 +123,24 @@ Result<vk::DescriptorSet, Error> DescriptorAllocator::allocate(vk::DescriptorSet
 
   auto ds_opt = (*p_device_)->allocateDescriptorSets(alloc_info).or_else([&](auto&& err) -> Expected {
     if (err == vk::Result::eErrorOutOfPoolMemory || err == vk::Result::eErrorFragmentedPool) {
-      return get_pool().and_then([&](vk::raii::DescriptorPool&& pool) -> Expected {
-        pool_to_use               = std::move(pool);
-        alloc_info.descriptorPool = *pool_to_use;
+      full_pools_.push_back(std::move(*pool_to_use));
+      auto retry_pool = get_pool();
+      if (!retry_pool) {
+        return std::unexpected(retry_pool.error());
+      }
 
-        return (*p_device_)->allocateDescriptorSets(alloc_info).or_else([](auto&& err) -> Expected {
-          return std::unexpected(Error{
-              .msg     = "Descriptor Sets creation failure",
-              .code    = ErrorCode::VulkanObjectCreationFailure{},
-              .vk_code = err,
-          });
+      pool_to_use               = std::move(retry_pool);
+      alloc_info.descriptorPool = *pool_to_use;
+
+      return (*p_device_)->allocateDescriptorSets(alloc_info).or_else([](auto&& retry_err) -> Expected {
+        return std::unexpected(Error{
+            .msg     = "Descriptor Sets creation failure",
+            .code    = ErrorCode::VulkanObjectCreationFailure{},
+            .vk_code = retry_err,
         });
       });
     }
+
     return std::unexpected(Error{
         .msg     = "Descriptor Sets creation failure",
         .code    = ErrorCode::VulkanObjectCreationFailure{},
@@ -133,6 +149,7 @@ Result<vk::DescriptorSet, Error> DescriptorAllocator::allocate(vk::DescriptorSet
   });
 
   if (!ds_opt) {
+    full_pools_.push_back(std::move(*pool_to_use));
     return std::unexpected(ds_opt.error());
   }
 
@@ -141,25 +158,25 @@ Result<vk::DescriptorSet, Error> DescriptorAllocator::allocate(vk::DescriptorSet
   return std::move(ds_opt->front());
 }
 
-void DescriptorWriter::write_sampler(uint32_t binding, vk::Sampler sampler) {
+void DescriptorSetWriter::write_sampler(uint32_t binding, vk::Sampler sampler) {
   write_image(binding, VK_NULL_HANDLE, sampler, vk::ImageLayout::eUndefined, vk::DescriptorType::eSampler);
 }
 
-void DescriptorWriter::write_sampled_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout) {
+void DescriptorSetWriter::write_sampled_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout) {
   write_image(binding, image, VK_NULL_HANDLE, layout, vk::DescriptorType::eSampledImage);
 }
 
-void DescriptorWriter::write_combined_image_sampler(uint32_t binding, vk::ImageView image, vk::Sampler sampler,
-                                                    vk::ImageLayout layout) {
+void DescriptorSetWriter::write_combined_image_sampler(uint32_t binding, vk::ImageView image, vk::Sampler sampler,
+                                                       vk::ImageLayout layout) {
   write_image(binding, image, sampler, layout, vk::DescriptorType::eCombinedImageSampler);
 }
 
-void DescriptorWriter::write_storage_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout) {
+void DescriptorSetWriter::write_storage_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout) {
   write_image(binding, image, VK_NULL_HANDLE, layout, vk::DescriptorType::eStorageImage);
 }
 
-void DescriptorWriter::write_image(uint32_t binding, vk::ImageView image, vk::Sampler sampler, vk::ImageLayout layout,
-                                   vk::DescriptorType type) {
+void DescriptorSetWriter::write_image(uint32_t binding, vk::ImageView image, vk::Sampler sampler,
+                                      vk::ImageLayout layout, vk::DescriptorType type) {
   auto& info = image_infos.emplace_back(vk::DescriptorImageInfo{
       .sampler     = sampler,
       .imageView   = image,
@@ -178,12 +195,12 @@ void DescriptorWriter::write_image(uint32_t binding, vk::ImageView image, vk::Sa
   writes.push_back(write);
 }
 
-void DescriptorWriter::write_buffer(uint32_t binding, vk::DescriptorBufferInfo info, vk::DescriptorType type) {
+void DescriptorSetWriter::write_buffer(uint32_t binding, vk::DescriptorBufferInfo info, vk::DescriptorType type) {
   write_buffer(binding, info.buffer, info.range, info.offset, type);
 }
 
-void DescriptorWriter::write_buffer(uint32_t binding, vk::Buffer buffer, size_t size, size_t offset,
-                                    vk::DescriptorType type) {
+void DescriptorSetWriter::write_buffer(uint32_t binding, vk::Buffer buffer, size_t size, size_t offset,
+                                       vk::DescriptorType type) {
   auto& info = buffer_infos.emplace_back(vk::DescriptorBufferInfo{
       .buffer = buffer,
       .offset = offset,
@@ -202,13 +219,13 @@ void DescriptorWriter::write_buffer(uint32_t binding, vk::Buffer buffer, size_t 
   writes.push_back(write);
 }
 
-void DescriptorWriter::clear() {
+void DescriptorSetWriter::clear() {
   image_infos.clear();
   writes.clear();
   buffer_infos.clear();
 }
 
-void DescriptorWriter::update_set(vk::DescriptorSet set) {
+void DescriptorSetWriter::update_set(vk::DescriptorSet set) {
   for (auto& write : writes) {
     write.dstSet = set;
   }
@@ -216,8 +233,8 @@ void DescriptorWriter::update_set(vk::DescriptorSet set) {
   (*_p_device)->updateDescriptorSets(writes, nullptr);
 }
 
-DescriptorWriter DescriptorWriter::create(Device& device) {
-  return DescriptorWriter{
+DescriptorSetWriter DescriptorSetWriter::create(Device& device) {
+  return DescriptorSetWriter{
       .image_infos  = {},
       .buffer_infos = {},
       .writes       = {},
