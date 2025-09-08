@@ -225,14 +225,12 @@ class DepthBufferApplication {
     auto binding_desc = Vertex::binding_desc();
     auto attribs_desc = Vertex::attribs_desc();
 
-    auto pipeline_builder = vkren::GraphicsPipelineBuilder::create(swap_chain_);
-
-    vk::DescriptorSetLayout l = descriptor_set_layout_;
-    auto pipeline = pipeline_builder.with_shaders(main_shader_module.shader_module, main_shader_module.shader_module)
+    auto pipeline = vkren::GraphicsPipelineBuilder::create(swap_chain_)
+                        .with_shaders(main_shader_module.shader_module, main_shader_module.shader_module)
                         .with_polygon_mode(vk::PolygonMode::eFill)
                         .with_cull_mode(vk::CullModeFlagBits::eBack, vk::FrontFace::eClockwise)
                         .with_input_state(binding_desc, attribs_desc)
-                        .with_descriptor_set_layout(l)
+                        .with_descriptor_set_layout(*descriptor_set_layout_)
                         .with_primitive_topology(vk::PrimitiveTopology::eTriangleList)
                         .with_depth_test()
                         .with_depth_test_compare_op(vk::CompareOp::eLess)

@@ -27,10 +27,10 @@ struct GraphicsPipelineBuilder {
 
   GraphicsPipelineBuilder& with_input_state(std::span<vk::VertexInputBindingDescription> binding_descriptions,
                                             std::span<vk::VertexInputAttributeDescription> attributes_descriptions);
-  GraphicsPipelineBuilder& with_input_state(vk::VertexInputBindingDescription& binding_descriptions,
+  GraphicsPipelineBuilder& with_input_state(const vk::VertexInputBindingDescription& binding_descriptions,
                                             std::span<vk::VertexInputAttributeDescription> attributes_descriptions);
-  GraphicsPipelineBuilder& with_input_state(vk::VertexInputBindingDescription& binding_descriptions,
-                                            vk::VertexInputAttributeDescription& attributes_descriptions);
+  GraphicsPipelineBuilder& with_input_state(const vk::VertexInputBindingDescription& binding_descriptions,
+                                            const vk::VertexInputAttributeDescription& attributes_descriptions);
 
   GraphicsPipelineBuilder& with_polygon_mode(vk::PolygonMode polygon_mode, float line_width = 1.F);
   GraphicsPipelineBuilder& with_cull_mode(vk::CullModeFlags cull_mode, vk::FrontFace front_face);
@@ -71,7 +71,7 @@ struct GraphicsPipelineBuilder {
   GraphicsPipelineBuilder& with_blending();
 
   GraphicsPipelineBuilder& with_descriptor_set_layouts(std::span<vk::DescriptorSetLayout> layout);
-  GraphicsPipelineBuilder& with_descriptor_set_layout(vk::DescriptorSetLayout& layouts);
+  GraphicsPipelineBuilder& with_descriptor_set_layout(const vk::DescriptorSetLayout& layouts);
   GraphicsPipelineBuilder& with_push_constant_ranges(std::span<vk::PushConstantRange> push_constant_ranges);
 
   GraphicsPipelineBuilder& with_constant_ranges();
@@ -98,9 +98,25 @@ struct GraphicsPipelineBuilder {
   explicit GraphicsPipelineBuilder(const SwapChain& swap_chain);
 };
 
-// TODO(migoox): Implement ComputePipelineBuilder
-class ComputePipelineBuilder {
-  void set_shaders();
+struct ComputePipelineBuilder {
+ public:
+  static ComputePipelineBuilder create();
+
+  ComputePipelineBuilder& with_shader(vk::ShaderModule compute_shader, util::zstring_view entry_point = "");
+
+  ComputePipelineBuilder& with_descriptor_set_layouts(std::span<vk::DescriptorSetLayout> layouts);
+  ComputePipelineBuilder& with_descriptor_set_layout(const vk::DescriptorSetLayout& layout);
+  ComputePipelineBuilder& with_push_constant_ranges(std::span<vk::PushConstantRange> push_constant_ranges);
+
+  Result<Pipeline, Error> build(const Device& device);
+
+  static constexpr util::zstring_view kDefaultComputeShaderEntryPoint = "mainComp";
+
+  vk::PipelineShaderStageCreateInfo _shader_stage{};
+  vk::PipelineLayoutCreateInfo _pipeline_layout{};
+
+ private:
+  ComputePipelineBuilder();
 };
 
 }  // namespace eray::vkren

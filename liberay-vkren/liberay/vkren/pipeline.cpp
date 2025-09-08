@@ -149,41 +149,41 @@ Result<Pipeline, Error> GraphicsPipelineBuilder::build(const Device& device) {
       .pAttachments    = &_color_blend,  //
   };
 
-  auto pipeline = device->createPipelineLayout(_pipeline_layout).and_then([&](vk::raii::PipelineLayout&& layout) {
-    auto pipeline_info = vk::GraphicsPipelineCreateInfo{
-        .pNext               = &pipeline_rendering_create_info,
-        .stageCount          = static_cast<uint32_t>(_shader_stages.size()),
-        .pStages             = _shader_stages.data(),
-        .pVertexInputState   = &_vertex_input_state,
-        .pInputAssemblyState = &_input_assembly,
-        .pViewportState      = &_viewport_state,
-        .pRasterizationState = &_rasterizer,
-        .pMultisampleState   = &_multisampling,
-        .pDepthStencilState  = &_depth_stencil,
-        .pColorBlendState    = &color_blending_info,
-        .pDynamicState       = &dynamic_state,
-        .layout              = layout,
-        .renderPass          = nullptr,
-        .basePipelineHandle  = VK_NULL_HANDLE,
-        .basePipelineIndex   = -1,
-    };
+  return device->createPipelineLayout(_pipeline_layout)
+      .and_then([&](vk::raii::PipelineLayout&& layout) {
+        auto pipeline_info = vk::GraphicsPipelineCreateInfo{
+            .pNext               = &pipeline_rendering_create_info,
+            .stageCount          = static_cast<uint32_t>(_shader_stages.size()),
+            .pStages             = _shader_stages.data(),
+            .pVertexInputState   = &_vertex_input_state,
+            .pInputAssemblyState = &_input_assembly,
+            .pViewportState      = &_viewport_state,
+            .pRasterizationState = &_rasterizer,
+            .pMultisampleState   = &_multisampling,
+            .pDepthStencilState  = &_depth_stencil,
+            .pColorBlendState    = &color_blending_info,
+            .pDynamicState       = &dynamic_state,
+            .layout              = layout,
+            .renderPass          = nullptr,
+            .basePipelineHandle  = VK_NULL_HANDLE,
+            .basePipelineIndex   = -1,
+        };
 
-    return device->createGraphicsPipeline(nullptr, pipeline_info)
-        .transform([l = std::move(layout)](vk::raii::Pipeline&& p) mutable {
-          return Pipeline{
-              .pipeline = std::move(p),
-              .layout   = std::move(l),
-          };
-        });
-  });
-
-  return std::move(pipeline).transform_error([](auto err) {
-    return Error{
-        .msg     = "Graphics Pipeline creation failure",
-        .code    = ErrorCode::VulkanObjectCreationFailure{},
-        .vk_code = err,
-    };
-  });
+        return device->createGraphicsPipeline(nullptr, pipeline_info)
+            .transform([l = std::move(layout)](vk::raii::Pipeline&& p) mutable {
+              return Pipeline{
+                  .pipeline = std::move(p),
+                  .layout   = std::move(l),
+              };
+            });
+      })
+      .transform_error([](auto err) {
+        return Error{
+            .msg     = "Graphics Pipeline creation failure",
+            .code    = ErrorCode::VulkanObjectCreationFailure{},
+            .vk_code = err,
+        };
+      });
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_primitive_topology(vk::PrimitiveTopology topology,
@@ -287,7 +287,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_descriptor_set_layouts(
   return *this;
 }
 
-GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_descriptor_set_layout(vk::DescriptorSetLayout& layout) {
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_descriptor_set_layout(const vk::DescriptorSetLayout& layout) {
   _pipeline_layout.setLayoutCount = 1;
   _pipeline_layout.pSetLayouts    = &layout;
   return *this;
@@ -311,7 +311,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_input_state(
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_input_state(
-    vk::VertexInputBindingDescription& binding_descriptions,
+    const vk::VertexInputBindingDescription& binding_descriptions,
     std::span<vk::VertexInputAttributeDescription> attributes_descriptions) {
   _vertex_input_state.vertexBindingDescriptionCount   = 1;
   _vertex_input_state.pVertexBindingDescriptions      = &binding_descriptions;
@@ -321,12 +321,78 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_input_state(
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_input_state(
-    vk::VertexInputBindingDescription& binding_descriptions,
-    vk::VertexInputAttributeDescription& attributes_descriptions) {
+    const vk::VertexInputBindingDescription& binding_descriptions,
+    const vk::VertexInputAttributeDescription& attributes_descriptions) {
   _vertex_input_state.vertexBindingDescriptionCount   = 1;
   _vertex_input_state.pVertexBindingDescriptions      = &binding_descriptions;
   _vertex_input_state.vertexAttributeDescriptionCount = 1;
   _vertex_input_state.pVertexAttributeDescriptions    = &attributes_descriptions;
   return *this;
 }
+
+ComputePipelineBuilder::ComputePipelineBuilder() {
+  // == Pipeline layouts ===============================================================================================
+  _pipeline_layout.setLayoutCount         = 0;
+  _pipeline_layout.pushConstantRangeCount = 0;
+}
+
+ComputePipelineBuilder ComputePipelineBuilder::create() { return ComputePipelineBuilder(); }
+
+ComputePipelineBuilder& ComputePipelineBuilder::with_shader(vk::ShaderModule compute_shader,
+                                                            util::zstring_view entry_point) {
+  _shader_stage = vk::PipelineShaderStageCreateInfo{
+      .stage  = vk::ShaderStageFlagBits::eCompute,
+      .module = compute_shader,
+      .pName  = entry_point.empty() ? kDefaultComputeShaderEntryPoint.c_str() : entry_point.c_str(),
+  };
+  return *this;
+}
+
+ComputePipelineBuilder& ComputePipelineBuilder::with_descriptor_set_layouts(
+    std::span<vk::DescriptorSetLayout> layouts) {
+  _pipeline_layout.setLayoutCount = static_cast<uint32_t>(layouts.size());
+  _pipeline_layout.pSetLayouts    = layouts.data();
+  return *this;
+}
+
+ComputePipelineBuilder& ComputePipelineBuilder::with_descriptor_set_layout(const vk::DescriptorSetLayout& layout) {
+  _pipeline_layout.setLayoutCount = 1;
+  _pipeline_layout.pSetLayouts    = &layout;
+  return *this;
+}
+
+ComputePipelineBuilder& ComputePipelineBuilder::with_push_constant_ranges(
+    std::span<vk::PushConstantRange> push_constant_ranges) {
+  _pipeline_layout.pushConstantRangeCount = static_cast<uint32_t>(push_constant_ranges.size());
+  _pipeline_layout.pPushConstantRanges    = push_constant_ranges.data();
+  return *this;
+}
+
+Result<Pipeline, Error> ComputePipelineBuilder::build(const Device& device) {
+  assert(_shader_stage.module && "Compute shader must be provided");
+
+  return device->createPipelineLayout(_pipeline_layout)
+      .and_then([&](vk::raii::PipelineLayout&& layout) {
+        auto pipeline_info = vk::ComputePipelineCreateInfo{
+            .stage  = _shader_stage,
+            .layout = layout,
+        };
+
+        return device->createComputePipeline(nullptr, pipeline_info)
+            .transform([l = std::move(layout)](vk::raii::Pipeline&& p) mutable {
+              return Pipeline{
+                  .pipeline = std::move(p),
+                  .layout   = std::move(l),
+              };
+            });
+      })
+      .transform_error([](auto err) {
+        return Error{
+            .msg     = "Compute Pipeline creation failure",
+            .code    = ErrorCode::VulkanObjectCreationFailure{},
+            .vk_code = err,
+        };
+      });
+}
+
 }  // namespace eray::vkren
