@@ -367,142 +367,6 @@ class DepthBufferApplication {
     txt_sampler_ = vkren::Result(device_->createSampler(sampler_info)).or_panic("Could not create the sampler");
   }
 
-  struct TransitionSwapChainImageLayoutInfo {
-    uint32_t image_index;
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  /**
-   * @brief In Vulkan, images can be in different layouts that are optimized for different operations. For example, an
-   * image can be in a layout that is optimal for presenting to the screen, or in a layout that is optimal for being
-   * used as a color attachment.
-   *
-   * This function is used to transition the image layout before and after rendering.
-   *
-   * @param image_index
-   * @param old_layout
-   * @param new_layout
-   * @param src_access_mask
-   * @param dst_access_mask
-   * @param src_stage_mask
-   * @param dst_stage_mask
-   */
-  void transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.images()[info.image_index],  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
-  struct TransitionDepthAttachmentLayoutInfo {
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  void transition_depth_attachment_layout(TransitionDepthAttachmentLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.depth_stencil_attachment_image(),  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
-  struct TransitionColorAttachmentLayoutInfo {
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  void transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.color_attachment_image(),  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
   /**
    * @brief Writes the commands we what to execute into a command buffer
    *
@@ -572,7 +436,7 @@ class DepthBufferApplication {
     descriptor_sets_ = vkren::Result(device_->allocateDescriptorSets(descriptor_set_alloc_info))
                            .or_panic("Could not create descriptor sets");
 
-    auto writer = vkren::DescriptorWriter::create(device_);
+    auto writer = vkren::DescriptorSetWriter::create(device_);
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
       writer.write_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
       writer.write_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -608,31 +472,6 @@ class DepthBufferApplication {
     }
 
     return vk::PresentModeKHR::eFifo;
-  }
-
-  static void framebuffer_resize_callback(GLFWwindow* window, int /*width*/, int /*height*/) {
-    auto* app                 = reinterpret_cast<DepthBufferApplication*>(glfwGetWindowUserPointer(window));
-    app->framebuffer_resized_ = true;
-  }
-
-  static VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
-                                                         vk::DebugUtilsMessageTypeFlagsEXT type,
-                                                         const vk::DebugUtilsMessengerCallbackDataEXT* p_callback_data,
-                                                         void*) {
-    switch (severity) {
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose:
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo:
-        eray::util::Logger::info("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning:
-        eray::util::Logger::warn("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eError:
-        eray::util::Logger::err("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      default:
-        return vk::False;
-    };
   }
 
  private:
@@ -717,13 +556,6 @@ class DepthBufferApplication {
    *
    */
   std::shared_ptr<eray::os::Window> window_ = nullptr;
-
-  /**
-   * @brief Although many drivers and platforms trigger VK_ERROR_OUT_OF_DATE_KHR automatically after a window resize,
-   * it is not guaranteed to happen. That's why there is an extra code to handle resizes explicitly.
-   *
-   */
-  bool framebuffer_resized_ = false;
 
   /**
    * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional

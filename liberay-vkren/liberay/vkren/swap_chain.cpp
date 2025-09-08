@@ -359,6 +359,7 @@ Result<void, Error> SwapChain::recreate() {
 void SwapChain::cleanup() {
   image_views_.clear();
   swap_chain_ = nullptr;
+  window_.reset();
 }
 
 void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index,
