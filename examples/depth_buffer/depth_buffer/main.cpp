@@ -19,10 +19,12 @@
 #include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
+#include <liberay/vkren/descriptor.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/glfw/vk_glfw_window_creator.hpp>
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/image_description.hpp>
+#include <liberay/vkren/pipeline.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <ranges>
@@ -34,8 +36,6 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
-
-#include "liberay/vkren/descriptor.hpp"
 
 struct GLFWWindowCreationFailure {};
 
@@ -61,7 +61,6 @@ class DepthBufferApplication {
     create_swap_chain();
     create_descriptor_set_layout();
     create_graphics_pipeline();
-    create_compute_pipeline();
     create_command_pool();
     create_buffers();
     create_command_buffers();
@@ -217,205 +216,32 @@ class DepthBufferApplication {
   }
 
   void create_graphics_pipeline() {
-    // == 1. Shader stage ==============================================================================================
-
     auto main_binary =
         eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
             .or_panic("Could not find main_sh.spv");
     auto main_shader_module =
         vkren::ShaderModule::create(device_, main_binary).or_panic("Could not create a main shader module");
 
-    auto vert_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
-        .stage  = vk::ShaderStageFlagBits::eVertex,  //
-        .module = main_shader_module.shader_module,  //
-        .pName  = kVertexShaderEntryPoint.c_str(),   // entry point name
+    auto binding_desc = Vertex::binding_desc();
+    auto attribs_desc = Vertex::attribs_desc();
 
-        // Optional: pSpecializationInfo allows to specify values for shader constants. This allows for compiler
-        // optimizations like eliminating if statements that depend on the const values.
-    };
+    auto pipeline_builder = vkren::GraphicsPipelineBuilder::create(swap_chain_);
 
-    auto frag_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
-        .stage  = vk::ShaderStageFlagBits::eFragment,
-        .module = main_shader_module.shader_module,
-        .pName  = kFragmentShaderEntryPoint.c_str(),
-    };
+    vk::DescriptorSetLayout l = descriptor_set_layout_;
+    auto pipeline = pipeline_builder.with_shaders(main_shader_module.shader_module, main_shader_module.shader_module)
+                        .with_polygon_mode(vk::PolygonMode::eFill)
+                        .with_cull_mode(vk::CullModeFlagBits::eBack, vk::FrontFace::eClockwise)
+                        .with_input_state(binding_desc, attribs_desc)
+                        .with_descriptor_set_layout(l)
+                        .with_primitive_topology(vk::PrimitiveTopology::eTriangleList)
+                        .with_depth_test()
+                        .with_depth_test_compare_op(vk::CompareOp::eLess)
+                        .with_blending()
+                        .build(device_)
+                        .or_panic("Could not create a graphics pipeline");
 
-    auto shader_stages = std::array<vk::PipelineShaderStageCreateInfo, 2>{vert_shader_stage_pipeline_info,
-                                                                          frag_shader_stage_pipeline_info};
-
-    // == 2. Dynamic state =============================================================================================
-
-    // Most of the pipeline state needs to be baked into the pipeline state. For example changing the size of a
-    // viewport, line width and blend constants can be changed dynamically without the full pipeline recreation.
-    //
-    // Note: This will cause the configuration of these values to be ignored, and you will be able (and required)
-    // to specify the data at drawing time.
-    auto dynamic_states = std::vector{
-        vk::DynamicState::eViewport,  //
-        vk::DynamicState::eScissor    //
-    };
-
-    auto dynamic_state = vk::PipelineDynamicStateCreateInfo{
-        .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),  //
-        .pDynamicStates    = dynamic_states.data(),                         //
-    };
-
-    // With dynamic state only the count is necessary.
-    auto viewport_state_info = vk::PipelineViewportStateCreateInfo{.viewportCount = 1, .scissorCount = 1};
-
-    // == 3. Input assembly ============================================================================================
-
-    // Describes the format of the vertex data that will be passed to the vertex shader:
-    // - Bindings: spacing between data and whether the data is per-vertex or per-instance,
-    // - Attribute descriptions: type of the attributes passed to the vertex shader, which binding to load them from and
-    // at which offset
-    auto binding_desc       = Vertex::binding_desc();
-    auto attribs_desc       = Vertex::attribs_desc();
-    auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
-        .vertexBindingDescriptionCount   = 1,
-        .pVertexBindingDescriptions      = &binding_desc,  //
-        .vertexAttributeDescriptionCount = attribs_desc.size(),
-        .pVertexAttributeDescriptions    = attribs_desc.data(),  //
-    };
-
-    // Describes:
-    // - what kind of geometry will be drawn
-    //   VK_PRIMITIVE_TOPOLOGY_(POINT_LIST|LINE_LIST|LINE_STRIP|TRIANGLE_LIST|TRIANGLE_STRIP)
-    // - whether primitive restart should be enabled, when set to VK_TRUE, it's possible to break up lines and triangles
-    //   in the _STRIP topology modes by using a special index of 0xFFFF or 0xFFFFFFFF
-    auto input_assembly = vk::PipelineInputAssemblyStateCreateInfo{
-        .topology               = vk::PrimitiveTopology::eTriangleList,  //
-        .primitiveRestartEnable = vk::False,                             //
-    };
-
-    // == 4. Rasterizer ================================================================================================
-
-    // The Rasterizer takes as it's input geometry and turns it into fragments to be colored by the fragment shader.
-    // It also performs face culling, depth testing and the scissor test. It also allows for wireframe rendering.
-
-    auto rasterization_state_info = vk::PipelineRasterizationStateCreateInfo{
-        .depthClampEnable =
-            vk::False,  // whether fragment depths should be clamped to [minDepth, maxDepth] (to near and far planes)
-        .polygonMode = vk::PolygonMode::eFill,  // you can use eLine for wireframes
-        .cullMode    = vk::CullModeFlagBits::eBack,
-        .frontFace   = vk::FrontFace::eClockwise,
-
-        // Polygons that are coplanar in 3D space can be made to appear as if they are not coplanar by adding a z-bias
-        // (or depth bias) to each one. This is a technique commonly used to ensure that shadows in a scene are
-        // displayed properly. For instance, a shadow on a wall will likely have the same depth value as the wall. If an
-        // application renders a wall first and then a shadow, the shadow might not be visible, or depth artifacts might
-        // be visible.
-        .depthBiasEnable      = vk::False,
-        .depthBiasSlopeFactor = 1.0F,
-
-        // NOTE: The maximum line width that is supported dependson the hardware and any lin thicker
-        // than 1.0F requires to enable the wideLines GPU feature.
-        .lineWidth = 1.0F,
-    };
-
-    // == 5. Multisampling =============================================================================================
-    auto multisampling_state_info = vk::PipelineMultisampleStateCreateInfo{
-        .rasterizationSamples = swap_chain_.msaa_sample_count(),
-        // If sampling shading is enabled, an implementation must invoke the fragment shader at least
-        // minSampleShading*rasterizationSamples times per fragment
-        //
-        // VkPipelineMultisampleStateCreateInfo::rasterizationSamples ⌉, 1) times per fragment .sampleShadingEnable  =
-        // vk::True, .minSampleShading     = .2F,
-    };
-
-    // == 6. Depth and Stencil Testing =================================================================================
-    auto depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo{
-        .depthTestEnable       = vk::True,
-        .depthWriteEnable      = vk::True,
-        .depthCompareOp        = vk::CompareOp::eLess,
-        .depthBoundsTestEnable = vk::False,
-        .stencilTestEnable     = vk::False,
-    };
-
-    // == 7. Color blending ============================================================================================
-    auto color_blend_attachment = vk::PipelineColorBlendAttachmentState{
-        .blendEnable = vk::True,
-
-        .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-        .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-        .colorBlendOp        = vk::BlendOp::eAdd,  //
-
-        .srcAlphaBlendFactor = vk::BlendFactor::eOne,
-        .dstAlphaBlendFactor = vk::BlendFactor::eZero,
-        .alphaBlendOp        = vk::BlendOp::eAdd,
-
-        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,  //
-    };
-
-    auto color_blending_info = vk::PipelineColorBlendStateCreateInfo{
-        .logicOpEnable   = vk::False,
-        .logicOp         = vk::LogicOp::eCopy,
-        .attachmentCount = 1,
-        .pAttachments    = &color_blend_attachment,  //
-    };
-
-    // == 8. Pipeline Layout creation ==================================================================================
-
-    // You can use uniform values in shaders, which are globals that can be changed at drawing time after the behavior
-    // of your shaders without having to recreate. The uniform variables must be specified during the pipeline creation.
-    auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
-        .setLayoutCount         = 1,
-        .pSetLayouts            = &*descriptor_set_layout_,
-        .pushConstantRangeCount = 0,
-    };
-
-    graphics_pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
-                                    .or_panic("Could not create a pipeline layout");
-
-    // == 9. Graphics Pipeline  ========================================================================================
-
-    // We use the dynamic rendering feature (Vulkan 1.3), the structure below specifies color attachment data, and
-    // the format. In previous versions of Vulkan, we would need to create framebuffers to bind our image views to
-    // a render pass, so the dynamic rendering eliminates the need for render pass and framebuffer.
-    auto format = swap_chain_.color_attachment_format();
-    vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
-        .colorAttachmentCount    = 1,
-        .pColorAttachmentFormats = &format,
-        .depthAttachmentFormat   = swap_chain_.depth_stencil_attachment_format(),
-    };
-
-    auto pipeline_info = vk::GraphicsPipelineCreateInfo{
-        .pNext = &pipeline_rendering_create_info,  //
-
-        .stageCount = shader_stages.size(),  //
-        .pStages    = shader_stages.data(),  //
-
-        .pVertexInputState   = &vertex_input_state,
-        .pInputAssemblyState = &input_assembly,
-        .pViewportState      = &viewport_state_info,
-        .pRasterizationState = &rasterization_state_info,
-        .pMultisampleState   = &multisampling_state_info,
-        .pDepthStencilState  = &depth_stencil_state_info,
-        .pColorBlendState    = &color_blending_info,
-        .pDynamicState       = &dynamic_state,
-        .layout              = graphics_pipeline_layout_,
-
-        .renderPass = nullptr,  // we are using dynamic rendering
-
-        // Vulkan allows you to create a new graphics pipeline by deriving from an existing pipeline
-        .basePipelineHandle = VK_NULL_HANDLE,
-        .basePipelineIndex  = -1,
-    };
-
-    // Pipeline cache (set to nullptr) can be used to store and reuse data relevant to pipeline creation across
-    // multiple calls to vk::CreateGraphicsPipelines and even across program executions if the cache is stored to a
-    // file.
-    graphics_pipeline_ = vkren::Result(device_->createGraphicsPipeline(nullptr, pipeline_info))
-                             .or_panic("Could not create a graphics pipeline.");
-  }
-
-  void create_compute_pipeline() {
-    // auto particle_binary =
-    //     eray::res::ShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "particle.spv")
-    //         .or_panic("Could not find particle_sh.spv");
-    // auto particle_shader_module = vkren::ShaderModule::create(device_, particle_binary.span())
-    //                                   .or_panic("Could not create a particle shader module");
+    graphics_pipeline_        = std::move(pipeline.pipeline);
+    graphics_pipeline_layout_ = std::move(pipeline.layout);
   }
 
   void create_command_pool() {

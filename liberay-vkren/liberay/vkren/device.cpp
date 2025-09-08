@@ -24,6 +24,7 @@
 namespace eray::vkren {
 
 Device::CreateInfo Device::CreateInfo::DesktopProfile::get(const eray::os::Window& window) noexcept {
+  // TODO(migoox): Create better rendererAPI-windowAPI integration abstraction!
   if (window.window_api() != eray::os::WindowAPI::GLFW) {
     eray::util::panic("Renderer supports GLFW only, but {} has been provided",
                       os::kWindowingAPIName[window.window_api()]);
