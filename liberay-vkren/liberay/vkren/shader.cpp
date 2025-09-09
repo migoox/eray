@@ -22,7 +22,7 @@ Result<ShaderModule, Error> ShaderModule::create(const Device& device, std::span
   }
   return ShaderModule{
       .shader_module = std::move(*shader_mod_opt),
-      .p_device      = &device,
+      ._p_device     = &device,
   };
 }
 

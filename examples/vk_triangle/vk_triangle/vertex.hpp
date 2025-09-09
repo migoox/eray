@@ -55,7 +55,7 @@ struct VertexBuffer {
   using Vec2 = eray::math::Vec2f;
   using Vec3 = eray::math::Vec3f;
 
-  static VertexBuffer create_triangle() {
+  static VertexBuffer create() {
     // interleaving vertex attributes
     return VertexBuffer{.vertices =
                             std::vector<Vertex>{Vertex{.pos = Vec2{0.0F, -0.5F}, .color = Vec3{1.0F, 0.0F, 0.0F}},

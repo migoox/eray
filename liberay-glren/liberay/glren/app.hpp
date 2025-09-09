@@ -12,10 +12,9 @@ using namespace std::chrono_literals;
 
 class Application {
  public:
-  Application() = delete;
-  explicit Application(std::unique_ptr<os::Window> window);
+  Application();
 
-  virtual ~Application();
+  virtual ~Application() = default;
 
   ERAY_DELETE_COPY_AND_MOVE(Application)
 
@@ -60,7 +59,7 @@ class Application {
 
   GLFWSwapChain swap_chain_ = GLFWSwapChain(nullptr);
 
-  std::unique_ptr<os::Window> window_;
+  std::shared_ptr<os::Window> window_;
 };
 
 }  // namespace eray::glren

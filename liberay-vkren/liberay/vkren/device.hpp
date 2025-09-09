@@ -186,7 +186,7 @@ class Device {
 
   vk::SampleCountFlagBits max_usable_sample_count() const;
 
-  void push_vma_deletor(std::function<void()>&& function);
+  void push_deletor(std::function<void()>&& function);
 
  private:
   Device() = default;
@@ -213,7 +213,7 @@ class Device {
     };
   }
 
-  void cleanup();
+  void destroy();
 
  private:
   /**

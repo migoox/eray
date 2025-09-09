@@ -14,11 +14,10 @@ int main() {
   auto window_creator =
       eray::os::OpenGLGLFWWindowCreator::create().or_panic("Could not create GLFW OpenGL window creator");
   eray::os::System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
-  {
-    auto window = eray::os::System::instance().create_window().or_panic("Could not create a window");
-    auto app    = eray::glren::Application(std::move(window));
-    app.run();
-  }
+
+  auto app = eray::glren::Application();
+  app.run();
+
   eray::os::System::instance().terminate();
 
   return 0;

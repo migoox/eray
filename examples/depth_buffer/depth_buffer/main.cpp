@@ -2,6 +2,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <depth_buffer/vertex.hpp>
 #include <expected>
@@ -19,10 +20,12 @@
 #include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
+#include <liberay/vkren/descriptor.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/glfw/vk_glfw_window_creator.hpp>
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/image_description.hpp>
+#include <liberay/vkren/pipeline.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <ranges>
@@ -41,9 +44,10 @@ namespace vkren = eray::vkren;
 
 class DepthBufferApplication {
  public:
-  explicit DepthBufferApplication(std::unique_ptr<eray::os::Window>&& window) : window_(std::move(window)) {}
+  DepthBufferApplication() = default;
 
   void run() {
+    window_ = eray::os::System::instance().create_window().or_panic("Could not create a window");
     init_vk();
     main_loop();
     cleanup();
@@ -56,15 +60,12 @@ class DepthBufferApplication {
   void init_vk() {
     create_device();
     create_swap_chain();
-    create_descriptor_set_layout();
-    create_graphics_pipeline();
-    create_compute_pipeline();
-    create_command_pool();
     create_buffers();
-    create_command_buffers();
     create_txt_img();
-    create_descriptor_pool();
-    create_descriptor_sets();
+    create_descriptors();
+    create_graphics_pipeline();
+    create_command_pool();
+    create_command_buffers();
     create_sync_objs();
   }
 
@@ -153,37 +154,26 @@ class DepthBufferApplication {
     current_frame_     = (current_frame_ + 1) % kMaxFramesInFlight;
   }
 
-  void create_descriptor_set_layout() {
-    auto bindings = std::array{
-        // Uniform buffer
-        vk::DescriptorSetLayoutBinding{
-            .binding        = 0,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
+  void create_descriptors() {
+    dsl_manager_   = vkren::DescriptorSetLayoutManager::create(device_);
+    auto ratios    = vkren::DescriptorPoolSizeRatio::create_default();
+    dsl_allocator_ = vkren::DescriptorAllocator::create_and_init(device_, 100, ratios).or_panic();
+    auto result    = vkren::DescriptorSetBuilder::create(dsl_manager_, dsl_allocator_)
+                      .with_binding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
+                      .with_binding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+                      .build_many(kMaxFramesInFlight)
+                      .or_panic("Could not create descriptor sets");
 
-            // Single uniform buffer contains one MVP
-            .descriptorCount = 1,
+    descriptor_sets_ = result.descriptor_sets;
+    dsl_             = result.layout;
 
-            // We only reference the descriptor from the vertex shader
-            .stageFlags = vk::ShaderStageFlagBits::eVertex,
-
-            // The descriptor is not related to image sampling
-            .pImmutableSamplers = nullptr,
-        },
-
-        // Sampler
-        vk::DescriptorSetLayoutBinding{
-            .binding            = 1,
-            .descriptorType     = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount    = 1,
-            .stageFlags         = vk::ShaderStageFlagBits::eFragment,
-            .pImmutableSamplers = nullptr,
-        },
-    };
-    auto layout_info = vk::DescriptorSetLayoutCreateInfo{
-        .bindingCount = bindings.size(),
-        .pBindings    = bindings.data(),
-    };
-    compute_descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
+    auto writer = vkren::DescriptorSetWriter::create(device_);
+    for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
+      writer.write_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
+      writer.write_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
+      writer.write_to_set(descriptor_sets_[i]);
+      writer.clear();
+    }
   }
 
   void update_ubo(uint32_t image_index) {
@@ -203,7 +193,7 @@ class DepthBufferApplication {
   }
 
   void cleanup() {
-    swap_chain_.cleanup();
+    swap_chain_.destroy();
 
     eray::util::Logger::succ("Finished cleanup");
   }
@@ -214,205 +204,30 @@ class DepthBufferApplication {
   }
 
   void create_graphics_pipeline() {
-    // == 1. Shader stage ==============================================================================================
-
     auto main_binary =
         eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
             .or_panic("Could not find main_sh.spv");
     auto main_shader_module =
         vkren::ShaderModule::create(device_, main_binary).or_panic("Could not create a main shader module");
 
-    auto vert_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
-        .stage  = vk::ShaderStageFlagBits::eVertex,  //
-        .module = main_shader_module.shader_module,  //
-        .pName  = kVertexShaderEntryPoint.c_str(),   // entry point name
+    auto binding_desc = Vertex::binding_desc();
+    auto attribs_desc = Vertex::attribs_desc();
 
-        // Optional: pSpecializationInfo allows to specify values for shader constants. This allows for compiler
-        // optimizations like eliminating if statements that depend on the const values.
-    };
+    auto pipeline = vkren::GraphicsPipelineBuilder::create(swap_chain_)
+                        .with_shaders(main_shader_module.shader_module, main_shader_module.shader_module)
+                        .with_polygon_mode(vk::PolygonMode::eFill)
+                        .with_cull_mode(vk::CullModeFlagBits::eBack, vk::FrontFace::eClockwise)
+                        .with_input_state(binding_desc, attribs_desc)
+                        .with_descriptor_set_layout(dsl_)
+                        .with_primitive_topology(vk::PrimitiveTopology::eTriangleList)
+                        .with_depth_test()
+                        .with_depth_test_compare_op(vk::CompareOp::eLess)
+                        .with_blending()
+                        .build(device_)
+                        .or_panic("Could not create a graphics pipeline");
 
-    auto frag_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
-        .stage  = vk::ShaderStageFlagBits::eFragment,
-        .module = main_shader_module.shader_module,
-        .pName  = kFragmentShaderEntryPoint.c_str(),
-    };
-
-    auto shader_stages = std::array<vk::PipelineShaderStageCreateInfo, 2>{vert_shader_stage_pipeline_info,
-                                                                          frag_shader_stage_pipeline_info};
-
-    // == 2. Dynamic state =============================================================================================
-
-    // Most of the pipeline state needs to be baked into the pipeline state. For example changing the size of a
-    // viewport, line width and blend constants can be changed dynamically without the full pipeline recreation.
-    //
-    // Note: This will cause the configuration of these values to be ignored, and you will be able (and required)
-    // to specify the data at drawing time.
-    auto dynamic_states = std::vector{
-        vk::DynamicState::eViewport,  //
-        vk::DynamicState::eScissor    //
-    };
-
-    auto dynamic_state = vk::PipelineDynamicStateCreateInfo{
-        .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),  //
-        .pDynamicStates    = dynamic_states.data(),                         //
-    };
-
-    // With dynamic state only the count is necessary.
-    auto viewport_state_info = vk::PipelineViewportStateCreateInfo{.viewportCount = 1, .scissorCount = 1};
-
-    // == 3. Input assembly ============================================================================================
-
-    // Describes the format of the vertex data that will be passed to the vertex shader:
-    // - Bindings: spacing between data and whether the data is per-vertex or per-instance,
-    // - Attribute descriptions: type of the attributes passed to the vertex shader, which binding to load them from and
-    // at which offset
-    auto binding_desc       = Vertex::binding_desc();
-    auto attribs_desc       = Vertex::attribs_desc();
-    auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
-        .vertexBindingDescriptionCount   = 1,
-        .pVertexBindingDescriptions      = &binding_desc,  //
-        .vertexAttributeDescriptionCount = attribs_desc.size(),
-        .pVertexAttributeDescriptions    = attribs_desc.data(),  //
-    };
-
-    // Describes:
-    // - what kind of geometry will be drawn
-    //   VK_PRIMITIVE_TOPOLOGY_(POINT_LIST|LINE_LIST|LINE_STRIP|TRIANGLE_LIST|TRIANGLE_STRIP)
-    // - whether primitive restart should be enabled, when set to VK_TRUE, it's possible to break up lines and triangles
-    //   in the _STRIP topology modes by using a special index of 0xFFFF or 0xFFFFFFFF
-    auto input_assembly = vk::PipelineInputAssemblyStateCreateInfo{
-        .topology               = vk::PrimitiveTopology::eTriangleList,  //
-        .primitiveRestartEnable = vk::False,                             //
-    };
-
-    // == 4. Rasterizer ================================================================================================
-
-    // The Rasterizer takes as it's input geometry and turns it into fragments to be colored by the fragment shader.
-    // It also performs face culling, depth testing and the scissor test. It also allows for wireframe rendering.
-
-    auto rasterization_state_info = vk::PipelineRasterizationStateCreateInfo{
-        .depthClampEnable =
-            vk::False,  // whether fragment depths should be clamped to [minDepth, maxDepth] (to near and far planes)
-        .polygonMode = vk::PolygonMode::eFill,  // you can use eLine for wireframes
-        .cullMode    = vk::CullModeFlagBits::eBack,
-        .frontFace   = vk::FrontFace::eClockwise,
-
-        // Polygons that are coplanar in 3D space can be made to appear as if they are not coplanar by adding a z-bias
-        // (or depth bias) to each one. This is a technique commonly used to ensure that shadows in a scene are
-        // displayed properly. For instance, a shadow on a wall will likely have the same depth value as the wall. If an
-        // application renders a wall first and then a shadow, the shadow might not be visible, or depth artifacts might
-        // be visible.
-        .depthBiasEnable      = vk::False,
-        .depthBiasSlopeFactor = 1.0F,
-
-        // NOTE: The maximum line width that is supported dependson the hardware and any lin thicker
-        // than 1.0F requires to enable the wideLines GPU feature.
-        .lineWidth = 1.0F,
-    };
-
-    // == 5. Multisampling =============================================================================================
-    auto multisampling_state_info = vk::PipelineMultisampleStateCreateInfo{
-        .rasterizationSamples = swap_chain_.msaa_sample_count(),
-        // If sampling shading is enabled, an implementation must invoke the fragment shader at least
-        // minSampleShading*rasterizationSamples times per fragment
-        //
-        // VkPipelineMultisampleStateCreateInfo::rasterizationSamples ⌉, 1) times per fragment .sampleShadingEnable  =
-        // vk::True, .minSampleShading     = .2F,
-    };
-
-    // == 6. Depth and Stencil Testing =================================================================================
-    auto depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo{
-        .depthTestEnable       = vk::True,
-        .depthWriteEnable      = vk::True,
-        .depthCompareOp        = vk::CompareOp::eLess,
-        .depthBoundsTestEnable = vk::False,
-        .stencilTestEnable     = vk::False,
-    };
-
-    // == 7. Color blending ============================================================================================
-    auto color_blend_attachment = vk::PipelineColorBlendAttachmentState{
-        .blendEnable = vk::True,
-
-        .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-        .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-        .colorBlendOp        = vk::BlendOp::eAdd,  //
-
-        .srcAlphaBlendFactor = vk::BlendFactor::eOne,
-        .dstAlphaBlendFactor = vk::BlendFactor::eZero,
-        .alphaBlendOp        = vk::BlendOp::eAdd,
-
-        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,  //
-    };
-
-    auto color_blending_info = vk::PipelineColorBlendStateCreateInfo{
-        .logicOpEnable   = vk::False,
-        .logicOp         = vk::LogicOp::eCopy,
-        .attachmentCount = 1,
-        .pAttachments    = &color_blend_attachment,  //
-    };
-
-    // == 8. Pipeline Layout creation ==================================================================================
-
-    // You can use uniform values in shaders, which are globals that can be changed at drawing time after the behavior
-    // of your shaders without having to recreate. The uniform variables must be specified during the pipeline creation.
-    auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
-        .setLayoutCount         = 1,
-        .pSetLayouts            = &*compute_descriptor_set_layout_,
-        .pushConstantRangeCount = 0,
-    };
-
-    graphics_pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
-                                    .or_panic("Could not create a pipeline layout");
-
-    // == 9. Graphics Pipeline  ========================================================================================
-
-    // We use the dynamic rendering feature (Vulkan 1.3), the structure below specifies color attachment data, and
-    // the format. In previous versions of Vulkan, we would need to create framebuffers to bind our image views to
-    // a render pass, so the dynamic rendering eliminates the need for render pass and framebuffer.
-    auto format = swap_chain_.color_attachment_format();
-    vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
-        .colorAttachmentCount    = 1,
-        .pColorAttachmentFormats = &format,
-        .depthAttachmentFormat   = swap_chain_.depth_stencil_attachment_format(),
-    };
-
-    auto pipeline_info = vk::GraphicsPipelineCreateInfo{
-        .pNext = &pipeline_rendering_create_info,  //
-
-        .stageCount = shader_stages.size(),  //
-        .pStages    = shader_stages.data(),  //
-
-        .pVertexInputState   = &vertex_input_state,
-        .pInputAssemblyState = &input_assembly,
-        .pViewportState      = &viewport_state_info,
-        .pRasterizationState = &rasterization_state_info,
-        .pMultisampleState   = &multisampling_state_info,
-        .pDepthStencilState  = &depth_stencil_state_info,
-        .pColorBlendState    = &color_blending_info,
-        .pDynamicState       = &dynamic_state,
-        .layout              = graphics_pipeline_layout_,
-
-        .renderPass = nullptr,  // we are using dynamic rendering
-
-        // Vulkan allows you to create a new graphics pipeline by deriving from an existing pipeline
-        .basePipelineHandle = VK_NULL_HANDLE,
-        .basePipelineIndex  = -1,
-    };
-
-    // Pipeline cache (set to nullptr) can be used to store and reuse data relevant to pipeline creation across
-    // multiple calls to vk::CreateGraphicsPipelines and even across program executions if the cache is stored to a
-    // file.
-    graphics_pipeline_ = vkren::Result(device_->createGraphicsPipeline(nullptr, pipeline_info))
-                             .or_panic("Could not create a graphics pipeline.");
-  }
-
-  void create_compute_pipeline() {
-    // auto particle_binary =
-    //     eray::res::ShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "particle.spv")
-    //         .or_panic("Could not find particle_sh.spv");
-    // auto particle_shader_module = vkren::ShaderModule::create(device_, particle_binary.span())
-    //                                   .or_panic("Could not create a particle shader module");
+    graphics_pipeline_        = std::move(pipeline.pipeline);
+    graphics_pipeline_layout_ = std::move(pipeline.layout);
   }
 
   void create_command_pool() {
@@ -435,29 +250,17 @@ class DepthBufferApplication {
   }
 
   void create_buffers() {
-    auto vb = VertexBuffer::create_triangle();
+    auto vb = VertexBuffer::create();
 
     auto vertices_region = eray::util::MemoryRegion{vb.vertices.data(), vb.vertices_size_bytes()};
-    vert_buffer_         = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
-                       device_,
-                       vkren::ExclusiveBufferResource::CreateInfo{
-                                   .size_bytes = vb.vertices_size_bytes(),
-                                   .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                                   .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                       },
-                       vertices_region)
-                               .or_panic("Could not create a Vertex Buffer");
+    vert_buffer_         = vkren::BufferResource::create_vertex_buffer(device_, vertices_region.size_bytes())
+                       .or_panic("Could not create the vertex buffer");
+    vert_buffer_.write(vertices_region).or_panic("Could not fill the vertex buffer");
 
     auto indices_region = eray::util::MemoryRegion{vb.indices.data(), vb.indices_size_bytes()};
-    ind_buffer_         = vkren::ExclusiveBufferResource::create_and_upload_via_staging_buffer(  //
-                      device_,
-                      vkren::ExclusiveBufferResource::CreateInfo{
-                                  .size_bytes = vb.indices_size_bytes(),
-                                  .buff_usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                                  .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                      },
-                      indices_region)
-                              .or_panic("Could not create an Index Buffer");
+    ind_buffer_         = vkren::BufferResource::create_index_buffer(device_, indices_region.size_bytes())
+                      .or_panic("Could not create a Vertex Buffer");
+    ind_buffer_.write(indices_region).or_panic("Could not fill the index buffer");
 
     // Copying to uniform buffer each frame means that staging buffer makes no sense.
     // We should have multiple buffers, because multiple frames may be in flight at the same time and
@@ -466,24 +269,12 @@ class DepthBufferApplication {
 
     uniform_buffers_.clear();
     uniform_buffers_mapped_.clear();
-    {
-      vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
-      for (auto i = 0; i < kMaxFramesInFlight; ++i) {
-        auto ubo = vkren::ExclusiveBufferResource::create(  //
-                       device_,
-                       vkren::ExclusiveBufferResource::CreateInfo{
-                           .size_bytes = buffer_size,
-                           .buff_usage = vk::BufferUsageFlagBits::eUniformBuffer,
-                           .mem_properties =
-                               vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                       })
-                       .or_panic();
-
-        // This technique is called persistent mapping, the buffer stays mapped for the application's whole life-time.
-        // It increases performance as the mapping process is not free.
-        uniform_buffers_mapped_.emplace_back(ubo.memory().mapMemory(0, buffer_size));
-        uniform_buffers_.emplace_back(std::move(ubo));
-      }
+    vk::DeviceSize size_bytes = sizeof(UniformBufferObject);
+    for (auto i = 0; i < kMaxFramesInFlight; ++i) {
+      auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(device_, size_bytes)
+                     .or_panic("Could not create the uniform buffer");
+      uniform_buffers_.emplace_back(std::move(ubo.buffer));
+      uniform_buffers_mapped_.emplace_back(ubo.mapped_data);
     }
   }
 
@@ -564,142 +355,6 @@ class DepthBufferApplication {
     txt_sampler_ = vkren::Result(device_->createSampler(sampler_info)).or_panic("Could not create the sampler");
   }
 
-  struct TransitionSwapChainImageLayoutInfo {
-    uint32_t image_index;
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  /**
-   * @brief In Vulkan, images can be in different layouts that are optimized for different operations. For example, an
-   * image can be in a layout that is optimal for presenting to the screen, or in a layout that is optimal for being
-   * used as a color attachment.
-   *
-   * This function is used to transition the image layout before and after rendering.
-   *
-   * @param image_index
-   * @param old_layout
-   * @param new_layout
-   * @param src_access_mask
-   * @param dst_access_mask
-   * @param src_stage_mask
-   * @param dst_stage_mask
-   */
-  void transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.images()[info.image_index],  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
-  struct TransitionDepthAttachmentLayoutInfo {
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  void transition_depth_attachment_layout(TransitionDepthAttachmentLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.depth_stencil_attachment_image(),  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
-  struct TransitionColorAttachmentLayoutInfo {
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  void transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.color_attachment_image(),  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
   /**
    * @brief Writes the commands we what to execute into a command buffer
    *
@@ -711,8 +366,8 @@ class DepthBufferApplication {
 
     // We can specify type of the pipeline
     graphics_command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
-    graphics_command_buffers_[frame_index].bindVertexBuffers(0, *vert_buffer_.buffer(), {0});
-    graphics_command_buffers_[frame_index].bindIndexBuffer(*ind_buffer_.buffer(), 0, vk::IndexType::eUint16);
+    graphics_command_buffers_[frame_index].bindVertexBuffers(0, vert_buffer_.buffer(), {0});
+    graphics_command_buffers_[frame_index].bindIndexBuffer(ind_buffer_.buffer(), 0, vk::IndexType::eUint16);
 
     // Describes the region of framebuffer that the output will be rendered to
     graphics_command_buffers_[frame_index].setViewport(
@@ -735,137 +390,17 @@ class DepthBufferApplication {
     // to specify if we want to bind descriptor sets to the graphics or compute pipeline. The next parameter is the
     // layout that the descriptors are based on. The next three parameters specify the index of the first descriptor
     // set, the number of sets to bind and the array of sets to bind.
-    graphics_command_buffers_[frame_index].bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                                              graphics_pipeline_layout_, 0,
-                                                              *compute_descriptor_sets_[frame_index], nullptr);
+    graphics_command_buffers_[frame_index].bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, graphics_pipeline_layout_, 0, descriptor_sets_[frame_index], nullptr);
 
     graphics_command_buffers_[frame_index].drawIndexed(12, 1, 0, 0, 0);
 
     swap_chain_.end_rendering(graphics_command_buffers_[frame_index], image_index);
   }
 
-  void create_descriptor_pool() {
-    auto pool_size = std::array{
-        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, kMaxFramesInFlight),
-        vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, kMaxFramesInFlight),
-    };
-    auto pool_info = vk::DescriptorPoolCreateInfo{
-        .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets       = kMaxFramesInFlight,
-        .poolSizeCount = pool_size.size(),
-        .pPoolSizes    = pool_size.data(),
-    };
-    descriptor_pool_ =
-        vkren::Result(device_->createDescriptorPool(pool_info)).or_panic("Could not create descriptor pool");
-  }
-
-  void create_descriptor_sets() {
-    auto layouts = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, *compute_descriptor_set_layout_);
-    auto descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo{
-        .descriptorPool     = descriptor_pool_,
-        .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-        .pSetLayouts        = layouts.data(),
-    };
-    compute_descriptor_sets_.clear();
-    compute_descriptor_sets_ = vkren::Result(device_->allocateDescriptorSets(descriptor_set_alloc_info))
-                                   .or_panic("Could not create descriptor sets");
-
-    for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
-      auto buffer_info = vk::DescriptorBufferInfo{
-          .buffer = uniform_buffers_[i].buffer(),
-          .offset = 0,
-          .range  = sizeof(UniformBufferObject),  // It's also possible to use vk::WholeSize
-      };
-      auto image_info = vk::DescriptorImageInfo{
-          .sampler     = txt_sampler_,
-          .imageView   = txt_view_,
-          .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-      };
-
-      auto descriptor_write = std::array{
-          vk::WriteDescriptorSet{
-              // Specifies the descriptor set to update
-              .dstSet = compute_descriptor_sets_[i],
-
-              // Specifies the binding of the descriptor set to update
-              .dstBinding = 0,
-
-              // It's possible to update multiple descriptors at once in an array, starting at index dstArrayElement
-              .dstArrayElement = 0,
-
-              // Specifies how many descriptor arrays we want to update
-              .descriptorCount = 1,
-
-              .descriptorType = vk::DescriptorType::eUniformBuffer,
-              .pBufferInfo    = &buffer_info,
-          },
-          vk::WriteDescriptorSet{
-              .dstSet          = compute_descriptor_sets_[i],
-              .dstBinding      = 1,
-              .dstArrayElement = 0,
-              .descriptorCount = 1,
-              .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
-              .pImageInfo      = &image_info,
-          },
-      };
-
-      device_->updateDescriptorSets(descriptor_write, {});
-    }
-  }
-
-  vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
-    for (const auto& surf_format : available_formats) {
-      if (surf_format.format == vk::Format::eB8G8R8A8Srgb &&
-          surf_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-        return surf_format;
-      }
-    }
-
-    eray::util::Logger::warn(
-        "A format B8G8R8A8Srgb with color space SrgbNonlinear is not supported by the Surface. A random format will "
-        "be "
-        "used.");
-
-    return available_formats[0];
-  }
-
-  vk::PresentModeKHR choose_swap_presentMode(const std::vector<vk::PresentModeKHR>& available_present_modes) {
-    auto mode_it = std::ranges::find_if(available_present_modes, [](const auto& mode) {
-      return mode ==
-             vk::PresentModeKHR::eMailbox;  // Note: good if energy usage is not a concern, avoid for mobile devices
-    });
-
-    if (mode_it != available_present_modes.end()) {
-      return *mode_it;
-    }
-
-    return vk::PresentModeKHR::eFifo;
-  }
-
-  static void framebuffer_resize_callback(GLFWwindow* window, int /*width*/, int /*height*/) {
-    auto* app                 = reinterpret_cast<DepthBufferApplication*>(glfwGetWindowUserPointer(window));
-    app->framebuffer_resized_ = true;
-  }
-
-  static VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
-                                                         vk::DebugUtilsMessageTypeFlagsEXT type,
-                                                         const vk::DebugUtilsMessengerCallbackDataEXT* p_callback_data,
-                                                         void*) {
-    switch (severity) {
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose:
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo:
-        eray::util::Logger::info("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning:
-        eray::util::Logger::warn("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eError:
-        eray::util::Logger::err("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      default:
-        return vk::False;
-    };
-  }
+  // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
+  // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
+  static constexpr int kMaxFramesInFlight = 2;
 
  private:
   /**
@@ -886,13 +421,6 @@ class DepthBufferApplication {
   vk::raii::PipelineLayout graphics_pipeline_layout_ = nullptr;
 
   /**
-   * @brief Descriptor set layout object is defined by an array of zero or more descriptor bindings. It's a way for
-   * shaders to freely access resource like buffers and images
-   *
-   */
-  vk::raii::DescriptorSetLayout compute_descriptor_set_layout_ = nullptr;
-
-  /**
    * @brief Describes the graphics pipeline, including shaders stages, input assembly, rasterization and more.
    *
    */
@@ -907,10 +435,6 @@ class DepthBufferApplication {
 
   uint32_t current_semaphore_ = 0;
   uint32_t current_frame_     = 0;
-
-  // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
-  // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
-  static constexpr int kMaxFramesInFlight = 2;
 
   /**
    * @brief Drawing operations are recorded in comand buffer objects.
@@ -931,46 +455,22 @@ class DepthBufferApplication {
    */
   std::array<vk::raii::Fence, kMaxFramesInFlight> in_flight_fences_ = {nullptr, nullptr};
 
-  eray::vkren::ExclusiveBufferResource vert_buffer_ = vkren::ExclusiveBufferResource(nullptr);
-  eray::vkren::ExclusiveBufferResource ind_buffer_  = vkren::ExclusiveBufferResource(nullptr);
+  vkren::BufferResource vert_buffer_;
+  vkren::BufferResource ind_buffer_;
 
-  std::vector<eray::vkren::ExclusiveBufferResource> uniform_buffers_;
+  std::vector<vkren::BufferResource> uniform_buffers_;
   std::vector<void*> uniform_buffers_mapped_;
-
-  vk::raii::DescriptorPool descriptor_pool_ = nullptr;
-  std::vector<vk::raii::DescriptorSet> compute_descriptor_sets_;
 
   vkren::ImageResource txt_image_;
   vk::raii::ImageView txt_view_  = nullptr;
   vk::raii::Sampler txt_sampler_ = nullptr;
 
-  /**
-   * @brief GLFW window pointer.
-   *
-   */
+  vkren::DescriptorSetLayoutManager dsl_manager_ = vkren::DescriptorSetLayoutManager(nullptr);
+  vkren::DescriptorAllocator dsl_allocator_      = vkren::DescriptorAllocator(nullptr);
+
   std::shared_ptr<eray::os::Window> window_ = nullptr;
-
-  /**
-   * @brief Although many drivers and platforms trigger VK_ERROR_OUT_OF_DATE_KHR automatically after a window resize,
-   * it is not guaranteed to happen. That's why there is an extra code to handle resizes explicitly.
-   *
-   */
-  bool framebuffer_resized_ = false;
-
-  /**
-   * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional
-   * operations. Common operations in validation layers are:
-   *  - Checking the values of parameters against the specification to detect misuse
-   *  - Tracking the creation and destruction of objects to find resource leaks
-   *  - Checking thread safety by tracking the threads that calls originate from
-   *  - Logging every call and its parameters to the standard output
-   *  - Tracing Vulkan calls for profiling and replaying
-   *
-   */
-
-  static constexpr eray::util::zstring_view kComputeShaderEntryPoint  = "mainComp";
-  static constexpr eray::util::zstring_view kVertexShaderEntryPoint   = "mainVert";
-  static constexpr eray::util::zstring_view kFragmentShaderEntryPoint = "mainFrag";
+  std::vector<vk::DescriptorSet> descriptor_sets_;
+  vk::DescriptorSetLayout dsl_;
 };
 
 int main() {
@@ -983,11 +483,10 @@ int main() {
   auto window_creator =
       eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");
   System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
-  {
-    auto window = System::instance().create_window().or_panic("Could not create a window");
-    auto app    = DepthBufferApplication(std::move(window));
-    app.run();
-  }
+
+  auto app = DepthBufferApplication();
+  app.run();
+
   eray::os::System::instance().terminate();
 
   return 0;

@@ -1,7 +1,6 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
 
-#include <algorithm>
 #include <chrono>
 #include <compute_particles/particle.hpp>
 #include <cstddef>
@@ -26,8 +25,10 @@
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/glfw/vk_glfw_window_creator.hpp>
 #include <liberay/vkren/image.hpp>
+#include <liberay/vkren/pipeline.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
+#include <memory>
 #include <vector>
 #include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
@@ -37,13 +38,16 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
+#include "liberay/vkren/descriptor.hpp"
+
 namespace vkren = eray::vkren;
 
 class ComputeParticlesApplication {
  public:
-  explicit ComputeParticlesApplication(std::unique_ptr<eray::os::Window>&& window) : window_(std::move(window)) {}
+  ComputeParticlesApplication() = default;
 
   void run() {
+    window_ = eray::os::System::instance().create_window().or_panic("Could not create a window");
     init_vk();
     main_loop();
     cleanup();
@@ -56,14 +60,12 @@ class ComputeParticlesApplication {
   void init_vk() {
     create_device();
     create_swap_chain();
-    create_descriptor_set_layout();
+    create_buffers();
+    create_descriptors();
     create_graphics_pipeline();
     create_compute_pipeline();
     create_command_pool();
-    create_buffers();
     create_command_buffers();
-    create_descriptor_pool();
-    create_descriptor_sets();
     create_sync_objs();
   }
 
@@ -193,7 +195,7 @@ class ComputeParticlesApplication {
     memcpy(uniform_buffers_mapped_[frame_index], &ubo, sizeof(ubo));
   }
 
-  void cleanup() { swap_chain_.cleanup(); }
+  void cleanup() { swap_chain_.destroy(); }
 
   void create_swap_chain() {
     swap_chain_ = vkren::SwapChain::create(device_, window_, device_.max_usable_sample_count())
@@ -201,183 +203,43 @@ class ComputeParticlesApplication {
   }
 
   void create_graphics_pipeline() {
-    // == 1. Shader stage ==============================================================================================
     auto main_binary =
         eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
-            .or_panic("Could not find main graphics shader");
+            .or_panic("Could not find main_sh.spv");
     auto main_shader_module =
         vkren::ShaderModule::create(device_, main_binary).or_panic("Could not create a main shader module");
 
-    auto vert_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
-        .stage  = vk::ShaderStageFlagBits::eVertex,
-        .module = main_shader_module.shader_module,
-        .pName  = kVertexShaderEntryPoint.c_str(),
-    };
+    auto binding_desc = ParticleSystem::binding_desc();
+    auto attribs_desc = ParticleSystem::attribs_desc();
 
-    auto frag_shader_stage_pipeline_info = vk::PipelineShaderStageCreateInfo{
-        .stage  = vk::ShaderStageFlagBits::eFragment,
-        .module = main_shader_module.shader_module,
-        .pName  = kFragmentShaderEntryPoint.c_str(),
-    };
+    auto pipeline = vkren::GraphicsPipelineBuilder::create(swap_chain_)
+                        .with_shaders(main_shader_module.shader_module, main_shader_module.shader_module)
+                        .with_polygon_mode(vk::PolygonMode::eFill)
+                        .with_cull_mode(vk::CullModeFlagBits::eBack, vk::FrontFace::eClockwise)
+                        .with_input_state(binding_desc, attribs_desc)
+                        .with_primitive_topology(vk::PrimitiveTopology::ePointList)
+                        .build(device_)
+                        .or_panic("Could not create a graphics pipeline");
 
-    auto shader_stages = std::array<vk::PipelineShaderStageCreateInfo, 2>{vert_shader_stage_pipeline_info,
-                                                                          frag_shader_stage_pipeline_info};
-
-    // == 2. Dynamic state =============================================================================================
-    auto dynamic_states = std::vector{
-        vk::DynamicState::eViewport,
-        vk::DynamicState::eScissor,
-    };
-    auto dynamic_state = vk::PipelineDynamicStateCreateInfo{
-        .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),
-        .pDynamicStates    = dynamic_states.data(),
-    };
-    auto viewport_state_info = vk::PipelineViewportStateCreateInfo{.viewportCount = 1, .scissorCount = 1};
-
-    // == 3. Input assembly ============================================================================================
-    auto binding_desc       = ParticleSystem::binding_desc();
-    auto attribs_desc       = ParticleSystem::attribs_desc();
-    auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
-        .vertexBindingDescriptionCount   = 1,
-        .pVertexBindingDescriptions      = &binding_desc,
-        .vertexAttributeDescriptionCount = attribs_desc.size(),
-        .pVertexAttributeDescriptions    = attribs_desc.data(),
-    };
-    auto input_assembly = vk::PipelineInputAssemblyStateCreateInfo{
-        .topology               = vk::PrimitiveTopology::ePointList,
-        .primitiveRestartEnable = vk::False,
-    };
-
-    // == 4. Rasterizer ================================================================================================
-    auto rasterization_state_info = vk::PipelineRasterizationStateCreateInfo{
-        .depthClampEnable     = vk::False,
-        .polygonMode          = vk::PolygonMode::eFill,
-        .cullMode             = vk::CullModeFlagBits::eBack,
-        .frontFace            = vk::FrontFace::eClockwise,
-        .depthBiasEnable      = vk::False,
-        .depthBiasSlopeFactor = 1.0F,
-
-        // NOTE: The maximum line width that is supported depends on the hardware and any lin thicker
-        // than 1.0F requires to enable the wideLines GPU feature.
-        .lineWidth = 1.0F,
-    };
-
-    // == 5. Multisampling =============================================================================================
-    auto multisampling_state_info = vk::PipelineMultisampleStateCreateInfo{
-        .rasterizationSamples = swap_chain_.msaa_sample_count(),
-    };
-
-    // == 6. Depth and Stencil Testing =================================================================================
-    auto depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo{
-        .depthTestEnable       = vk::False,
-        .depthWriteEnable      = vk::False,
-        .depthCompareOp        = vk::CompareOp::eLess,
-        .depthBoundsTestEnable = vk::False,
-        .stencilTestEnable     = vk::False,
-    };
-
-    // == 7. Color blending ============================================================================================
-    auto color_blend_attachment = vk::PipelineColorBlendAttachmentState{
-        .blendEnable = vk::True,
-
-        .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-        .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-        .colorBlendOp        = vk::BlendOp::eAdd,  //
-
-        .srcAlphaBlendFactor = vk::BlendFactor::eOne,
-        .dstAlphaBlendFactor = vk::BlendFactor::eZero,
-        .alphaBlendOp        = vk::BlendOp::eAdd,
-
-        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,  //
-    };
-
-    auto color_blending_info = vk::PipelineColorBlendStateCreateInfo{
-        .logicOpEnable   = vk::False,
-        .logicOp         = vk::LogicOp::eCopy,
-        .attachmentCount = 1,
-        .pAttachments    = &color_blend_attachment,  //
-    };
-
-    // == 8. Pipeline Layout creation ==================================================================================
-    auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
-        .setLayoutCount         = 0,
-        .pushConstantRangeCount = 0,
-    };
-
-    graphics_pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
-                                    .or_panic("Could not create a pipeline layout");
-
-    // == 9. Graphics Pipeline  ========================================================================================
-
-    // We use the dynamic rendering feature (Vulkan 1.3), the structure below specifies color attachment data, and
-    // the format. In previous versions of Vulkan, we would need to create framebuffers to bind our image views to
-    // a render pass, so the dynamic rendering eliminates the need for render pass and framebuffer.
-    auto format = swap_chain_.color_attachment_format();
-    vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
-        .colorAttachmentCount    = 1,
-        .pColorAttachmentFormats = &format,
-        .depthAttachmentFormat   = swap_chain_.depth_stencil_attachment_format(),
-    };
-
-    auto pipeline_info = vk::GraphicsPipelineCreateInfo{
-        .pNext = &pipeline_rendering_create_info,  //
-
-        .stageCount = shader_stages.size(),  //
-        .pStages    = shader_stages.data(),  //
-
-        .pVertexInputState   = &vertex_input_state,
-        .pInputAssemblyState = &input_assembly,
-        .pViewportState      = &viewport_state_info,
-        .pRasterizationState = &rasterization_state_info,
-        .pMultisampleState   = &multisampling_state_info,
-        .pDepthStencilState  = &depth_stencil_state_info,
-        .pColorBlendState    = &color_blending_info,
-        .pDynamicState       = &dynamic_state,
-        .layout              = graphics_pipeline_layout_,
-
-        .renderPass = nullptr,  // we are using dynamic rendering
-
-        // Vulkan allows you to create a new graphics pipeline by deriving from an existing pipeline
-        .basePipelineHandle = VK_NULL_HANDLE,
-        .basePipelineIndex  = -1,
-    };
-
-    graphics_pipeline_ = vkren::Result(device_->createGraphicsPipeline(nullptr, pipeline_info))
-                             .or_panic("Could not create a graphics pipeline.");
+    graphics_pipeline_        = std::move(pipeline.pipeline);
+    graphics_pipeline_layout_ = std::move(pipeline.layout);
   }
 
   void create_compute_pipeline() {
-    // == 1. Shader stage ==============================================================================================
     auto particle_binary =
         eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "particle.spv")
             .or_panic("Could not find particle compute shader");
     auto particle_shader_module =
         vkren::ShaderModule::create(device_, particle_binary).or_panic("Could not create a main shader module");
 
-    auto compute_shader_stage = vk::PipelineShaderStageCreateInfo{
-        .stage  = vk::ShaderStageFlagBits::eCompute,     //
-        .module = particle_shader_module.shader_module,  //
-        .pName  = kComputeShaderEntryPoint.c_str(),      // entry point name
-    };
+    auto pipeline = vkren::ComputePipelineBuilder::create()
+                        .with_descriptor_set_layout(compute_descriptor_set_layout_)
+                        .with_shader(particle_shader_module.shader_module)
+                        .build(device_)
+                        .or_panic("Could not create a compute pipeline");
 
-    // == 2. Layout creation ===========================================================================================
-    auto pipeline_layout_info = vk::PipelineLayoutCreateInfo{
-        .setLayoutCount         = 1,
-        .pSetLayouts            = &*compute_descriptor_set_layout_,
-        .pushConstantRangeCount = 0,
-    };
-
-    compute_pipeline_layout_ = vkren::Result(device_->createPipelineLayout(pipeline_layout_info))
-                                   .or_panic("Could not create a pipeline layout");
-
-    // == 3. Compute Pipeline  =========================================================================================
-    auto pipeline_info = vk::ComputePipelineCreateInfo{
-        .stage  = compute_shader_stage,
-        .layout = compute_pipeline_layout_,
-    };
-    compute_pipeline_ = vkren::Result(device_->createComputePipeline(nullptr, pipeline_info))
-                            .or_panic("Could not create a graphics pipeline.");
+    compute_pipeline_        = std::move(pipeline.pipeline);
+    compute_pipeline_layout_ = std::move(pipeline.layout);
   }
 
   void create_command_pool() {
@@ -401,24 +263,16 @@ class ComputeParticlesApplication {
     auto region =
         eray::util::MemoryRegion{particle_system.particles.data(), particle_system.particles.size() * sizeof(Particle)};
     auto staging_buff =
-        vkren::ExclusiveBufferResource::create_staging(device_, region).or_panic("Could not create a Staging Buffer");
+        vkren::BufferResource::create_staging_buffer(device_, region).or_panic("Could not create a Staging Buffer");
 
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
-      auto temp = vkren::ExclusiveBufferResource::create(
-                      device_,
-                      vkren::ExclusiveBufferResource::CreateInfo{
-                          .size_bytes = region.size_bytes(),
-                          .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer |
-                                        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                          .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                      })
-                      .or_panic("Could not create a Storage Buffer");
+      auto temp = vkren::BufferResource::create_gpu_local_buffer(device_, region.size_bytes(),
+                                                                 vk::BufferUsageFlagBits::eVertexBuffer |
+                                                                     vk::BufferUsageFlagBits::eStorageBuffer |
+                                                                     vk::BufferUsageFlagBits::eTransferDst)
+                      .or_panic();
 
-      temp.copy_from(staging_buff.buffer(), vk::BufferCopy{
-                                                .srcOffset = 0,
-                                                .dstOffset = 0,
-                                                .size      = region.size_bytes(),
-                                            });
+      temp.write(staging_buff);
       ssbuffers_.emplace_back(std::move(temp));
     }
 
@@ -426,22 +280,14 @@ class ComputeParticlesApplication {
     uniform_buffers_.clear();
     uniform_buffers_mapped_.clear();
     {
-      vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
+      vk::DeviceSize size_bytes = sizeof(UniformBufferObject);
       for (auto i = 0; i < kMaxFramesInFlight; ++i) {
-        auto ubo = vkren::ExclusiveBufferResource::create(  //
-                       device_,
-                       vkren::ExclusiveBufferResource::CreateInfo{
-                           .size_bytes = buffer_size,
-                           .buff_usage = vk::BufferUsageFlagBits::eUniformBuffer,
-                           .mem_properties =
-                               vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                       })
-                       .or_panic();
+        auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(device_, size_bytes).or_panic();
 
         // This technique is called persistent mapping, the buffer stays mapped for the application's whole life-time.
         // It increases performance as the mapping process is not free.
-        uniform_buffers_mapped_.emplace_back(ubo.memory().mapMemory(0, buffer_size));
-        uniform_buffers_.emplace_back(std::move(ubo));
+        uniform_buffers_mapped_.emplace_back(ubo.mapped_data);
+        uniform_buffers_.emplace_back(std::move(ubo.buffer));
       }
     }
   }
@@ -488,220 +334,13 @@ class ComputeParticlesApplication {
     }
   }
 
-  struct TransitionSwapChainImageLayoutInfo {
-    uint32_t image_index;
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  /**
-   * @brief In Vulkan, images can be in different layouts that are optimized for different operations. For example, an
-   * image can be in a layout that is optimal for presenting to the screen, or in a layout that is optimal for being
-   * used as a color attachment.
-   *
-   * This function is used to transition the image layout before and after rendering.
-   *
-   * @param image_index
-   * @param old_layout
-   * @param new_layout
-   * @param src_access_mask
-   * @param dst_access_mask
-   * @param src_stage_mask
-   * @param dst_stage_mask
-   */
-  void transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.images()[info.image_index],  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
-  struct TransitionDepthAttachmentLayoutInfo {
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  void transition_depth_attachment_layout(TransitionDepthAttachmentLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.depth_stencil_attachment_image(),  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
-  struct TransitionColorAttachmentLayoutInfo {
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  void transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.color_attachment_image(),  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
   /**
    * @brief Writes the commands we what to execute into a command buffer
    *
    * @param image_index
    */
   void record_graphics_command_buffer(size_t frame_index, uint32_t image_index) {
-    graphics_command_buffers_[frame_index].begin(vk::CommandBufferBeginInfo{});
-
-    // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
-    transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
-        .image_index     = image_index,
-        .frame_index     = frame_index,
-        .old_layout      = vk::ImageLayout::eUndefined,
-        .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
-        .src_access_mask = {},
-        .dst_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .src_stage_mask  = vk::PipelineStageFlagBits2::eTopOfPipe,
-        .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-    });
-
-    transition_depth_attachment_layout(TransitionDepthAttachmentLayoutInfo{
-        .frame_index     = frame_index,
-        .old_layout      = vk::ImageLayout::eUndefined,
-        .new_layout      = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-        .src_access_mask = {},
-        .dst_access_mask =
-            vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-        .src_stage_mask = vk::PipelineStageFlagBits2::eTopOfPipe,
-        .dst_stage_mask =
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-    });
-
-    auto color_buffer_attachment_info = vk::RenderingAttachmentInfo{
-        .imageView   = swap_chain_.image_views()[image_index],
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eClear,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-        .clearValue  = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F),
-    };
-
-    auto depth_buffer_attachment_info = vk::RenderingAttachmentInfo{
-        .imageView   = swap_chain_.depth_stencil_attachment_image_view(),
-        .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eClear,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-        .clearValue  = vk::ClearDepthStencilValue(1.0F, 0),
-    };
-
-    if (swap_chain_.msaa_sample_count() != vk::SampleCountFlagBits::e1) {
-      // When multisampling is enabled use the color attachment buffer
-
-      transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
-          .frame_index     = frame_index,
-          .old_layout      = vk::ImageLayout::eUndefined,
-          .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
-          .src_access_mask = {},
-          .dst_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
-          .src_stage_mask  = vk::PipelineStageFlagBits2::eTopOfPipe,
-          .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-      });
-      color_buffer_attachment_info.imageView          = swap_chain_.color_attachment_image_view();
-      color_buffer_attachment_info.resolveMode        = vk::ResolveModeFlagBits::eAverage;
-      color_buffer_attachment_info.resolveImageView   = swap_chain_.image_views()[image_index];
-      color_buffer_attachment_info.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    }
-
-    auto rendering_info = vk::RenderingInfo{
-        // Defines the size of the render area
-        .renderArea =
-            vk::Rect2D{
-                .offset = {.x = 0, .y = 0}, .extent = swap_chain_.extent()  //
-            },
-        .layerCount           = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments    = &color_buffer_attachment_info,
-        .pDepthAttachment     = &depth_buffer_attachment_info,
-    };
-    graphics_command_buffers_[frame_index].beginRendering(rendering_info);
+    swap_chain_.begin_rendering(graphics_command_buffers_[frame_index], image_index);
 
     graphics_command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
     graphics_command_buffers_[frame_index].setViewport(
@@ -719,21 +358,7 @@ class ComputeParticlesApplication {
     graphics_command_buffers_[frame_index].bindVertexBuffers(0, {ssbuffers_[current_frame_].buffer()}, {0});
     graphics_command_buffers_[frame_index].draw(ParticleSystem::kParticleCount, 1, 0, 0);
 
-    graphics_command_buffers_[frame_index].endRendering();
-
-    // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
-    transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
-        .image_index     = image_index,
-        .frame_index     = frame_index,
-        .old_layout      = vk::ImageLayout::eColorAttachmentOptimal,
-        .new_layout      = vk::ImageLayout::ePresentSrcKHR,
-        .src_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .dst_access_mask = {},
-        .src_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        .dst_stage_mask  = vk::PipelineStageFlagBits2::eBottomOfPipe,
-    });
-
-    graphics_command_buffers_[frame_index].end();
+    swap_chain_.end_rendering(graphics_command_buffers_[frame_index], image_index);
   }
 
   void record_compute_command_buffer(size_t frame_index) {
@@ -746,167 +371,29 @@ class ComputeParticlesApplication {
     compute_command_buffers_[frame_index].end();
   }
 
-  void create_descriptor_pool() {
-    auto pool_size = std::array{
-        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, kMaxFramesInFlight),
-        vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, kMaxFramesInFlight * 2),
-    };
-    auto pool_info = vk::DescriptorPoolCreateInfo{
-        .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets       = kMaxFramesInFlight,
-        .poolSizeCount = pool_size.size(),
-        .pPoolSizes    = pool_size.data(),
-    };
-    descriptor_pool_ =
-        vkren::Result(device_->createDescriptorPool(pool_info)).or_panic("Could not create descriptor pool");
-  }
+  void create_descriptors() {
+    dsl_manager_   = vkren::DescriptorSetLayoutManager::create(device_);
+    auto ratios    = vkren::DescriptorPoolSizeRatio::create_default();
+    dsl_allocator_ = vkren::DescriptorAllocator::create_and_init(device_, 100, ratios).or_panic();
+    auto result    = vkren::DescriptorSetBuilder::create(dsl_manager_, dsl_allocator_)
+                      .with_binding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eCompute)
+                      .with_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute)
+                      .with_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute)
+                      .build_many(kMaxFramesInFlight)
+                      .or_panic("Could not create descriptor sets");
 
-  void create_descriptor_set_layout() {
-    auto bindings = std::array{
-        vk::DescriptorSetLayoutBinding{
-            .binding            = 0,
-            .descriptorType     = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount    = 1,
-            .stageFlags         = vk::ShaderStageFlagBits::eCompute,
-            .pImmutableSamplers = nullptr,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding            = 1,
-            .descriptorType     = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount    = 1,
-            .stageFlags         = vk::ShaderStageFlagBits::eCompute,
-            .pImmutableSamplers = nullptr,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding            = 2,
-            .descriptorType     = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount    = 1,
-            .stageFlags         = vk::ShaderStageFlagBits::eCompute,
-            .pImmutableSamplers = nullptr,
-        },
-    };
-    auto layout_info = vk::DescriptorSetLayoutCreateInfo{
-        .bindingCount = bindings.size(),
-        .pBindings    = bindings.data(),
-    };
-    compute_descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
-  }
+    compute_descriptor_sets_       = std::move(result.descriptor_sets);
+    compute_descriptor_set_layout_ = result.layout;
 
-  void create_descriptor_sets() {
-    compute_descriptor_sets_.clear();
-
-    auto layouts         = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, compute_descriptor_set_layout_);
-    auto desc_alloc_info = vk::DescriptorSetAllocateInfo{
-        .descriptorPool     = descriptor_pool_,
-        .descriptorSetCount = kMaxFramesInFlight,
-        .pSetLayouts        = layouts.data(),
-    };
-    compute_descriptor_sets_ =
-        vkren::Result(device_->allocateDescriptorSets(desc_alloc_info)).or_panic("Could not allocate descriptor sets");
-
+    auto writer = vkren::DescriptorSetWriter::create(device_);
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
-      auto buffer_info = vk::DescriptorBufferInfo{
-          .buffer = uniform_buffers_[i].buffer(),
-          .offset = 0,
-          .range  = sizeof(UniformBufferObject),
-      };
-
-      auto last_ind           = (i - 1) % kMaxFramesInFlight;
-      auto last_frame_ss_info = vk::DescriptorBufferInfo{
-          .buffer = ssbuffers_[last_ind].buffer(),
-          .offset = 0,
-          .range  = sizeof(Particle) * ParticleSystem::kParticleCount,
-      };
-      auto curr_ind              = i;
-      auto current_frame_ss_info = vk::DescriptorBufferInfo{
-          .buffer = ssbuffers_[curr_ind].buffer(),
-          .offset = 0,
-          .range  = sizeof(Particle) * ParticleSystem::kParticleCount,
-      };
-
-      auto desc_writes = std::array{
-          vk::WriteDescriptorSet{
-              .dstSet           = *compute_descriptor_sets_[i],
-              .dstBinding       = 0,
-              .dstArrayElement  = 0,
-              .descriptorCount  = 1,
-              .descriptorType   = vk::DescriptorType::eUniformBuffer,
-              .pImageInfo       = nullptr,
-              .pBufferInfo      = &buffer_info,
-              .pTexelBufferView = nullptr,
-          },
-          vk::WriteDescriptorSet{
-              .dstSet           = *compute_descriptor_sets_[i],
-              .dstBinding       = 1,
-              .dstArrayElement  = 0,
-              .descriptorCount  = 1,
-              .descriptorType   = vk::DescriptorType::eStorageBuffer,
-              .pImageInfo       = nullptr,
-              .pBufferInfo      = &last_frame_ss_info,
-              .pTexelBufferView = nullptr,
-          },
-          vk::WriteDescriptorSet{
-              .dstSet           = *compute_descriptor_sets_[i],
-              .dstBinding       = 2,
-              .dstArrayElement  = 0,
-              .descriptorCount  = 1,
-              .descriptorType   = vk::DescriptorType::eStorageBuffer,
-              .pImageInfo       = nullptr,
-              .pBufferInfo      = &current_frame_ss_info,
-              .pTexelBufferView = nullptr,
-          },
-      };
-      device_->updateDescriptorSets(desc_writes, {});
+      auto last_ind = (i - 1) % kMaxFramesInFlight;
+      auto curr_ind = i;
+      writer.write_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
+      writer.write_buffer(1, ssbuffers_[last_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
+      writer.write_buffer(2, ssbuffers_[curr_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
+      writer.write_to_set(compute_descriptor_sets_[i]);
     }
-  }
-
-  vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
-    for (const auto& surf_format : available_formats) {
-      if (surf_format.format == vk::Format::eB8G8R8A8Srgb &&
-          surf_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-        return surf_format;
-      }
-    }
-
-    eray::util::Logger::warn(
-        "A format B8G8R8A8Srgb with color space SrgbNonlinear is not supported by the Surface. A random format will "
-        "be "
-        "used.");
-
-    return available_formats[0];
-  }
-
-  vk::PresentModeKHR choose_swap_presentMode(const std::vector<vk::PresentModeKHR>& available_present_modes) {
-    auto mode_it = std::ranges::find_if(available_present_modes, [](const auto& mode) {
-      return mode ==
-             vk::PresentModeKHR::eMailbox;  // Note: good if energy usage is not a concern, avoid for mobile devices
-    });
-
-    if (mode_it != available_present_modes.end()) {
-      return *mode_it;
-    }
-
-    return vk::PresentModeKHR::eFifo;
-  }
-
-  static VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
-                                                         vk::DebugUtilsMessageTypeFlagsEXT type,
-                                                         const vk::DebugUtilsMessengerCallbackDataEXT* p_callback_data,
-                                                         void*) {
-    switch (severity) {
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose:
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo:
-        eray::util::Logger::info("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning:
-        eray::util::Logger::warn("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eError:
-        eray::util::Logger::err("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      default:
-        return vk::False;
-    };
   }
 
  private:
@@ -933,7 +420,7 @@ class ComputeParticlesApplication {
    * shaders to freely access resource like buffers and images
    *
    */
-  vk::raii::DescriptorSetLayout compute_descriptor_set_layout_ = nullptr;
+  vk::DescriptorSetLayout compute_descriptor_set_layout_ = nullptr;
 
   /**
    * @brief Describes the graphics pipeline, including shaders stages, input assembly, rasterization and more.
@@ -975,18 +462,21 @@ class ComputeParticlesApplication {
    */
   std::vector<vk::raii::Fence> in_flight_fences_;
 
-  std::vector<eray::vkren::ExclusiveBufferResource> uniform_buffers_;
+  std::vector<eray::vkren::BufferResource> uniform_buffers_;
   std::vector<void*> uniform_buffers_mapped_;
 
   vk::raii::DescriptorPool descriptor_pool_ = nullptr;
-  std::vector<vk::raii::DescriptorSet> compute_descriptor_sets_;
+  std::vector<vk::DescriptorSet> compute_descriptor_sets_;
 
   vk::raii::ImageView txt_view_  = nullptr;
   vk::raii::Sampler txt_sampler_ = nullptr;
 
-  std::vector<vkren::ExclusiveBufferResource> ssbuffers_;
+  std::vector<vkren::BufferResource> ssbuffers_;
 
   std::shared_ptr<eray::os::Window> window_;
+
+  vkren::DescriptorSetLayoutManager dsl_manager_ = vkren::DescriptorSetLayoutManager(nullptr);
+  vkren::DescriptorAllocator dsl_allocator_      = vkren::DescriptorAllocator(nullptr);
 
   float last_frame_time_{};
 
@@ -1016,11 +506,10 @@ int main() {
   auto window_creator =
       eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");
   System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
-  {
-    auto window = System::instance().create_window().or_panic("Could not create a window");
-    auto app    = ComputeParticlesApplication(std::move(window));
-    app.run();
-  }
+
+  auto app = ComputeParticlesApplication();
+  app.run();
+
   eray::os::System::instance().terminate();
 
   return 0;

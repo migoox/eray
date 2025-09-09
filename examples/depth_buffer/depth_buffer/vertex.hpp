@@ -62,7 +62,7 @@ struct VertexBuffer {
   using Vec2 = eray::math::Vec2f;
   using Vec3 = eray::math::Vec3f;
 
-  static VertexBuffer create_triangle() {
+  static VertexBuffer create() {
     // interleaving vertex attributes
     return VertexBuffer{
         .vertices =

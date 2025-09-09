@@ -8,7 +8,7 @@ namespace eray::vkren {
 
 struct ShaderModule {
   vk::raii::ShaderModule shader_module;
-  observer_ptr<const Device> p_device;
+  observer_ptr<const Device> _p_device;
 
   /**
    * @brief Creates a shader module from the provided `bytecode` span.

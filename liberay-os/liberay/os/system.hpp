@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <liberay/os/file_dialog.hpp>
 #include <liberay/os/operating_system.hpp>
 #include <liberay/os/rendering_api.hpp>
@@ -11,6 +12,7 @@
 #include <liberay/util/result.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/util/zstring_view.hpp>
+#include <memory>
 
 namespace eray::os {
 
@@ -147,24 +149,29 @@ class System {
 
   /**
    * @brief Creates a window and returns an unique pointer to the instance.
+   * The window is valid until the `terminate` function is not called.
    *
    * @return util::Result<std::unique_ptr<IWindow>, WindowCreationError>
    */
-  [[nodiscard]] util::Result<std::unique_ptr<Window>, Error> create_window();
+  [[nodiscard]] util::Result<std::shared_ptr<Window>, Error> create_window();
 
   /**
    * @brief Creates a window and returns an unique pointer to the instance. Allows to specify window properties.
+   * The window is valid until the `terminate` function is not called.
    *
    * @param props
    * @return util::Result<std::unique_ptr<Window>, WindowCreationError>
    */
-  [[nodiscard]] util::Result<std::unique_ptr<Window>, Error> create_window(const WindowProperties& props);
+  [[nodiscard]] util::Result<std::shared_ptr<Window>, Error> create_window(const WindowProperties& props);
 
   [[nodiscard]] static FileDialog& file_dialog() { return FileDialog::instance(); }
 
  private:
   RenderingAPI rendering_api_;
   std::unique_ptr<IWindowCreator> window_creator_;
+  std::vector<std::shared_ptr<Window>> windows_;
+
+  std::deque<std::function<void()>> deletors_;
 
   static std::unique_ptr<System> instance_;
 };

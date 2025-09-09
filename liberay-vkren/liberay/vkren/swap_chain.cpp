@@ -332,7 +332,7 @@ vk::PresentModeKHR SwapChain::choose_swap_presentMode(const std::vector<vk::Pres
 Result<void, Error> SwapChain::recreate() {
   (*p_device_)->waitIdle();
 
-  cleanup();
+  destroy();
 
   auto framebuffer_size = window_->framebuffer_size();
   if (auto result = create_swap_chain(*p_device_, framebuffer_size.width, framebuffer_size.height); !result) {
@@ -344,6 +344,8 @@ Result<void, Error> SwapChain::recreate() {
     return std::unexpected(result.error());
   }
 
+  // TODO(migoox): Do not recreate the attachments and render into a corner
+  // (https://vkguide.dev/docs/new_chapter_3/resizing_window/)
   if (auto result = create_color_attachment_image(*p_device_); !result) {
     eray::util::Logger::err("Could not recreate a swap chain: color buffer attachment creation failed.");
     return std::unexpected(result.error());
@@ -356,7 +358,7 @@ Result<void, Error> SwapChain::recreate() {
   return {};
 }
 
-void SwapChain::cleanup() {
+void SwapChain::destroy() {
   image_views_.clear();
   swap_chain_ = nullptr;
 }

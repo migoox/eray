@@ -42,20 +42,29 @@ Result<void, Error> System::init(std::unique_ptr<IWindowCreator>&& window_creato
   util::Logger::info("Requested driver: {}", kRenderingAPIName[driver]);
 
   instance_ = std::make_unique<System>(std::move(window_creator));
+  instance_->deletors_.emplace_back([]() { instance_->window_creator_->terminate(); });
+
   return {};
 }
 
-util::Result<std::unique_ptr<Window>, Error> System::create_window() {
-  return create_window(WindowProperties{
+util::Result<std::shared_ptr<Window>, Error> System::create_window() {
+  auto window = create_window(WindowProperties{
       .title      = "Window",
       .vsync      = false,
       .fullscreen = false,
       .width      = 800,
       .height     = 600,
   });
+
+  if (window) {
+    windows_.emplace_back(*window);
+    deletors_.emplace_back([window = windows_.back()]() { window->destroy(); });
+  }
+
+  return window;
 }
 
-util::Result<std::unique_ptr<Window>, Error> System::create_window(const WindowProperties& props) {
+util::Result<std::shared_ptr<Window>, Error> System::create_window(const WindowProperties& props) {
   return window_creator_->create_window(std::move(props));
 }
 
@@ -78,6 +87,12 @@ std::string System::path_to_utf8str(const std::filesystem::path& path) { return 
 
 std::filesystem::path System::utf8str_to_path(util::zstring_view str_path) { return util::utf8str_to_path(str_path); }
 
-void System::terminate() { window_creator_->terminate(); }
+void System::terminate() {
+  for (auto& deletor : std::ranges::reverse_view(deletors_)) {
+    deletor();
+  }
+  deletors_.clear();
+  windows_.clear();
+}
 
 }  // namespace eray::os

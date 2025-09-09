@@ -391,7 +391,7 @@ class ComputeParticlesMultithreadingApplication {
       }
     }
 
-    swap_chain_.cleanup();
+    swap_chain_.destroy();
 
     glfwDestroyWindow(window_);
     glfwTerminate();

@@ -56,10 +56,9 @@ class SwapChain {
    */
   vk::ImageView color_attachment_image_view() const { return color_image_view_; }
 
-  vk::Format image_format() { return format_; }
-
-  vk::Format color_attachment_format() { return format_; }
-  vk::Format depth_stencil_attachment_format() { return depth_stencil_format_; }
+  vk::Format image_format() const { return format_; }
+  vk::Format color_attachment_format() const { return format_; }
+  vk::Format depth_stencil_attachment_format() const { return depth_stencil_format_; }
 
   const vk::Extent2D& extent() { return extent_; }
 
@@ -89,7 +88,7 @@ class SwapChain {
    * destroying the GLFW window.
    *
    */
-  void cleanup();
+  void destroy();
 
   vk::SampleCountFlagBits msaa_sample_count() const { return msaa_sample_count_; }
 
@@ -180,7 +179,7 @@ class SwapChain {
    * @brief Handle to a color buffer attachment.
    *
    */
-  vkren::ImageResource color_image_;
+  vkren::ImageResource color_image_;  // TODO(migoox): Add multiple color attachments support
   vk::raii::ImageView color_image_view_ = nullptr;
 
   /**

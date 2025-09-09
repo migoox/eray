@@ -13,7 +13,8 @@
 
 namespace eray::glren {
 
-Application::Application(std::unique_ptr<os::Window> window) : window_(std::move(window)) {
+Application::Application() {
+  window_ = eray::os::System::instance().create_window().or_panic("Could not create a window");
   window_->set_event_callback<os::WindowClosedEvent>(class_method_as_event_callback(this, &Application::on_closed));
 }
 
@@ -89,6 +90,13 @@ void Application::run() {
 
     running_ = running_ && !window_->should_close();
   }
+
+  path = os::System::path_to_utf8str(os::System::executable_dir() / "imgui.ini");
+  ImGui::SaveIniSettingsToDisk(path.c_str());
+  util::Logger::info("Saved imgui.ini file");
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
+  ImGui::DestroyContext();
 }
 
 void Application::render_gui(Duration /* delta */) {}
@@ -104,15 +112,6 @@ void Application::update(Duration /* delta */) {}
 bool Application::on_closed(const os::WindowClosedEvent&) {
   running_ = false;
   return true;
-}
-
-Application::~Application() {
-  util::Logger::info("Saved imgui.ini file");
-  auto path = os::System::path_to_utf8str(os::System::executable_dir() / "imgui.ini");
-  ImGui::SaveIniSettingsToDisk(path.c_str());
-  ImGui_ImplOpenGL3_Shutdown();
-  ImGui_ImplGlfw_Shutdown();
-  ImGui::DestroyContext();
 }
 
 }  // namespace eray::glren

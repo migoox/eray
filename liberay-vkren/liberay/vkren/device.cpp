@@ -24,6 +24,7 @@
 namespace eray::vkren {
 
 Device::CreateInfo Device::CreateInfo::DesktopProfile::get(const eray::os::Window& window) noexcept {
+  // TODO(migoox): Create better rendererAPI-windowAPI integration abstraction!
   if (window.window_api() != eray::os::WindowAPI::GLFW) {
     eray::util::panic("Renderer supports GLFW only, but {} has been provided",
                       os::kWindowingAPIName[window.window_api()]);
@@ -642,12 +643,10 @@ void Device::transition_image_layout(const vk::raii::Image& image, const ImageDe
   end_single_time_commands(cmd_buff);
 }
 
-void Device::cleanup() { main_deletion_queue_.flush(); }
+void Device::destroy() { main_deletion_queue_.flush(); }
 
-void Device::push_vma_deletor(std::function<void()>&& function) {
-  main_deletion_queue_.push_deletor(std::move(function));
-}
+void Device::push_deletor(std::function<void()>&& function) { main_deletion_queue_.push_deletor(std::move(function)); }
 
-Device::~Device() { cleanup(); }
+Device::~Device() { destroy(); }
 
 }  // namespace eray::vkren
