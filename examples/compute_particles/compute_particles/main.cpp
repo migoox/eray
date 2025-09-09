@@ -1,7 +1,6 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
 
-#include <algorithm>
 #include <chrono>
 #include <compute_particles/particle.hpp>
 #include <cstddef>
@@ -38,6 +37,8 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
+
+#include "liberay/vkren/descriptor.hpp"
 
 namespace vkren = eray::vkren;
 
@@ -264,24 +265,16 @@ class ComputeParticlesApplication {
     auto region =
         eray::util::MemoryRegion{particle_system.particles.data(), particle_system.particles.size() * sizeof(Particle)};
     auto staging_buff =
-        vkren::ExclusiveBufferResource::create_staging(device_, region).or_panic("Could not create a Staging Buffer");
+        vkren::BufferResource::create_staging_buffer(device_, region).or_panic("Could not create a Staging Buffer");
 
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
-      auto temp = vkren::ExclusiveBufferResource::create(
-                      device_,
-                      vkren::ExclusiveBufferResource::CreateInfo{
-                          .size_bytes = region.size_bytes(),
-                          .buff_usage = vk::BufferUsageFlagBits::eVertexBuffer |
-                                        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                          .mem_properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                      })
-                      .or_panic("Could not create a Storage Buffer");
+      auto temp = vkren::BufferResource::create_gpu_local_buffer(device_, region.size_bytes(),
+                                                                 vk::BufferUsageFlagBits::eVertexBuffer |
+                                                                     vk::BufferUsageFlagBits::eStorageBuffer |
+                                                                     vk::BufferUsageFlagBits::eTransferDst)
+                      .or_panic();
 
-      temp.copy_from(staging_buff.buffer(), vk::BufferCopy{
-                                                .srcOffset = 0,
-                                                .dstOffset = 0,
-                                                .size      = region.size_bytes(),
-                                            });
+      temp.write(staging_buff);
       ssbuffers_.emplace_back(std::move(temp));
     }
 
@@ -289,22 +282,14 @@ class ComputeParticlesApplication {
     uniform_buffers_.clear();
     uniform_buffers_mapped_.clear();
     {
-      vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
+      vk::DeviceSize size_bytes = sizeof(UniformBufferObject);
       for (auto i = 0; i < kMaxFramesInFlight; ++i) {
-        auto ubo = vkren::ExclusiveBufferResource::create(  //
-                       device_,
-                       vkren::ExclusiveBufferResource::CreateInfo{
-                           .size_bytes = buffer_size,
-                           .buff_usage = vk::BufferUsageFlagBits::eUniformBuffer,
-                           .mem_properties =
-                               vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                       })
-                       .or_panic();
+        auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(device_, size_bytes).or_panic();
 
         // This technique is called persistent mapping, the buffer stays mapped for the application's whole life-time.
         // It increases performance as the mapping process is not free.
-        uniform_buffers_mapped_.emplace_back(ubo.memory().mapMemory(0, buffer_size));
-        uniform_buffers_.emplace_back(std::move(ubo));
+        uniform_buffers_mapped_.emplace_back(ubo.mapped_data);
+        uniform_buffers_.emplace_back(std::move(ubo.buffer));
       }
     }
   }
@@ -351,220 +336,13 @@ class ComputeParticlesApplication {
     }
   }
 
-  struct TransitionSwapChainImageLayoutInfo {
-    uint32_t image_index;
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  /**
-   * @brief In Vulkan, images can be in different layouts that are optimized for different operations. For example, an
-   * image can be in a layout that is optimal for presenting to the screen, or in a layout that is optimal for being
-   * used as a color attachment.
-   *
-   * This function is used to transition the image layout before and after rendering.
-   *
-   * @param image_index
-   * @param old_layout
-   * @param new_layout
-   * @param src_access_mask
-   * @param dst_access_mask
-   * @param src_stage_mask
-   * @param dst_stage_mask
-   */
-  void transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.images()[info.image_index],  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
-  struct TransitionDepthAttachmentLayoutInfo {
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  void transition_depth_attachment_layout(TransitionDepthAttachmentLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.depth_stencil_attachment_image(),  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
-  struct TransitionColorAttachmentLayoutInfo {
-    size_t frame_index;
-    vk::ImageLayout old_layout;
-    vk::ImageLayout new_layout;
-    vk::AccessFlags2 src_access_mask;
-    vk::AccessFlags2 dst_access_mask;
-    vk::PipelineStageFlags2 src_stage_mask;
-    vk::PipelineStageFlags2 dst_stage_mask;
-  };
-
-  void transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo info) {
-    auto barrier = vk::ImageMemoryBarrier2{
-        .srcStageMask        = info.src_stage_mask,
-        .srcAccessMask       = info.src_access_mask,
-        .dstStageMask        = info.dst_stage_mask,
-        .dstAccessMask       = info.dst_access_mask,
-        .oldLayout           = info.old_layout,
-        .newLayout           = info.new_layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = swap_chain_.color_attachment_image(),  //
-        .subresourceRange =
-            vk::ImageSubresourceRange{
-                .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    auto dependency_info = vk::DependencyInfo{
-        .dependencyFlags         = {},
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
-    };
-
-    graphics_command_buffers_[info.frame_index].pipelineBarrier2(dependency_info);
-  }
-
   /**
    * @brief Writes the commands we what to execute into a command buffer
    *
    * @param image_index
    */
   void record_graphics_command_buffer(size_t frame_index, uint32_t image_index) {
-    graphics_command_buffers_[frame_index].begin(vk::CommandBufferBeginInfo{});
-
-    // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
-    transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
-        .image_index     = image_index,
-        .frame_index     = frame_index,
-        .old_layout      = vk::ImageLayout::eUndefined,
-        .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
-        .src_access_mask = {},
-        .dst_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .src_stage_mask  = vk::PipelineStageFlagBits2::eTopOfPipe,
-        .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-    });
-
-    transition_depth_attachment_layout(TransitionDepthAttachmentLayoutInfo{
-        .frame_index     = frame_index,
-        .old_layout      = vk::ImageLayout::eUndefined,
-        .new_layout      = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-        .src_access_mask = {},
-        .dst_access_mask =
-            vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-        .src_stage_mask = vk::PipelineStageFlagBits2::eTopOfPipe,
-        .dst_stage_mask =
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-    });
-
-    auto color_buffer_attachment_info = vk::RenderingAttachmentInfo{
-        .imageView   = swap_chain_.image_views()[image_index],
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eClear,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-        .clearValue  = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F),
-    };
-
-    auto depth_buffer_attachment_info = vk::RenderingAttachmentInfo{
-        .imageView   = swap_chain_.depth_stencil_attachment_image_view(),
-        .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-        .loadOp      = vk::AttachmentLoadOp::eClear,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
-        .clearValue  = vk::ClearDepthStencilValue(1.0F, 0),
-    };
-
-    if (swap_chain_.msaa_sample_count() != vk::SampleCountFlagBits::e1) {
-      // When multisampling is enabled use the color attachment buffer
-
-      transition_color_attachment_layout(TransitionColorAttachmentLayoutInfo{
-          .frame_index     = frame_index,
-          .old_layout      = vk::ImageLayout::eUndefined,
-          .new_layout      = vk::ImageLayout::eColorAttachmentOptimal,
-          .src_access_mask = {},
-          .dst_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
-          .src_stage_mask  = vk::PipelineStageFlagBits2::eTopOfPipe,
-          .dst_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-      });
-      color_buffer_attachment_info.imageView          = swap_chain_.color_attachment_image_view();
-      color_buffer_attachment_info.resolveMode        = vk::ResolveModeFlagBits::eAverage;
-      color_buffer_attachment_info.resolveImageView   = swap_chain_.image_views()[image_index];
-      color_buffer_attachment_info.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    }
-
-    auto rendering_info = vk::RenderingInfo{
-        // Defines the size of the render area
-        .renderArea =
-            vk::Rect2D{
-                .offset = {.x = 0, .y = 0}, .extent = swap_chain_.extent()  //
-            },
-        .layerCount           = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments    = &color_buffer_attachment_info,
-        .pDepthAttachment     = &depth_buffer_attachment_info,
-    };
-    graphics_command_buffers_[frame_index].beginRendering(rendering_info);
+    swap_chain_.begin_rendering(graphics_command_buffers_[frame_index], image_index);
 
     graphics_command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
     graphics_command_buffers_[frame_index].setViewport(
@@ -582,21 +360,7 @@ class ComputeParticlesApplication {
     graphics_command_buffers_[frame_index].bindVertexBuffers(0, {ssbuffers_[current_frame_].buffer()}, {0});
     graphics_command_buffers_[frame_index].draw(ParticleSystem::kParticleCount, 1, 0, 0);
 
-    graphics_command_buffers_[frame_index].endRendering();
-
-    // Transition the image layout from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
-    transition_swap_chain_image_layout(TransitionSwapChainImageLayoutInfo{
-        .image_index     = image_index,
-        .frame_index     = frame_index,
-        .old_layout      = vk::ImageLayout::eColorAttachmentOptimal,
-        .new_layout      = vk::ImageLayout::ePresentSrcKHR,
-        .src_access_mask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .dst_access_mask = {},
-        .src_stage_mask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        .dst_stage_mask  = vk::PipelineStageFlagBits2::eBottomOfPipe,
-    });
-
-    graphics_command_buffers_[frame_index].end();
+    swap_chain_.end_rendering(graphics_command_buffers_[frame_index], image_index);
   }
 
   void record_compute_command_buffer(size_t frame_index) {
@@ -667,109 +431,15 @@ class ComputeParticlesApplication {
     compute_descriptor_sets_ =
         vkren::Result(device_->allocateDescriptorSets(desc_alloc_info)).or_panic("Could not allocate descriptor sets");
 
+    auto writer = vkren::DescriptorSetWriter::create(device_);
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
-      auto buffer_info = vk::DescriptorBufferInfo{
-          .buffer = uniform_buffers_[i].buffer(),
-          .offset = 0,
-          .range  = sizeof(UniformBufferObject),
-      };
-
-      auto last_ind           = (i - 1) % kMaxFramesInFlight;
-      auto last_frame_ss_info = vk::DescriptorBufferInfo{
-          .buffer = ssbuffers_[last_ind].buffer(),
-          .offset = 0,
-          .range  = sizeof(Particle) * ParticleSystem::kParticleCount,
-      };
-      auto curr_ind              = i;
-      auto current_frame_ss_info = vk::DescriptorBufferInfo{
-          .buffer = ssbuffers_[curr_ind].buffer(),
-          .offset = 0,
-          .range  = sizeof(Particle) * ParticleSystem::kParticleCount,
-      };
-
-      auto desc_writes = std::array{
-          vk::WriteDescriptorSet{
-              .dstSet           = *compute_descriptor_sets_[i],
-              .dstBinding       = 0,
-              .dstArrayElement  = 0,
-              .descriptorCount  = 1,
-              .descriptorType   = vk::DescriptorType::eUniformBuffer,
-              .pImageInfo       = nullptr,
-              .pBufferInfo      = &buffer_info,
-              .pTexelBufferView = nullptr,
-          },
-          vk::WriteDescriptorSet{
-              .dstSet           = *compute_descriptor_sets_[i],
-              .dstBinding       = 1,
-              .dstArrayElement  = 0,
-              .descriptorCount  = 1,
-              .descriptorType   = vk::DescriptorType::eStorageBuffer,
-              .pImageInfo       = nullptr,
-              .pBufferInfo      = &last_frame_ss_info,
-              .pTexelBufferView = nullptr,
-          },
-          vk::WriteDescriptorSet{
-              .dstSet           = *compute_descriptor_sets_[i],
-              .dstBinding       = 2,
-              .dstArrayElement  = 0,
-              .descriptorCount  = 1,
-              .descriptorType   = vk::DescriptorType::eStorageBuffer,
-              .pImageInfo       = nullptr,
-              .pBufferInfo      = &current_frame_ss_info,
-              .pTexelBufferView = nullptr,
-          },
-      };
-      device_->updateDescriptorSets(desc_writes, {});
+      auto last_ind = (i - 1) % kMaxFramesInFlight;
+      auto curr_ind = i;
+      writer.write_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
+      writer.write_buffer(1, ssbuffers_[last_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
+      writer.write_buffer(2, ssbuffers_[curr_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
+      writer.write_to_set(compute_descriptor_sets_[i]);
     }
-  }
-
-  vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
-    for (const auto& surf_format : available_formats) {
-      if (surf_format.format == vk::Format::eB8G8R8A8Srgb &&
-          surf_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-        return surf_format;
-      }
-    }
-
-    eray::util::Logger::warn(
-        "A format B8G8R8A8Srgb with color space SrgbNonlinear is not supported by the Surface. A random format will "
-        "be "
-        "used.");
-
-    return available_formats[0];
-  }
-
-  vk::PresentModeKHR choose_swap_presentMode(const std::vector<vk::PresentModeKHR>& available_present_modes) {
-    auto mode_it = std::ranges::find_if(available_present_modes, [](const auto& mode) {
-      return mode ==
-             vk::PresentModeKHR::eMailbox;  // Note: good if energy usage is not a concern, avoid for mobile devices
-    });
-
-    if (mode_it != available_present_modes.end()) {
-      return *mode_it;
-    }
-
-    return vk::PresentModeKHR::eFifo;
-  }
-
-  static VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
-                                                         vk::DebugUtilsMessageTypeFlagsEXT type,
-                                                         const vk::DebugUtilsMessengerCallbackDataEXT* p_callback_data,
-                                                         void*) {
-    switch (severity) {
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose:
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo:
-        eray::util::Logger::info("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning:
-        eray::util::Logger::warn("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      case vk::DebugUtilsMessageSeverityFlagBitsEXT::eError:
-        eray::util::Logger::err("Vulkan Debug (Type: {}): {}", vk::to_string(type), p_callback_data->pMessage);
-        return vk::True;
-      default:
-        return vk::False;
-    };
   }
 
  private:
@@ -838,7 +508,7 @@ class ComputeParticlesApplication {
    */
   std::vector<vk::raii::Fence> in_flight_fences_;
 
-  std::vector<eray::vkren::ExclusiveBufferResource> uniform_buffers_;
+  std::vector<eray::vkren::BufferResource> uniform_buffers_;
   std::vector<void*> uniform_buffers_mapped_;
 
   vk::raii::DescriptorPool descriptor_pool_ = nullptr;
@@ -847,9 +517,11 @@ class ComputeParticlesApplication {
   vk::raii::ImageView txt_view_  = nullptr;
   vk::raii::Sampler txt_sampler_ = nullptr;
 
-  std::vector<vkren::ExclusiveBufferResource> ssbuffers_;
+  std::vector<vkren::BufferResource> ssbuffers_;
 
   std::shared_ptr<eray::os::Window> window_;
+  std::vector<vk::DescriptorSet> descriptor_sets_;
+  vk::DescriptorSetLayout dsl_;
 
   float last_frame_time_{};
 

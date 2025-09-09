@@ -133,7 +133,7 @@ struct BufferResource {
    * @return Result<Buffer, Error>
    */
   [[nodiscard]] static Result<BufferResource, Error> create_gpu_local_buffer(Device& device, vk::DeviceSize size_bytes,
-                                                                             vk::BufferUsageFlagBits usage);
+                                                                             vk::BufferUsageFlags usage);
 
   [[nodiscard]] static Result<BufferResource, Error> create_index_buffer(Device& device, vk::DeviceSize size_bytes) {
     return create_gpu_local_buffer(device, size_bytes, vk::BufferUsageFlagBits::eIndexBuffer);
@@ -185,6 +185,14 @@ struct BufferResource {
    * @return Result<void, Error>
    */
   Result<void, Error> write(const util::MemoryRegion& src_region, vk::DeviceSize offset = 0) const;
+
+  /**
+   * @brief Copies data from the provided `buffer`.
+   *
+   * @param buffer
+   * @param offset
+   */
+  void write(const BufferResource& buffer, vk::DeviceSize offset = 0) const;
 
   /**
    * @brief Maps the buffer on demand. If the buffer is persistently mapped (VMA_ALLOCATION_CREATE_MAPPED_BIT) the

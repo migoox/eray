@@ -200,7 +200,7 @@ Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_
 }
 
 Result<BufferResource, Error> BufferResource::create_gpu_local_buffer(Device& device, vk::DeviceSize size_bytes,
-                                                                      vk::BufferUsageFlagBits usage) {
+                                                                      vk::BufferUsageFlags usage) {
   auto buf_create_info = vk::BufferCreateInfo{
       .sType       = vk::StructureType::eBufferCreateInfo,
       .size        = size_bytes,
@@ -375,6 +375,12 @@ Result<void*, Error> BufferResource::map() const {
   }
 
   return ptr;
+}
+
+void BufferResource::write(const BufferResource& buffer, vk::DeviceSize offset) const {
+  auto cmd_cpy_buff = _p_device->begin_single_time_commands();
+  cmd_cpy_buff.copyBuffer(buffer._buffer._vk_handle, _buffer._vk_handle, vk::BufferCopy(0, offset, buffer.size_bytes));
+  _p_device->end_single_time_commands(cmd_cpy_buff);
 }
 
 void BufferResource::unmap() const {
