@@ -65,7 +65,8 @@ Result<vk::raii::DescriptorPool, Error> DescriptorAllocator::create_pool(
   }
 
   auto create_info = vk::DescriptorPoolCreateInfo{
-      .sType         = vk::StructureType::eDescriptorPoolCreateInfo,
+      .sType = vk::StructureType::eDescriptorPoolCreateInfo,
+      // TODO(migoox): Resarch why eFreeDescriptorSet is needed
       .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       .maxSets       = set_count,
       .poolSizeCount = static_cast<uint32_t>(pool_sizes.size()),

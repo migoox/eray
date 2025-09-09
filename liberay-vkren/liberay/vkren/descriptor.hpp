@@ -83,6 +83,7 @@ class DescriptorAllocator {
   std::vector<vk::raii::DescriptorPool> ready_pools_;
   uint32_t sets_per_pool_{};
 
+  // TODO(migoox): Individual descriptor set deallocation mechanism
   std::vector<vk::raii::DescriptorSet> allocated_descriptors_;
 
   observer_ptr<Device> p_device_{};
