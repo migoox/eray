@@ -643,12 +643,10 @@ void Device::transition_image_layout(const vk::raii::Image& image, const ImageDe
   end_single_time_commands(cmd_buff);
 }
 
-void Device::cleanup() { main_deletion_queue_.flush(); }
+void Device::destroy() { main_deletion_queue_.flush(); }
 
-void Device::push_vma_deletor(std::function<void()>&& function) {
-  main_deletion_queue_.push_deletor(std::move(function));
-}
+void Device::push_deletor(std::function<void()>&& function) { main_deletion_queue_.push_deletor(std::move(function)); }
 
-Device::~Device() { cleanup(); }
+Device::~Device() { destroy(); }
 
 }  // namespace eray::vkren

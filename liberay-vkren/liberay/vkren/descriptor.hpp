@@ -21,10 +21,13 @@ struct DescriptorPoolSizeRatio {
    */
   float ratio;
 
-  static std::vector<DescriptorPoolSizeRatio> create_standard_ratios(float storage_image_ratio,
-                                                                     float storage_buffer_ratio,
-                                                                     float uniform_buffer_ratio,
-                                                                     float combined_image_sampler_ratio);
+  /**
+   * @brief Reasonable default, but you can improve memory usage of the `DescriptorAllocator` significantly if
+   * you tweak it to what your project uses.
+   *
+   * @return std::vector<DescriptorPoolSizeRatio>
+   */
+  static std::vector<DescriptorPoolSizeRatio> create_default();
 };
 
 class DescriptorAllocator {
@@ -36,6 +39,7 @@ class DescriptorAllocator {
   DescriptorAllocator(DescriptorAllocator&&) noexcept            = default;
   DescriptorAllocator& operator=(const DescriptorAllocator&)     = delete;
   DescriptorAllocator& operator=(DescriptorAllocator&&) noexcept = default;
+  ~DescriptorAllocator();
 
   static DescriptorAllocator create(Device& device);
   static Result<DescriptorAllocator, Error> create_and_init(Device& device, uint32_t max_sets,
@@ -50,10 +54,12 @@ class DescriptorAllocator {
    */
   Result<void, Error> init(uint32_t max_sets, std::span<DescriptorPoolSizeRatio> pool_size_ratios);
 
-  void clear_pools();
-  void destroy_pools();
+  void clear();
+  void destroy();
 
   Result<vk::DescriptorSet, Error> allocate(vk::DescriptorSetLayout layout, void* p_next = nullptr);
+  Result<std::vector<vk::DescriptorSet>, Error> allocate_many(vk::DescriptorSetLayout layout, size_t count,
+                                                              void* p_next = nullptr);
 
  private:
   explicit DescriptorAllocator(Device& device) : p_device_(&device) {}
@@ -76,6 +82,8 @@ class DescriptorAllocator {
    */
   std::vector<vk::raii::DescriptorPool> ready_pools_;
   uint32_t sets_per_pool_{};
+
+  std::vector<vk::raii::DescriptorSet> allocated_descriptors_;
 
   observer_ptr<Device> p_device_{};
 };
@@ -141,7 +149,96 @@ struct DescriptorSetWriter {
   void write_buffer(uint32_t binding, vk::DescriptorBufferInfo info, vk::DescriptorType type);
 
   void clear();
-  void update_set(vk::DescriptorSet set);
+
+  void write_to_set(vk::DescriptorSet set);
+};
+
+/**
+ * @brief Stores a collection of layout binding descriptions that can be hashed and compared.
+ *
+ */
+struct DescriptorSetLayoutInfo {
+  // TODO(migoox): Use static array instead of the vector
+  //   static constexpr size_t kMaxBindings = 16;
+  std::vector<vk::DescriptorSetLayoutBinding> bindings;
+  size_t _hash{};
+
+  DescriptorSetLayoutInfo() = delete;
+  static DescriptorSetLayoutInfo create(std::vector<vk::DescriptorSetLayoutBinding>&& bindings);
+
+  bool operator==(const DescriptorSetLayoutInfo& other) const;
+
+  struct Hash {
+    std::size_t operator()(const DescriptorSetLayoutInfo& dsl) const { return dsl._hash; }
+  };
+
+ private:
+  size_t generate_hash() const;
+
+  explicit DescriptorSetLayoutInfo(std::vector<vk::DescriptorSetLayoutBinding>&& bindings)
+      : bindings(std::move(bindings)) {}
+};
+
+/**
+ * @brief Instead of reusing the same descriptor set layouts through the codebase manually, use this class. If specific
+ * layout has already been created, it allows to reuse it.
+ *
+ */
+struct DescriptorSetLayoutManager {
+  DescriptorSetLayoutManager() = delete;
+  explicit DescriptorSetLayoutManager(std::nullptr_t) {}
+
+  using LayoutCacheMap =
+      std::unordered_map<DescriptorSetLayoutInfo, vk::raii::DescriptorSetLayout, DescriptorSetLayoutInfo::Hash>;
+
+  LayoutCacheMap _layout_cache;
+  observer_ptr<Device> _p_device{};
+
+  static DescriptorSetLayoutManager create(Device& device);
+  [[nodiscard]] Result<vk::DescriptorSetLayout, Error> create_layout(
+      const vk::DescriptorSetLayoutCreateInfo& create_info);
+  void destroy();
+
+ private:
+  explicit DescriptorSetLayoutManager(Device& device);
+};
+
+struct DescriptorSetBuilder {
+  DescriptorSetBuilder() = delete;
+  [[nodiscard]] static DescriptorSetBuilder create(DescriptorSetLayoutManager& layout_manager,
+                                                   DescriptorAllocator& allocator);
+
+  /**
+   * @brief Order of the bindings specifies the binding numbers.
+   *
+   * @param type
+   * @param stage_flags
+   * @return DescriptorSetBuilder&
+   */
+  DescriptorSetBuilder& with_binding(vk::DescriptorType type, vk::ShaderStageFlags stage_flags);
+
+  Result<vk::DescriptorSetLayout, Error> build_layout_only();
+
+  struct DescriptorSet {
+    vk::DescriptorSet descriptor_set;
+    vk::DescriptorSetLayout layout;
+  };
+  Result<DescriptorSet, Error> build();
+
+  struct DescriptorSets {
+    std::vector<vk::DescriptorSet> descriptor_sets;
+    vk::DescriptorSetLayout layout;
+  };
+  Result<DescriptorSets, Error> build_many(size_t count);
+
+  std::vector<vk::DescriptorSetLayoutBinding> bindings;
+
+  observer_ptr<DescriptorSetLayoutManager> _dsl_manager;
+  observer_ptr<DescriptorAllocator> _allocator;
+  uint32_t _binding_count = 0;
+
+ private:
+  explicit DescriptorSetBuilder(DescriptorSetLayoutManager& layout_manager, DescriptorAllocator& allocator);
 };
 
 }  // namespace eray::vkren

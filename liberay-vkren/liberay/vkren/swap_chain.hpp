@@ -88,7 +88,7 @@ class SwapChain {
    * destroying the GLFW window.
    *
    */
-  void cleanup();
+  void destroy();
 
   vk::SampleCountFlagBits msaa_sample_count() const { return msaa_sample_count_; }
 

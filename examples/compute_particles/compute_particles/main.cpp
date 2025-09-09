@@ -196,7 +196,7 @@ class ComputeParticlesApplication {
     memcpy(uniform_buffers_mapped_[frame_index], &ubo, sizeof(ubo));
   }
 
-  void cleanup() { swap_chain_.cleanup(); }
+  void cleanup() { swap_chain_.destroy(); }
 
   void create_swap_chain() {
     swap_chain_ = vkren::SwapChain::create(device_, window_, device_.max_usable_sample_count())

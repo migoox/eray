@@ -2,6 +2,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <depth_buffer/vertex.hpp>
 #include <expected>
@@ -59,14 +60,12 @@ class DepthBufferApplication {
   void init_vk() {
     create_device();
     create_swap_chain();
-    create_descriptor_set_layout();
+    create_buffers();
+    create_txt_img();
+    create_descriptors();
     create_graphics_pipeline();
     create_command_pool();
-    create_buffers();
     create_command_buffers();
-    create_txt_img();
-    create_descriptor_pool();
-    create_descriptor_sets();
     create_sync_objs();
   }
 
@@ -155,37 +154,26 @@ class DepthBufferApplication {
     current_frame_     = (current_frame_ + 1) % kMaxFramesInFlight;
   }
 
-  void create_descriptor_set_layout() {
-    auto bindings = std::array{
-        // Uniform buffer
-        vk::DescriptorSetLayoutBinding{
-            .binding        = 0,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
+  void create_descriptors() {
+    dsl_manager_   = vkren::DescriptorSetLayoutManager::create(device_);
+    auto ratios    = vkren::DescriptorPoolSizeRatio::create_default();
+    dsl_allocator_ = vkren::DescriptorAllocator::create_and_init(device_, 100, ratios).or_panic();
+    auto result    = vkren::DescriptorSetBuilder::create(dsl_manager_, dsl_allocator_)
+                      .with_binding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
+                      .with_binding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+                      .build_many(kMaxFramesInFlight)
+                      .or_panic("Could not create descriptor sets");
 
-            // Single uniform buffer contains one MVP
-            .descriptorCount = 1,
+    descriptor_sets_ = result.descriptor_sets;
+    dsl_             = result.layout;
 
-            // We only reference the descriptor from the vertex shader
-            .stageFlags = vk::ShaderStageFlagBits::eVertex,
-
-            // The descriptor is not related to image sampling
-            .pImmutableSamplers = nullptr,
-        },
-
-        // Sampler
-        vk::DescriptorSetLayoutBinding{
-            .binding            = 1,
-            .descriptorType     = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount    = 1,
-            .stageFlags         = vk::ShaderStageFlagBits::eFragment,
-            .pImmutableSamplers = nullptr,
-        },
-    };
-    auto layout_info = vk::DescriptorSetLayoutCreateInfo{
-        .bindingCount = bindings.size(),
-        .pBindings    = bindings.data(),
-    };
-    descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
+    auto writer = vkren::DescriptorSetWriter::create(device_);
+    for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
+      writer.write_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
+      writer.write_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
+      writer.write_to_set(descriptor_sets_[i]);
+      writer.clear();
+    }
   }
 
   void update_ubo(uint32_t image_index) {
@@ -205,7 +193,7 @@ class DepthBufferApplication {
   }
 
   void cleanup() {
-    swap_chain_.cleanup();
+    swap_chain_.destroy();
 
     eray::util::Logger::succ("Finished cleanup");
   }
@@ -230,7 +218,7 @@ class DepthBufferApplication {
                         .with_polygon_mode(vk::PolygonMode::eFill)
                         .with_cull_mode(vk::CullModeFlagBits::eBack, vk::FrontFace::eClockwise)
                         .with_input_state(binding_desc, attribs_desc)
-                        .with_descriptor_set_layout(*descriptor_set_layout_)
+                        .with_descriptor_set_layout(dsl_)
                         .with_primitive_topology(vk::PrimitiveTopology::eTriangleList)
                         .with_depth_test()
                         .with_depth_test_compare_op(vk::CompareOp::eLess)
@@ -403,76 +391,16 @@ class DepthBufferApplication {
     // layout that the descriptors are based on. The next three parameters specify the index of the first descriptor
     // set, the number of sets to bind and the array of sets to bind.
     graphics_command_buffers_[frame_index].bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics, graphics_pipeline_layout_, 0, *descriptor_sets_[frame_index], nullptr);
+        vk::PipelineBindPoint::eGraphics, graphics_pipeline_layout_, 0, descriptor_sets_[frame_index], nullptr);
 
     graphics_command_buffers_[frame_index].drawIndexed(12, 1, 0, 0, 0);
 
     swap_chain_.end_rendering(graphics_command_buffers_[frame_index], image_index);
   }
 
-  void create_descriptor_pool() {
-    auto pool_size = std::array{
-        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, kMaxFramesInFlight),
-        vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, kMaxFramesInFlight),
-    };
-    auto pool_info = vk::DescriptorPoolCreateInfo{
-        .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets       = kMaxFramesInFlight,
-        .poolSizeCount = pool_size.size(),
-        .pPoolSizes    = pool_size.data(),
-    };
-    descriptor_pool_ =
-        vkren::Result(device_->createDescriptorPool(pool_info)).or_panic("Could not create descriptor pool");
-  }
-
-  void create_descriptor_sets() {
-    auto layouts                   = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, *descriptor_set_layout_);
-    auto descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo{
-        .descriptorPool     = descriptor_pool_,
-        .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-        .pSetLayouts        = layouts.data(),
-    };
-    descriptor_sets_.clear();
-    descriptor_sets_ = vkren::Result(device_->allocateDescriptorSets(descriptor_set_alloc_info))
-                           .or_panic("Could not create descriptor sets");
-
-    auto writer = vkren::DescriptorSetWriter::create(device_);
-    for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
-      writer.write_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
-      writer.write_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
-      writer.update_set(descriptor_sets_[i]);
-      writer.clear();
-    }
-  }
-
-  vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) {
-    for (const auto& surf_format : available_formats) {
-      if (surf_format.format == vk::Format::eB8G8R8A8Srgb &&
-          surf_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-        return surf_format;
-      }
-    }
-
-    eray::util::Logger::warn(
-        "A format B8G8R8A8Srgb with color space SrgbNonlinear is not supported by the Surface. A random format will "
-        "be "
-        "used.");
-
-    return available_formats[0];
-  }
-
-  vk::PresentModeKHR choose_swap_presentMode(const std::vector<vk::PresentModeKHR>& available_present_modes) {
-    auto mode_it = std::ranges::find_if(available_present_modes, [](const auto& mode) {
-      return mode ==
-             vk::PresentModeKHR::eMailbox;  // Note: good if energy usage is not a concern, avoid for mobile devices
-    });
-
-    if (mode_it != available_present_modes.end()) {
-      return *mode_it;
-    }
-
-    return vk::PresentModeKHR::eFifo;
-  }
+  // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
+  // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
+  static constexpr int kMaxFramesInFlight = 2;
 
  private:
   /**
@@ -493,13 +421,6 @@ class DepthBufferApplication {
   vk::raii::PipelineLayout graphics_pipeline_layout_ = nullptr;
 
   /**
-   * @brief Descriptor set layout object is defined by an array of zero or more descriptor bindings. It's a way for
-   * shaders to freely access resource like buffers and images
-   *
-   */
-  vk::raii::DescriptorSetLayout descriptor_set_layout_ = nullptr;
-
-  /**
    * @brief Describes the graphics pipeline, including shaders stages, input assembly, rasterization and more.
    *
    */
@@ -514,10 +435,6 @@ class DepthBufferApplication {
 
   uint32_t current_semaphore_ = 0;
   uint32_t current_frame_     = 0;
-
-  // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
-  // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
-  static constexpr int kMaxFramesInFlight = 2;
 
   /**
    * @brief Drawing operations are recorded in comand buffer objects.
@@ -544,33 +461,16 @@ class DepthBufferApplication {
   std::vector<vkren::BufferResource> uniform_buffers_;
   std::vector<void*> uniform_buffers_mapped_;
 
-  vk::raii::DescriptorPool descriptor_pool_ = nullptr;
-  std::vector<vk::raii::DescriptorSet> descriptor_sets_;
-
   vkren::ImageResource txt_image_;
   vk::raii::ImageView txt_view_  = nullptr;
   vk::raii::Sampler txt_sampler_ = nullptr;
 
-  /**
-   * @brief GLFW window pointer.
-   *
-   */
+  vkren::DescriptorSetLayoutManager dsl_manager_ = vkren::DescriptorSetLayoutManager(nullptr);
+  vkren::DescriptorAllocator dsl_allocator_      = vkren::DescriptorAllocator(nullptr);
+
   std::shared_ptr<eray::os::Window> window_ = nullptr;
-
-  /**
-   * @brief Validation layers are optional components that hook into Vulkan function calls to apply additional
-   * operations. Common operations in validation layers are:
-   *  - Checking the values of parameters against the specification to detect misuse
-   *  - Tracking the creation and destruction of objects to find resource leaks
-   *  - Checking thread safety by tracking the threads that calls originate from
-   *  - Logging every call and its parameters to the standard output
-   *  - Tracing Vulkan calls for profiling and replaying
-   *
-   */
-
-  static constexpr eray::util::zstring_view kComputeShaderEntryPoint  = "mainComp";
-  static constexpr eray::util::zstring_view kVertexShaderEntryPoint   = "mainVert";
-  static constexpr eray::util::zstring_view kFragmentShaderEntryPoint = "mainFrag";
+  std::vector<vk::DescriptorSet> descriptor_sets_;
+  vk::DescriptorSetLayout dsl_;
 };
 
 int main() {

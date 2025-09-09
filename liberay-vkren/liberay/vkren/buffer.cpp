@@ -285,6 +285,7 @@ Result<BufferResource, Error> BufferResource::create_uniform_buffer(Device& devi
 
 [[nodiscard]] Result<PersistentlyMappedBufferResource, Error> BufferResource::create_persistently_mapped_uniform_buffer(
     Device& device, vk::DeviceSize size_bytes) {
+  // TODO(migoox): Read about HOST_COHERENT & HOST_CACHED (might improve the performance)
   vk::BufferCreateInfo buf_create_info = {
       .sType       = vk::StructureType::eBufferCreateInfo,
       .size        = size_bytes,
