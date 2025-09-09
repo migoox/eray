@@ -60,14 +60,12 @@ class ComputeParticlesApplication {
   void init_vk() {
     create_device();
     create_swap_chain();
-    create_descriptor_set_layout();
+    create_buffers();
+    create_descriptors();
     create_graphics_pipeline();
     create_compute_pipeline();
     create_command_pool();
-    create_buffers();
     create_command_buffers();
-    create_descriptor_pool();
-    create_descriptor_sets();
     create_sync_objs();
   }
 
@@ -235,7 +233,7 @@ class ComputeParticlesApplication {
         vkren::ShaderModule::create(device_, particle_binary).or_panic("Could not create a main shader module");
 
     auto pipeline = vkren::ComputePipelineBuilder::create()
-                        .with_descriptor_set_layout(*compute_descriptor_set_layout_)
+                        .with_descriptor_set_layout(compute_descriptor_set_layout_)
                         .with_shader(particle_shader_module.shader_module)
                         .build(device_)
                         .or_panic("Could not create a compute pipeline");
@@ -373,63 +371,19 @@ class ComputeParticlesApplication {
     compute_command_buffers_[frame_index].end();
   }
 
-  void create_descriptor_pool() {
-    auto pool_size = std::array{
-        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, kMaxFramesInFlight),
-        vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, kMaxFramesInFlight * 2),
-    };
-    auto pool_info = vk::DescriptorPoolCreateInfo{
-        .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets       = kMaxFramesInFlight,
-        .poolSizeCount = pool_size.size(),
-        .pPoolSizes    = pool_size.data(),
-    };
-    descriptor_pool_ =
-        vkren::Result(device_->createDescriptorPool(pool_info)).or_panic("Could not create descriptor pool");
-  }
+  void create_descriptors() {
+    dsl_manager_   = vkren::DescriptorSetLayoutManager::create(device_);
+    auto ratios    = vkren::DescriptorPoolSizeRatio::create_default();
+    dsl_allocator_ = vkren::DescriptorAllocator::create_and_init(device_, 100, ratios).or_panic();
+    auto result    = vkren::DescriptorSetBuilder::create(dsl_manager_, dsl_allocator_)
+                      .with_binding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eCompute)
+                      .with_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute)
+                      .with_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute)
+                      .build_many(kMaxFramesInFlight)
+                      .or_panic("Could not create descriptor sets");
 
-  void create_descriptor_set_layout() {
-    auto bindings = std::array{
-        vk::DescriptorSetLayoutBinding{
-            .binding            = 0,
-            .descriptorType     = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount    = 1,
-            .stageFlags         = vk::ShaderStageFlagBits::eCompute,
-            .pImmutableSamplers = nullptr,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding            = 1,
-            .descriptorType     = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount    = 1,
-            .stageFlags         = vk::ShaderStageFlagBits::eCompute,
-            .pImmutableSamplers = nullptr,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding            = 2,
-            .descriptorType     = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount    = 1,
-            .stageFlags         = vk::ShaderStageFlagBits::eCompute,
-            .pImmutableSamplers = nullptr,
-        },
-    };
-    auto layout_info = vk::DescriptorSetLayoutCreateInfo{
-        .bindingCount = bindings.size(),
-        .pBindings    = bindings.data(),
-    };
-    compute_descriptor_set_layout_ = vkren::Result(device_->createDescriptorSetLayout(layout_info)).or_panic();
-  }
-
-  void create_descriptor_sets() {
-    compute_descriptor_sets_.clear();
-
-    auto layouts         = std::vector<vk::DescriptorSetLayout>(kMaxFramesInFlight, compute_descriptor_set_layout_);
-    auto desc_alloc_info = vk::DescriptorSetAllocateInfo{
-        .descriptorPool     = descriptor_pool_,
-        .descriptorSetCount = kMaxFramesInFlight,
-        .pSetLayouts        = layouts.data(),
-    };
-    compute_descriptor_sets_ =
-        vkren::Result(device_->allocateDescriptorSets(desc_alloc_info)).or_panic("Could not allocate descriptor sets");
+    compute_descriptor_sets_       = std::move(result.descriptor_sets);
+    compute_descriptor_set_layout_ = result.layout;
 
     auto writer = vkren::DescriptorSetWriter::create(device_);
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
@@ -466,7 +420,7 @@ class ComputeParticlesApplication {
    * shaders to freely access resource like buffers and images
    *
    */
-  vk::raii::DescriptorSetLayout compute_descriptor_set_layout_ = nullptr;
+  vk::DescriptorSetLayout compute_descriptor_set_layout_ = nullptr;
 
   /**
    * @brief Describes the graphics pipeline, including shaders stages, input assembly, rasterization and more.
@@ -512,7 +466,7 @@ class ComputeParticlesApplication {
   std::vector<void*> uniform_buffers_mapped_;
 
   vk::raii::DescriptorPool descriptor_pool_ = nullptr;
-  std::vector<vk::raii::DescriptorSet> compute_descriptor_sets_;
+  std::vector<vk::DescriptorSet> compute_descriptor_sets_;
 
   vk::raii::ImageView txt_view_  = nullptr;
   vk::raii::Sampler txt_sampler_ = nullptr;
@@ -520,8 +474,9 @@ class ComputeParticlesApplication {
   std::vector<vkren::BufferResource> ssbuffers_;
 
   std::shared_ptr<eray::os::Window> window_;
-  std::vector<vk::DescriptorSet> descriptor_sets_;
-  vk::DescriptorSetLayout dsl_;
+
+  vkren::DescriptorSetLayoutManager dsl_manager_ = vkren::DescriptorSetLayoutManager(nullptr);
+  vkren::DescriptorAllocator dsl_allocator_      = vkren::DescriptorAllocator(nullptr);
 
   float last_frame_time_{};
 
