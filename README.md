@@ -6,7 +6,7 @@
 - `util`: utilities used among the codebase, e.g. logger, containers 
 - `res`: assets system that integrates libraries like stbi_image and assimp,
 - `glren`: OpenGL abstraction layer,
-- `vkren`: Vulkan abstraction layer and window integration.
+- `vkren`: Vulkan abstraction layer.
 
 The main goal of the library is to serve me as a framework for building computer graphics applications while also providing me an opportunity to learn about engine programming.
 
