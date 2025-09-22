@@ -18,8 +18,8 @@ using NodeIndex = uint32_t;
 using NodeId = uint64_t;
 
 /**
- * @brief This tree ALWAYS has a root node (`kRootNodeId`). Manages tree nodes hierarchy only. No values are stored
- * here.
+ * @brief This tree ALWAYS has a root node (`kRootNodeId`) which is a parent for every orphaned node. This manages tree
+ * nodes hierarchy only and no values are stored here.
  *
  */
 class FlatTree {
@@ -51,12 +51,12 @@ class FlatTree {
     return {index, version};
   }
 
-  [[nodiscard]] static uint32_t extract_node_index(NodeId node) {
+  [[nodiscard]] static uint32_t node_index_of(NodeId node) {
     auto index = static_cast<uint32_t>(node & 0xFFFFFFFF);
     return index;
   }
 
-  [[nodiscard]] static uint32_t extract_node_version(NodeId node) {
+  [[nodiscard]] static uint32_t node_version_of(NodeId node) {
     auto version = static_cast<uint32_t>(node >> 32);
     return version;
   }
@@ -71,6 +71,9 @@ class FlatTree {
   [[nodiscard]] NodeId create_node() { return create_node(kRootNodeIndex); }
 
   const Node& node_info(NodeId node_id) const;
+  NodeId parent_of(NodeId node_id) const;
+  NodeId left_sibling_of(NodeId node_id) const;
+  NodeId right_sibling_of(NodeId node_id) const;
   [[nodiscard]] uint32_t node_level(NodeId node_id) const;
 
   /**
@@ -79,7 +82,7 @@ class FlatTree {
    * @param node_id
    * @param parent_id
    */
-  void copy_node(NodeId node_id, NodeId parent_id);
+  [[nodiscard]] NodeId copy_node(NodeId node_id, NodeId parent_id);
 
   /**
    * @brief Deletes node with all descendants.
@@ -91,7 +94,7 @@ class FlatTree {
   void delete_node(NodeId node_id);
 
   /**
-   * @brief Root becomes a parent of the node with index `node_id`.
+   * @brief Root becomes a parent of the node with `node_id`.
    *
    * @param index
    * @return NodeIndex

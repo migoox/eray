@@ -8,7 +8,7 @@
 namespace eray::vkren {
 
 NodeId FlatTree::create_node(NodeId parent_id) {
-  auto parent_index = extract_node_index(parent_id);
+  auto parent_index = node_index_of(parent_id);
   assert(parent_index != kNullNodeIndex && "Provided parent must not be null");
   assert(exists(parent_index) && "Parent must exist");
 
@@ -31,13 +31,26 @@ NodeId FlatTree::create_node(NodeId parent_id) {
   return compose_node_id(node_index, version_[node_index]);
 }
 
+NodeId FlatTree::parent_of(NodeId node_id) const {
+  auto index = node_index_of(node_id);
+  return index_to_id(nodes_[index].parent);
+}
+NodeId FlatTree::left_sibling_of(NodeId node_id) const {
+  auto index = node_index_of(node_id);
+  return index_to_id(nodes_[index].left_sibling);
+}
+NodeId FlatTree::right_sibling_of(NodeId node_id) const {
+  auto index = node_index_of(node_id);
+  return index_to_id(nodes_[index].right_sibling);
+}
+
 const FlatTree::Node& FlatTree::node_info(NodeId node_id) const {
-  auto index = extract_node_index(node_id);
+  auto index = node_index_of(node_id);
   return nodes_[index];
 }
 
 void FlatTree::delete_node(NodeId node_id) {
-  auto node_index = extract_node_index(node_id);
+  auto node_index = node_index_of(node_id);
   assert(node_index != kNullNodeIndex && "Provided node must not be null");
   assert(node_index != kRootNodeIndex && "Root node must not be deleted");
   assert(exists(node_id) && "Node must exist");
@@ -60,13 +73,13 @@ void FlatTree::delete_node(NodeId node_id) {
   // Delete all descendants
   version_[node_index]++;
   for (auto descendant : FlatTreeDFSRange(this, node_id)) {
-    version_[extract_node_index(descendant)]++;
+    version_[node_index_of(descendant)]++;
   }
 }
 
-void FlatTree::copy_node(NodeId node_id, NodeId parent_id) {
-  auto node_index   = extract_node_index(node_id);
-  auto parent_index = extract_node_index(parent_id);
+NodeId FlatTree::copy_node(NodeId node_id, NodeId parent_id) {
+  auto node_index   = node_index_of(node_id);
+  auto parent_index = node_index_of(parent_id);
   assert(node_index != kNullNodeIndex && "Provided node must not be null");
   assert(parent_index != kNullNodeIndex && "Parent must not be null");
   assert(exists(node_id) && "Node must exist");
@@ -76,19 +89,21 @@ void FlatTree::copy_node(NodeId node_id, NodeId parent_id) {
   old_to_new[node_index] = create_node(parent_id);
 
   for (auto node : FlatTreeBFSRange(this, node_id)) {
-    auto curr_node_index        = extract_node_index(node);
+    auto curr_node_index        = node_index_of(node);
     auto curr_parent_id         = index_to_id(nodes_[curr_node_index].parent);
     old_to_new[curr_node_index] = create_node(old_to_new[curr_parent_id]);
   }
 
   set_dirty();
+
+  return old_to_new[node_id];
 }
 
 void FlatTree::make_orphan(NodeId node_id) { change_parent(node_id, kRootNodeId); }
 
 void FlatTree::change_parent(NodeId node_id, NodeId parent_id) {
-  auto node_index   = extract_node_index(node_id);
-  auto parent_index = extract_node_index(parent_id);
+  auto node_index   = node_index_of(node_id);
+  auto parent_index = node_index_of(parent_id);
   assert(node_index != kNullNodeIndex && "Provided node must not be null");
   assert(node_index != kRootNodeIndex && "Root node must not be deleted");
   assert(exists(parent_id) && "Parent must exist");
@@ -119,7 +134,7 @@ void FlatTree::change_parent(NodeId node_id, NodeId parent_id) {
 
 uint32_t FlatTree::node_level(NodeId node_id) const {
   assert(node_id != kNullNodeId && "Node must not be null");
-  auto node_index = extract_node_index(node_id);
+  auto node_index = node_index_of(node_id);
   return level_[node_index];
 }
 
