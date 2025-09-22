@@ -158,7 +158,7 @@ class TransformTree {
   std::unordered_set<NodeId> dirty_nodes_;
   std::vector<NodeId> dirty_nodes_helper_;
 
-  size_t nodes_created_count_;
+  size_t nodes_created_count_{};
 };
 
 }  // namespace eray::vkren
