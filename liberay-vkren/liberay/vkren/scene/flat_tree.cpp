@@ -2,13 +2,15 @@
 #include <liberay/vkren/scene/flat_tree.hpp>
 #include <ranges>
 #include <stack>
+#include <unordered_map>
 #include <vector>
 
 namespace eray::vkren {
 
-FlatTree::NodeId FlatTree::create_node(NodeId parent_id) {
+NodeId FlatTree::create_node(NodeId parent_id) {
   auto parent_index = extract_node_index(parent_id);
   assert(parent_index != kNullNodeIndex && "Provided parent must not be null");
+  assert(exists(parent_index) && "Parent must exist");
 
   auto node_index = free_nodes_.back();
   free_nodes_.pop_back();
@@ -23,7 +25,7 @@ FlatTree::NodeId FlatTree::create_node(NodeId parent_id) {
 
   nodes_[parent_index].right_child = node_index;
 
-  is_dirty_ = true;
+  set_dirty();
   ++node_count_;
 
   return compose_node_id(node_index, version_[node_index]);
@@ -38,6 +40,7 @@ void FlatTree::delete_node(NodeId node_id) {
   auto node_index = extract_node_index(node_id);
   assert(node_index != kNullNodeIndex && "Provided node must not be null");
   assert(node_index != kRootNodeIndex && "Root node must not be deleted");
+  assert(exists(node_id) && "Node must exist");
 
   free_nodes_.push_back(node_index);
 
@@ -52,8 +55,33 @@ void FlatTree::delete_node(NodeId node_id) {
   }
 
   --node_count_;
-  is_dirty_ = true;
+  set_dirty();
+
+  // Delete all descendants
   version_[node_index]++;
+  for (auto descendant : FlatTreeDFSRange(this, node_id)) {
+    version_[extract_node_index(descendant)]++;
+  }
+}
+
+void FlatTree::copy_node(NodeId node_id, NodeId parent_id) {
+  auto node_index   = extract_node_index(node_id);
+  auto parent_index = extract_node_index(parent_id);
+  assert(node_index != kNullNodeIndex && "Provided node must not be null");
+  assert(parent_index != kNullNodeIndex && "Parent must not be null");
+  assert(exists(node_id) && "Node must exist");
+  assert(exists(parent_id) && "Parent must exist");
+
+  auto old_to_new        = std::unordered_map<NodeId, NodeId>();
+  old_to_new[node_index] = create_node(parent_id);
+
+  for (auto node : FlatTreeBFSRange(this, node_id)) {
+    auto curr_node_index        = extract_node_index(node);
+    auto curr_parent_id         = index_to_id(nodes_[curr_node_index].parent);
+    old_to_new[curr_node_index] = create_node(old_to_new[curr_parent_id]);
+  }
+
+  set_dirty();
 }
 
 void FlatTree::make_orphan(NodeId node_id) { change_parent(node_id, kRootNodeId); }
@@ -63,6 +91,7 @@ void FlatTree::change_parent(NodeId node_id, NodeId parent_id) {
   auto parent_index = extract_node_index(parent_id);
   assert(node_index != kNullNodeIndex && "Provided node must not be null");
   assert(node_index != kRootNodeIndex && "Root node must not be deleted");
+  assert(exists(parent_id) && "Parent must exist");
 
   auto left   = nodes_[node_index].left_sibling;
   auto right  = nodes_[node_index].right_sibling;
@@ -85,7 +114,7 @@ void FlatTree::change_parent(NodeId node_id, NodeId parent_id) {
   }
   nodes_[parent_index].right_child = node_index;
 
-  is_dirty_ = true;
+  set_dirty();
 }
 
 uint32_t FlatTree::node_level(NodeId node_id) const {
@@ -94,8 +123,8 @@ uint32_t FlatTree::node_level(NodeId node_id) const {
   return level_[node_index];
 }
 
-const std::vector<FlatTree::NodeId>& FlatTree::nodes_bfs_order() const {
-  if (!is_dirty_) {
+const std::vector<NodeId>& FlatTree::nodes_bfs_order() const {
+  if (!bfs_dirty_) {
     return bfs_order_cached_;
   }
 
@@ -106,24 +135,16 @@ const std::vector<FlatTree::NodeId>& FlatTree::nodes_bfs_order() const {
 
   bfs_order_cached_.reserve(node_count_);
   bfs_order_cached_.push_back(kRootNodeId);
-
-  size_t pivot = 0;
-  while (pivot < bfs_order_cached_.size()) {
-    auto curr_node = bfs_order_cached_[pivot++];
-    auto child     = nodes_[curr_node].right_child;
-    while (child != kNullNodeId) {
-      bfs_order_cached_.push_back(index2id(child));
-      child = nodes_[child].left_sibling;
-    }
+  for (auto node : FlatTreeBFSRange(this, kRootNodeId)) {
+    dfs_preorder_cached_.push_back(node);
   }
-
-  is_dirty_ = false;
+  bfs_dirty_ = false;
 
   return bfs_order_cached_;
 }
 
-const std::vector<FlatTree::NodeId>& FlatTree::nodes_dfs_preorder() const {
-  if (!is_dirty_) {
+const std::vector<NodeId>& FlatTree::nodes_dfs_preorder() const {
+  if (!dfs_dirty_) {
     return dfs_preorder_cached_;
   }
 
@@ -133,23 +154,10 @@ const std::vector<FlatTree::NodeId>& FlatTree::nodes_dfs_preorder() const {
   }
 
   dfs_preorder_cached_.reserve(node_count_);
-
-  std::stack<NodeIndex> stack;
-  stack.push(kRootNodeId);
-  while (!stack.empty()) {
-    auto curr_node = stack.top();
-    stack.pop();
-    dfs_preorder_cached_.push_back(index2id(curr_node));
-
-    auto child = nodes_[curr_node].right_child;
-    while (child != kNullNodeIndex) {
-      stack.push(child);
-      child = nodes_[child].left_sibling;
-    }
+  for (auto node : FlatTreeDFSRange(this, kRootNodeId)) {
+    dfs_preorder_cached_.push_back(node);
   }
-
-  is_dirty_ = false;
-
+  dfs_dirty_ = false;
   return dfs_preorder_cached_;
 }
 
@@ -168,6 +176,73 @@ bool FlatTree::exists(NodeId node_id) const {
   assert(node_id != kNullNodeId && "Node must not be null");
   auto [index, version] = decompose_node_id(node_id);
   return version_[index] == version;
+}
+
+void FlatTree::set_dirty() {
+  dfs_dirty_ = true;
+  bfs_dirty_ = true;
+}
+
+FlatTreeDFSIterator::FlatTreeDFSIterator(const FlatTree* tree, NodeId start) : tree_(tree), current_(start) {
+  if (tree_ && tree_->exists(start)) {
+    stack_.push(start);
+    advance();
+  }
+}
+
+void FlatTreeDFSIterator::advance() {
+  assert(current_ != FlatTree::kNullNodeId && "Node must not be null");
+  if (stack_.empty()) {
+    current_ = FlatTree::kNullNodeId;
+    return;
+  }
+
+  // acquire the current
+  current_ = stack_.top();
+  stack_.pop();
+
+  if (!tree_->exists(current_)) {
+    current_ = FlatTree::kNullNodeId;
+    return;
+  }
+
+  // push children
+  auto child = tree_->node_info(current_).right_child;
+  while (child != FlatTree::kNullNodeIndex) {
+    stack_.push(tree_->index_to_id(child));
+    child = tree_->node_info(child).left_sibling;
+  }
+}
+
+FlatTreeBFSIterator::FlatTreeBFSIterator(const FlatTree* tree, NodeId start) : tree_(tree), current_(start) {
+  if (tree_ && tree_->exists(start)) {
+    queue_.push(start);
+    advance();
+  }
+}
+
+void FlatTreeBFSIterator::advance() {
+  assert(current_ != FlatTree::kNullNodeId && "Node must not be null");
+  if (queue_.empty()) {
+    current_ = FlatTree::kNullNodeId;
+    return;
+  }
+
+  // acquire the current
+  current_ = queue_.front();
+  queue_.pop();
+
+  if (!tree_->exists(current_)) {
+    current_ = FlatTree::kNullNodeId;
+    return;
+  }
+
+  // push children
+  auto child = tree_->node_info(current_).right_child;
+  while (child != FlatTree::kNullNodeIndex) {
+    queue_.push(tree_->index_to_id(child));
+    child = tree_->node_info(child).left_sibling;
+  }
 }
 
 }  // namespace eray::vkren

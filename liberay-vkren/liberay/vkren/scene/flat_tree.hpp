@@ -3,25 +3,27 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <queue>
+#include <stack>
 #include <vector>
 
 namespace eray::vkren {
 
+using NodeIndex = uint32_t;
+
 /**
- * @brief This tree ALWAYS has a root node (`kRootNodeIndex`). Manages tree nodes hierarchy only. No values are stored
+ * @brief LSB 32 bits store node index and the rest of the 32 bits store the node version.
+ *
+ */
+using NodeId = uint64_t;
+
+/**
+ * @brief This tree ALWAYS has a root node (`kRootNodeId`). Manages tree nodes hierarchy only. No values are stored
  * here.
  *
  */
 class FlatTree {
  public:
-  using NodeIndex = uint32_t;
-
-  /**
-   * @brief LSB 32 bits store node index and the rest of the 32 bits store the node version.
-   *
-   */
-  using NodeId = uint64_t;
-
   static constexpr NodeIndex kRootNodeIndex = 0;
   static constexpr NodeId kRootNodeId       = kRootNodeIndex;
   static constexpr NodeIndex kNullNodeIndex = std::numeric_limits<NodeIndex>::max();
@@ -72,9 +74,17 @@ class FlatTree {
   [[nodiscard]] uint32_t node_level(NodeId node_id) const;
 
   /**
-   * @brief Deletes node.
+   * @brief Recursively copies the node with `node_id` and makes a node with `parent_id` its parent.
    *
-   * @warning Root node must not be deleted.
+   * @param node_id
+   * @param parent_id
+   */
+  void copy_node(NodeId node_id, NodeId parent_id);
+
+  /**
+   * @brief Deletes node with all descendants.
+   *
+   * @warning Root node must not be deleted. When called with root id this function produces undefined behaviour.
    *
    * @param node_id
    */
@@ -100,10 +110,12 @@ class FlatTree {
   const std::vector<NodeId>& nodes_bfs_order() const;
   const std::vector<NodeId>& nodes_dfs_preorder() const;
 
-  bool exists(NodeId node_id) const;
+  [[nodiscard]] bool exists(NodeId node_id) const;
+
+  [[nodiscard]] uint64_t index_to_id(NodeIndex index) const { return compose_node_id(index, version_[index]); }
 
  private:
-  uint64_t index2id(NodeIndex index) const { return compose_node_id(index, version_[index]); }
+  void set_dirty();
 
   FlatTree();
 
@@ -116,7 +128,110 @@ class FlatTree {
 
   mutable std::vector<NodeId> dfs_preorder_cached_;
   mutable std::vector<NodeId> bfs_order_cached_;
-  mutable bool is_dirty_{};
+  mutable bool dfs_dirty_{};
+  mutable bool bfs_dirty_{};
+};
+
+/**
+ * @brief Allows to iterate over the nodes in the with DFS preorder scheme.
+ *
+ */
+class FlatTreeDFSIterator {
+ public:
+  using value_type        = NodeId;
+  using reference         = const NodeId&;
+  using pointer           = const NodeId*;
+  using iterator_category = std::forward_iterator_tag;
+  using difference_type   = std::ptrdiff_t;
+
+  FlatTreeDFSIterator() = default;
+  FlatTreeDFSIterator(const FlatTree* tree, NodeId start);
+
+  reference operator*() const { return current_; }
+  pointer operator->() const { return &current_; }
+
+  FlatTreeDFSIterator& operator++() {
+    advance();
+    return *this;
+  }
+  FlatTreeDFSIterator operator++(int) {
+    auto tmp = *this;
+    ++(*this);
+    return tmp;
+  }
+  bool operator==(const FlatTreeDFSIterator& other) const { return current_ == other.current_ && tree_ == other.tree_; }
+  bool operator!=(const FlatTreeDFSIterator& other) const { return !(*this == other); }
+
+ private:
+  void advance();
+  const FlatTree* tree_{nullptr};
+  std::stack<NodeId> stack_;
+  NodeId current_{FlatTree::kNullNodeId};
+};
+
+/**
+ * @brief Allows to iterate over the nodes in the with DFS preorder scheme.
+ *
+ */
+struct FlatTreeDFSRange {
+  const FlatTree* tree_{nullptr};
+  NodeId root_ = FlatTree::kNullNodeId;
+
+  FlatTreeDFSRange(const FlatTree* tree, NodeId root) : tree_(tree), root_(root) {}
+
+  FlatTreeDFSIterator begin() const { return FlatTreeDFSIterator(tree_, root_); }
+  FlatTreeDFSIterator end() const { return FlatTreeDFSIterator(); }
+};
+
+/**
+ * @brief Allows to iterate over the nodes in the with BFS scheme.
+ *
+ */
+class FlatTreeBFSIterator {
+ public:
+  using value_type        = NodeId;
+  using reference         = const NodeId&;
+  using pointer           = const NodeId*;
+  using iterator_category = std::forward_iterator_tag;
+  using difference_type   = std::ptrdiff_t;
+
+  FlatTreeBFSIterator() = default;
+  FlatTreeBFSIterator(const FlatTree* tree, NodeId start);
+
+  reference operator*() const { return current_; }
+  pointer operator->() const { return &current_; }
+
+  FlatTreeBFSIterator& operator++() {
+    advance();
+    return *this;
+  }
+  FlatTreeBFSIterator operator++(int) {
+    auto tmp = *this;
+    ++(*this);
+    return tmp;
+  }
+  bool operator==(const FlatTreeBFSIterator& other) const { return current_ == other.current_ && tree_ == other.tree_; }
+  bool operator!=(const FlatTreeBFSIterator& other) const { return !(*this == other); }
+
+ private:
+  void advance();
+  const FlatTree* tree_{nullptr};
+  std::queue<NodeId> queue_;
+  NodeId current_{FlatTree::kNullNodeId};
+};
+
+/**
+ * @brief Allows to iterate over the nodes in the with BFS scheme.
+ *
+ */
+struct FlatTreeBFSRange {
+  const FlatTree* tree_{nullptr};
+  NodeId root_ = FlatTree::kNullNodeId;
+
+  FlatTreeBFSRange(const FlatTree* tree, NodeId root) : tree_(tree), root_(root) {}
+
+  FlatTreeBFSIterator begin() const { return FlatTreeBFSIterator(tree_, root_); }
+  FlatTreeBFSIterator end() const { return FlatTreeBFSIterator(); }
 };
 
 }  // namespace eray::vkren
