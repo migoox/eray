@@ -71,7 +71,6 @@ void FlatTree::delete_node(NodeId node_id) {
   set_dirty();
 
   // Delete all descendants
-  version_[node_index]++;
   for (auto descendant : FlatTreeDFSRange(this, node_id)) {
     version_[node_index_of(descendant)]++;
   }
@@ -88,7 +87,7 @@ NodeId FlatTree::copy_node(NodeId node_id, NodeId parent_id) {
   auto old_to_new        = std::unordered_map<NodeId, NodeId>();
   old_to_new[node_index] = create_node(parent_id);
 
-  for (auto node : FlatTreeBFSRange(this, node_id)) {
+  for (auto node : FlatTreeBFSRange(this, node_id, false)) {
     auto curr_node_index        = node_index_of(node);
     auto curr_parent_id         = index_to_id(nodes_[curr_node_index].parent);
     old_to_new[curr_node_index] = create_node(old_to_new[curr_parent_id]);
@@ -149,7 +148,6 @@ const std::vector<NodeId>& FlatTree::nodes_bfs_order() const {
   }
 
   bfs_order_cached_.reserve(node_count_);
-  bfs_order_cached_.push_back(kRootNodeId);
   for (auto node : FlatTreeBFSRange(this, kRootNodeId)) {
     dfs_preorder_cached_.push_back(node);
   }
@@ -198,10 +196,13 @@ void FlatTree::set_dirty() {
   bfs_dirty_ = true;
 }
 
-FlatTreeDFSIterator::FlatTreeDFSIterator(const FlatTree* tree, NodeId start) : tree_(tree), current_(start) {
+FlatTreeDFSIterator::FlatTreeDFSIterator(const FlatTree* tree, NodeId start, bool inclusive)
+    : tree_(tree), current_(start) {
   if (tree_ && tree_->exists(start)) {
     stack_.push(start);
-    advance();
+    if (!inclusive) {
+      advance();
+    }
   }
 }
 
@@ -229,10 +230,13 @@ void FlatTreeDFSIterator::advance() {
   }
 }
 
-FlatTreeBFSIterator::FlatTreeBFSIterator(const FlatTree* tree, NodeId start) : tree_(tree), current_(start) {
+FlatTreeBFSIterator::FlatTreeBFSIterator(const FlatTree* tree, NodeId start, bool inclusive)
+    : tree_(tree), current_(start) {
   if (tree_ && tree_->exists(start)) {
     queue_.push(start);
-    advance();
+    if (!inclusive) {
+      advance();
+    }
   }
 }
 

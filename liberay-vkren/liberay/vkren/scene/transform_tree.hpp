@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <liberay/math/mat_fwd.hpp>
 #include <liberay/math/quat.hpp>
 #include <liberay/math/vec_fwd.hpp>
@@ -9,13 +10,16 @@
 namespace eray::vkren {
 
 struct Transform {
-  math::Quatf rotation;
   math::Vec3f position;
+  math::Quatf rotation;
   math::Vec3f scale;
 };
 
 class TransformTree {
  public:
+  explicit TransformTree(std::nullptr_t) {}
+  [[nodiscard]] static TransformTree create(size_t max_nodes_count);
+
   [[nodiscard]] NodeId create_node(NodeId parent_id);
   [[nodiscard]] NodeId create_node() { return create_node(FlatTree::kRootNodeId); }
   [[nodiscard]] uint32_t node_level(NodeId node_id) const;
@@ -138,7 +142,9 @@ class TransformTree {
   void update();
 
  private:
-  FlatTree tree_;
+  TransformTree() = default;
+
+  FlatTree tree_ = FlatTree(nullptr);
   std::vector<Transform> local_transforms_;
   std::vector<Transform> world_transforms_;
 
@@ -151,6 +157,8 @@ class TransformTree {
 
   std::unordered_set<NodeId> dirty_nodes_;
   std::vector<NodeId> dirty_nodes_helper_;
+
+  size_t nodes_created_count_;
 };
 
 }  // namespace eray::vkren

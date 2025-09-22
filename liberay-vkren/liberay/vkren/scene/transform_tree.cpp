@@ -8,6 +8,31 @@
 
 namespace eray::vkren {
 
+TransformTree TransformTree::create(size_t max_nodes_count) {
+  auto transform_tree  = TransformTree();
+  transform_tree.tree_ = FlatTree::create(max_nodes_count);
+  transform_tree.local_transforms_.resize(max_nodes_count, Transform{
+                                                               .position = math::Vec3f::filled(0.F),
+                                                               .rotation = math::Quatf::one(),
+                                                               .scale    = math::Vec3f::filled(1.F),
+                                                           });
+  transform_tree.world_transforms_.resize(max_nodes_count, Transform{
+                                                               .position = math::Vec3f::filled(0.F),
+                                                               .rotation = math::Quatf::one(),
+                                                               .scale    = math::Vec3f::filled(1.F),
+                                                           });
+
+  transform_tree.local_model_mats_.resize(max_nodes_count, math::Mat4f::identity());
+  transform_tree.world_model_mats_.resize(max_nodes_count, math::Mat4f::identity());
+  transform_tree.local_model_inv_mats_.resize(max_nodes_count, math::Mat4f::identity());
+  transform_tree.world_model_inv_mats_.resize(max_nodes_count, math::Mat4f::identity());
+
+  transform_tree.name_.resize(max_nodes_count);
+  transform_tree.nodes_created_count_ = 0;
+
+  return transform_tree;
+}
+
 NodeId TransformTree::create_node(NodeId parent_id) {
   auto node_id = tree_.create_node(parent_id);
   auto index   = FlatTree::node_index_of(node_id);
@@ -17,6 +42,7 @@ NodeId TransformTree::create_node(NodeId parent_id) {
   local_transforms_[index].scale    = math::Vec3f(1.F, 1.F, 1.F);
 
   dirty_nodes_.insert(node_id);
+  name_[index] = std::format("Node {}", ++nodes_created_count_);
 
   return node_id;
 }
@@ -88,7 +114,7 @@ void TransformTree::update() {
       continue;
     }
 
-    for (auto descendant : FlatTreeBFSRange{&tree_, node}) {
+    for (auto descendant : FlatTreeBFSRange(&tree_, node)) {
       if (auto descendant_it = dirty_nodes_.find(descendant); descendant_it != dirty_nodes_.end()) {
         dirty_nodes_.erase(descendant_it);
       }

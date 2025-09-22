@@ -148,7 +148,7 @@ class FlatTreeDFSIterator {
   using difference_type   = std::ptrdiff_t;
 
   FlatTreeDFSIterator() = default;
-  FlatTreeDFSIterator(const FlatTree* tree, NodeId start);
+  FlatTreeDFSIterator(const FlatTree* tree, NodeId start, bool inclusive = true);
 
   reference operator*() const { return current_; }
   pointer operator->() const { return &current_; }
@@ -178,11 +178,13 @@ class FlatTreeDFSIterator {
  */
 struct FlatTreeDFSRange {
   const FlatTree* tree_{nullptr};
-  NodeId root_ = FlatTree::kNullNodeId;
+  NodeId root_    = FlatTree::kNullNodeId;
+  bool inclusive_ = true;
 
-  FlatTreeDFSRange(const FlatTree* tree, NodeId root) : tree_(tree), root_(root) {}
+  FlatTreeDFSRange(const FlatTree* tree, NodeId root, bool inclusive = true)
+      : tree_(tree), root_(root), inclusive_(inclusive) {}
 
-  FlatTreeDFSIterator begin() const { return FlatTreeDFSIterator(tree_, root_); }
+  FlatTreeDFSIterator begin() const { return FlatTreeDFSIterator(tree_, root_, inclusive_); }
   FlatTreeDFSIterator end() const { return FlatTreeDFSIterator(); }
 };
 
@@ -199,7 +201,7 @@ class FlatTreeBFSIterator {
   using difference_type   = std::ptrdiff_t;
 
   FlatTreeBFSIterator() = default;
-  FlatTreeBFSIterator(const FlatTree* tree, NodeId start);
+  FlatTreeBFSIterator(const FlatTree* tree, NodeId start, bool inclusive = true);
 
   reference operator*() const { return current_; }
   pointer operator->() const { return &current_; }
@@ -229,11 +231,13 @@ class FlatTreeBFSIterator {
  */
 struct FlatTreeBFSRange {
   const FlatTree* tree_{nullptr};
-  NodeId root_ = FlatTree::kNullNodeId;
+  NodeId root_    = FlatTree::kNullNodeId;
+  bool inclusive_ = true;
 
-  FlatTreeBFSRange(const FlatTree* tree, NodeId root) : tree_(tree), root_(root) {}
+  FlatTreeBFSRange(const FlatTree* tree, NodeId root, bool inclusive = true)
+      : tree_(tree), root_(root), inclusive_(inclusive) {}
 
-  FlatTreeBFSIterator begin() const { return FlatTreeBFSIterator(tree_, root_); }
+  FlatTreeBFSIterator begin() const { return FlatTreeBFSIterator(tree_, root_, inclusive_); }
   FlatTreeBFSIterator end() const { return FlatTreeBFSIterator(); }
 };
 
