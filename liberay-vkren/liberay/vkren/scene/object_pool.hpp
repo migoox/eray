@@ -16,6 +16,8 @@ concept CComposedIdExtractor = requires(std::size_t index, std::uint32_t version
 template <typename TComposedId, CComposedIdExtractor<TComposedId> TIdExtractor>
 class BasicObjectPool {
  public:
+  using Extractor = TIdExtractor;
+
   TComposedId create() {
     auto ind = free_.back();
     ++obj_count_;
@@ -36,7 +38,8 @@ class BasicObjectPool {
   size_t obj_count_{};
 };
 
-using ComposedId3232 = uint64_t;
+using ComposedId3232      = uint64_t;
+using ComposedId3232Index = uint32_t;
 struct ComposedId3232Extractor {
   [[nodiscard]] static size_t index_of(ComposedId3232 id) { return static_cast<size_t>(id & 0xFFFFFFFF); }
 
@@ -49,6 +52,9 @@ struct ComposedId3232Extractor {
     return (static_cast<uint64_t>(version) << 32) | static_cast<uint64_t>(index);
   }
 };
-using ObjectPool3232 = BasicObjectPool<ComposedId3232, ComposedId3232Extractor>;
+
+template <typename TId>
+  requires std::same_as<TId, ComposedId3232>
+using ObjectPool3232 = BasicObjectPool<TId, ComposedId3232Extractor>;
 
 }  // namespace eray::vkren
