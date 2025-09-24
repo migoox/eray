@@ -50,17 +50,17 @@ class SparseSet {
     dense_.pop_back();
   }
 
-  bool contains(TKey key) {
+  bool contains(TKey key) const {
     return static_cast<size_t>(key) < sparse_.size() && sparse_[static_cast<size_t>(key)] != NullKey;
   }
 
-  const TValueType& at(TKey key) {
+  const TValueType& at(TKey key) const {
     assert(contains(key) && "Key does not exist");
 
     return values_[sparse_[static_cast<size_t>(key)]];
   }
 
-  std::optional<TValueType> optional_at(TKey key) {
+  std::optional<TValueType> optional_at(TKey key) const {
     if (!contains(key)) {
       return std::nullopt;
     }
@@ -72,11 +72,11 @@ class SparseSet {
     sparse_.resize(max_key + 1, NullKey);
   }
 
-  TKey max_key() { return static_cast<TKey>(sparse_.size() - 1); }
+  TKey max_key() const { return static_cast<TKey>(sparse_.size() - 1); }
 
-  std::span<TValueType> keys() { return dense_; }
-  std::span<TValueType> values() { return values_; }
-  auto key_value_pairs() { return std::views::zip(dense_, values_); }
+  std::span<TValueType> keys() const { return dense_; }
+  std::span<TValueType> values() const { return values_; }
+  auto key_value_pairs() const { return std::views::zip(dense_, values_); }
 
  private:
   std::vector<TKey> sparse_;
