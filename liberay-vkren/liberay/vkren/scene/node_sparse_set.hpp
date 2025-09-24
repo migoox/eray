@@ -7,6 +7,6 @@ namespace eray::vkren {
 
 template <typename TValueType>
 
-using NodeSparseSet = SparseSet<NodeIndex, TValueType, FlatTree::kNullNodeIndex>();
+using NodeSparseSet = SparseSet<NodeIndex, TValueType, FlatTree::kNullNodeIndex>;
 
 }
