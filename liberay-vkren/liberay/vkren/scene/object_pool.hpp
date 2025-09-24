@@ -26,7 +26,9 @@ class BasicObjectPool {
 
   void remove(TComposedId id) {
     --obj_count_;
-    version_[TIdExtractor::index_of(id)]++;
+    auto index = TIdExtractor::index_of(id);
+    free_.push_back(index);
+    ++version_[index];
   }
 
   bool exists(TComposedId id) const { return version_[id] == TIdExtractor::version_of(id); }
