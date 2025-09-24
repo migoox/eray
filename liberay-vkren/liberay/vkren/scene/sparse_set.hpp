@@ -1,24 +1,26 @@
 #pragma once
 
 #include <concepts>
+#include <limits>
 #include <optional>
 #include <ranges>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace eray::vkren {
 
-template <typename TKey, typename TValueType, TKey NullKey>
+template <typename TKey, TKey NullKey, typename... TValues>
   requires std::convertible_to<TKey, size_t>
-class SparseSet {
+class BasicSparseSet {
  public:
-  static SparseSet create(TKey max_key) {
-    auto set = SparseSet();
+  static BasicSparseSet create(TKey max_key) {
+    auto set = BasicSparseSet();
     set.increase_max_key(max_key);
     return set;
   }
 
-  void insert(TKey key, TValueType value) {
+  void insert(TKey key, TValues&&... values) {
     if (sparse_.size() <= key) {
       increase_max_key(key);
     }
@@ -27,7 +29,8 @@ class SparseSet {
 
     sparse_[static_cast<size_t>(key)] = static_cast<TKey>(dense_.size());
     dense_.push_back(key);
-    values_.push_back(value);
+
+    push_back_values(std::forward<TValues>(values)...);
   }
 
   void remove(TKey key) {
@@ -44,7 +47,7 @@ class SparseSet {
     sparse_[static_cast<size_t>(key)] = NullKey;
 
     values_[curr_ind] = values_[last_ind];
-    values_.pop_back();
+    std::apply([](auto&... val) { (val.pop_back(), ...); }, values_);
 
     dense_[curr_ind] = dense_[last_ind];
     dense_.pop_back();
@@ -54,13 +57,15 @@ class SparseSet {
     return static_cast<size_t>(key) < sparse_.size() && sparse_[static_cast<size_t>(key)] != NullKey;
   }
 
-  const TValueType& at(TKey key) const {
+  template <typename TValue>
+  const TValue& at(TKey key) const {
     assert(contains(key) && "Key does not exist");
 
-    return values_[sparse_[static_cast<size_t>(key)]];
+    return std::get<TValue>(values_)[sparse_[static_cast<size_t>(key)]];
   }
 
-  std::optional<TValueType> optional_at(TKey key) const {
+  template <typename TValue>
+  std::optional<TValue> optional_at(TKey key) const {
     if (!contains(key)) {
       return std::nullopt;
     }
@@ -74,14 +79,27 @@ class SparseSet {
 
   TKey max_key() const { return static_cast<TKey>(sparse_.size() - 1); }
 
-  std::span<TValueType> keys() const { return dense_; }
-  std::span<TValueType> values() const { return values_; }
+  std::span<TKey> keys() const { return dense_; }
+
+  template <typename TValue>
+  std::span<TValue> values() const {
+    return std::get<TValue>(values_);
+  }
+
   auto key_value_pairs() const { return std::views::zip(dense_, values_); }
 
  private:
+  template <typename... TArgs>
+  void push_back_values(TArgs&&... args) {
+    (std::get<std::vector<TArgs>>(values_).push_back(std::forward<TArgs>(args)), ...);
+  }
+
   std::vector<TKey> sparse_;
   std::vector<TKey> dense_;
-  std::vector<TValueType> values_;
+  std::tuple<std::vector<TValues>...> values_;
 };
+
+template <typename TKey, typename... TValues>
+using SparseSet = BasicSparseSet<TKey, std::numeric_limits<TKey>::max(), TValues...>;
 
 }  // namespace eray::vkren
