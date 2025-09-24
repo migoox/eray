@@ -18,6 +18,8 @@ class BasicObjectPool {
  public:
   using Extractor = TIdExtractor;
 
+  // TODO: add constructors
+
   TComposedId create() {
     auto ind = free_.back();
     ++obj_count_;
