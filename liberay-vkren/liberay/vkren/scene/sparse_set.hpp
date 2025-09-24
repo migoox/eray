@@ -65,6 +65,13 @@ class BasicSparseSet {
   }
 
   template <typename TValue>
+  TValue& at(TKey key) const {
+    assert(contains(key) && "Key does not exist");
+
+    return std::get<TValue>(values_)[sparse_[static_cast<size_t>(key)]];
+  }
+
+  template <typename TValue>
   std::optional<TValue> optional_at(TKey key) const {
     if (!contains(key)) {
       return std::nullopt;
