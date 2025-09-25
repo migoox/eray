@@ -2,20 +2,22 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
+#include <liberay/vkren/scene/entity_pool.hpp>
 #include <queue>
 #include <stack>
 #include <vector>
 
 namespace eray::vkren {
 
-using NodeIndex = uint32_t;
+class FlatTreeDFSIterator;
+class FlatTreeBFSIterator;
 
-/**
- * @brief LSB 32 bits store node index and the rest of the 32 bits store the node version.
- *
- */
-using NodeId = uint64_t;
+struct NodeSurroundingInfo {
+  NodeId parent_id;
+  NodeId right_child_id;
+  NodeId left_sibling_id;
+  NodeId right_sibling_id;
+};
 
 /**
  * @brief This tree ALWAYS has a root node (`kRootNodeId`) which is a parent for every orphaned node. This manages tree
@@ -24,53 +26,27 @@ using NodeId = uint64_t;
  */
 class FlatTree {
  public:
-  static constexpr NodeIndex kRootNodeIndex = 0;
-  static constexpr NodeId kRootNodeId       = kRootNodeIndex;
-  static constexpr NodeIndex kNullNodeIndex = std::numeric_limits<NodeIndex>::max();
-  static constexpr NodeId kNullNodeId       = kNullNodeIndex;
+  static constexpr size_t kNullNodeIndex = EntityPool<NodeId>::kNullIndex;
+  static constexpr NodeId kNullNodeId    = EntityPool<NodeId>::kNullId;
+  static constexpr size_t kRootNodeIndex = 0;
+  static constexpr NodeId kRootNodeId    = NodeId{0};
 
   // https://opendsa-server.cs.vt.edu/ODSA/Books/Everything/html/GenTreeImplement.html
   struct Node {
-    NodeIndex parent{kNullNodeIndex};
-    NodeIndex right_child{kNullNodeIndex};
-    NodeIndex left_sibling{kNullNodeIndex};
-    NodeIndex right_sibling{kNullNodeIndex};
+    size_t parent{kNullNodeIndex};
+    size_t right_child{kNullNodeIndex};
+    size_t left_sibling{kNullNodeIndex};
+    size_t right_sibling{kNullNodeIndex};
   };
 
   explicit FlatTree(std::nullptr_t) {}
 
-  /**
-   * @brief Returns pair, where first element denotes index and the second one denotes the node version.
-   *
-   * @param node
-   * @return std::pair<uint32_t, uint32_t>
-   */
-  [[nodiscard]] static std::pair<uint32_t, uint32_t> decompose_node_id(NodeId node) {
-    auto index   = static_cast<uint32_t>(node & 0xFFFFFFFF);
-    auto version = static_cast<uint32_t>(node >> 32);
-    return {index, version};
-  }
-
-  [[nodiscard]] static uint32_t node_index_of(NodeId node) {
-    auto index = static_cast<uint32_t>(node & 0xFFFFFFFF);
-    return index;
-  }
-
-  [[nodiscard]] static uint32_t node_version_of(NodeId node) {
-    auto version = static_cast<uint32_t>(node >> 32);
-    return version;
-  }
-
-  [[nodiscard]] static uint64_t compose_node_id(NodeIndex index, uint32_t version) {
-    return (static_cast<uint64_t>(version) << 32) | static_cast<uint64_t>(index);
-  }
-
   [[nodiscard]] static FlatTree create(size_t max_nodes_count);
 
   [[nodiscard]] NodeId create_node(NodeId parent_id);
-  [[nodiscard]] NodeId create_node() { return create_node(kRootNodeIndex); }
+  [[nodiscard]] NodeId create_node() { return create_node(kRootNodeId); }
 
-  const Node& node_info(NodeId node_id) const;
+  NodeSurroundingInfo node_surrounding_info(NodeId node_id) const;
   NodeId parent_of(NodeId node_id) const;
   NodeId left_sibling_of(NodeId node_id) const;
   NodeId right_sibling_of(NodeId node_id) const;
@@ -115,19 +91,20 @@ class FlatTree {
 
   [[nodiscard]] bool exists(NodeId node_id) const;
 
-  [[nodiscard]] uint64_t index_to_id(NodeIndex index) const { return compose_node_id(index, version_[index]); }
+  [[nodiscard]] NodeId compose_id(size_t index) const { return nodes_pool_.compose_id(index); }
+  [[nodiscard]] static size_t index_of(NodeId id) { return EntityPool<NodeId>::index_of(id); }
 
  private:
+  FlatTree();
   void set_dirty();
 
-  FlatTree();
+  friend FlatTreeDFSIterator;
+  friend FlatTreeBFSIterator;
+
+  EntityPool<NodeId> nodes_pool_ = EntityPool<NodeId>(nullptr);
 
   std::vector<Node> nodes_;
   std::vector<uint32_t> level_;
-  std::vector<NodeIndex> version_;
-  size_t node_count_{};
-
-  std::vector<NodeIndex> free_nodes_;
 
   mutable std::vector<NodeId> dfs_preorder_cached_;
   mutable std::vector<NodeId> bfs_order_cached_;

@@ -35,7 +35,7 @@ TransformTree TransformTree::create(size_t max_nodes_count) {
 
 NodeId TransformTree::create_node(NodeId parent_id) {
   auto node_id = tree_.create_node(parent_id);
-  auto index   = FlatTree::node_index_of(node_id);
+  auto index   = FlatTree::index_of(node_id);
 
   local_transforms_[index].position = math::Vec3f(0.F, 0.F, 0.F);
   local_transforms_[index].rotation = math::Quatf();
@@ -71,26 +71,24 @@ const std::vector<NodeId>& TransformTree::nodes_bfs_order() const { return tree_
 const std::vector<NodeId>& TransformTree::nodes_dfs_preorder() const { return tree_.nodes_dfs_preorder(); }
 
 const Transform& TransformTree::local_transform(NodeId node_id) {
-  return local_transforms_[FlatTree::node_index_of(node_id)];
+  return local_transforms_[FlatTree::index_of(node_id)];
 }
 
 const Transform& TransformTree::world_transform(NodeId node_id) {
-  return world_transforms_[FlatTree::node_index_of(node_id)];
+  return world_transforms_[FlatTree::index_of(node_id)];
 }
 
 void TransformTree::set_local_transform(NodeId node_id, Transform transform) {
-  local_transforms_[FlatTree::node_index_of(node_id)] = std::move(transform);
+  local_transforms_[FlatTree::index_of(node_id)] = std::move(transform);
   dirty_nodes_.insert(node_id);
 }
 
-void TransformTree::set_name(NodeId node_id, std::string name) {
-  name_[FlatTree::node_index_of(node_id)] = std::move(name);
-}
+void TransformTree::set_name(NodeId node_id, std::string name) { name_[FlatTree::index_of(node_id)] = std::move(name); }
 
 void TransformTree::update() {
   // Update local model matrices
   for (auto node : dirty_nodes_) {
-    auto index        = FlatTree::node_index_of(node);
+    auto index        = FlatTree::index_of(node);
     const auto& trans = local_transforms_[index];
     local_model_mats_[index] =
         math::translation(trans.position) * math::rot_mat_from_quat(trans.rotation) * math::scale(trans.scale);
@@ -118,8 +116,8 @@ void TransformTree::update() {
       if (auto descendant_it = dirty_nodes_.find(descendant); descendant_it != dirty_nodes_.end()) {
         dirty_nodes_.erase(descendant_it);
       }
-      auto descendant_index = FlatTree::node_index_of(descendant);
-      auto parent_index     = FlatTree::node_index_of(tree_.parent_of(descendant));
+      auto descendant_index = FlatTree::index_of(descendant);
+      auto parent_index     = FlatTree::index_of(tree_.parent_of(descendant));
 
       world_model_mats_[descendant_index] = world_model_mats_[parent_index] * local_model_mats_[descendant_index];
       world_model_inv_mats_[descendant_index] =
@@ -131,31 +129,31 @@ void TransformTree::update() {
 }
 
 void TransformTree::set_local_position(NodeId node_id, math::Vec3f position) {
-  local_transforms_[FlatTree::node_index_of(node_id)].position = std::move(position);
+  local_transforms_[FlatTree::index_of(node_id)].position = std::move(position);
 }
 
 void TransformTree::set_local_rotation(NodeId node_id, math::Quatf rotation) {
-  local_transforms_[FlatTree::node_index_of(node_id)].rotation = std::move(rotation);
+  local_transforms_[FlatTree::index_of(node_id)].rotation = std::move(rotation);
 }
 
 void TransformTree::set_local_scale(NodeId node_id, math::Vec3f scale) {
-  local_transforms_[FlatTree::node_index_of(node_id)].scale = std::move(scale);
+  local_transforms_[FlatTree::index_of(node_id)].scale = std::move(scale);
 }
 
 const math::Mat4f& TransformTree::local_to_parent_matrix(NodeId node_id) {
-  return local_model_mats_[FlatTree::node_index_of(node_id)];
+  return local_model_mats_[FlatTree::index_of(node_id)];
 }
 
 const math::Mat4f& TransformTree::parent_to_local_matrix(NodeId node_id) {
-  return local_model_inv_mats_[FlatTree::node_index_of(node_id)];
+  return local_model_inv_mats_[FlatTree::index_of(node_id)];
 }
 
 const math::Mat4f& TransformTree::local_to_world_matrix(NodeId node_id) {
-  return world_model_mats_[FlatTree::node_index_of(node_id)];
+  return world_model_mats_[FlatTree::index_of(node_id)];
 }
 
 const math::Mat4f& TransformTree::world_to_local_matrix(NodeId node_id) {
-  return world_model_inv_mats_[FlatTree::node_index_of(node_id)];
+  return world_model_inv_mats_[FlatTree::index_of(node_id)];
 }
 
 }  // namespace eray::vkren
