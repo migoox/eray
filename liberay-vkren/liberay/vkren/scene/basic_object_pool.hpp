@@ -30,7 +30,8 @@ class BasicObjectPool {
   [[nodiscard]] static BasicObjectPool create(size_t max_objs_count) {
     auto obj_pool = BasicObjectPool();
 
-    obj_pool.free_      = std::views::iota(0U, max_objs_count) | std::views::reverse | std::ranges::to<std::vector>();
+    obj_pool.free_ =
+        std::views::iota(0U, max_objs_count) | std::views::reverse | std::ranges::to<std::vector<size_t>>();
     obj_pool.obj_count_ = 0;
     obj_pool.version_.resize(max_objs_count, 0);
   }
@@ -48,7 +49,9 @@ class BasicObjectPool {
     ++version_[index];
   }
 
-  [[nodiscard]] bool exists(TComposedId id) const { return version_[id] == TIdExtractor::version_of(id); }
+  [[nodiscard]] bool exists(TComposedId id) const {
+    return version_[TIdExtractor::index_of(id)] == TIdExtractor::version_of(id);
+  }
   [[nodiscard]] size_t count() const { return obj_count_; }
 
   [[nodiscard]] static size_t index_of(TComposedId id) { return Extractor::index_of(id); }

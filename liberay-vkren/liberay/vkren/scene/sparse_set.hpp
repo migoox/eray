@@ -37,46 +37,45 @@ class BasicSparseSet {
     auto last_ind = dense_.size() - 1;
     auto curr_ind = sparse_[static_cast<size_t>(key)];
     if (curr_ind == last_ind) {
-      values_.pop_back();
+      std::apply([](auto&... vecs) { (vecs.pop_back(), ...); }, values_);
       dense_.pop_back();
       sparse_[static_cast<size_t>(key)] = NullKey;
       return;
     }
 
-    sparse_[dense_[curr_ind]]         = curr_ind;
+    sparse_[dense_[last_ind]]         = curr_ind;
     sparse_[static_cast<size_t>(key)] = NullKey;
 
-    values_[curr_ind] = values_[last_ind];
-    std::apply([](auto&... val) { (val.pop_back(), ...); }, values_);
+    std::apply([&](auto&... vecs) { ((vecs[curr_ind] = vecs[last_ind], vecs.pop_back()), ...); }, values_);
 
     dense_[curr_ind] = dense_[last_ind];
     dense_.pop_back();
   }
 
-  bool contains(TKey key) const {
+  bool contains_key(TKey key) const {
     return static_cast<size_t>(key) < sparse_.size() && sparse_[static_cast<size_t>(key)] != NullKey;
   }
 
   template <typename TValue>
   const TValue& at(TKey key) const {
-    assert(contains(key) && "Key does not exist");
+    assert(contains_key(key) && "Key does not exist");
 
-    return std::get<TValue>(values_)[sparse_[static_cast<size_t>(key)]];
+    return std::get<std::vector<TValue>>(values_)[sparse_[static_cast<size_t>(key)]];
   }
 
   template <typename TValue>
   TValue& at(TKey key) {
-    assert(contains(key) && "Key does not exist");
+    assert(contains_key(key) && "Key does not exist");
 
-    return std::get<TValue>(values_)[sparse_[static_cast<size_t>(key)]];
+    return std::get<std::vector<TValue>>(values_)[sparse_[static_cast<size_t>(key)]];
   }
 
   template <typename TValue>
   std::optional<TValue> optional_at(TKey key) const {
-    if (!contains(key)) {
+    if (!contains_key(key)) {
       return std::nullopt;
     }
-    return at(key);
+    return at<TValue>(key);
   }
 
   void increase_max_key(TKey max_key) {
@@ -93,7 +92,10 @@ class BasicSparseSet {
     return std::get<TValue>(values_);
   }
 
-  auto key_value_pairs() const { return std::views::zip(dense_, values_); }
+  template <typename TValue>
+  auto key_value_pairs() const {
+    return std::views::zip(dense_, std::get<std::vector<TValue>>(values_));
+  }
 
  private:
   template <typename... TArgs>
