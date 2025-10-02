@@ -14,6 +14,7 @@ class FlatTreeBFSIterator;
 
 struct NodeSurroundingInfo {
   NodeId parent_id;
+  NodeId left_child_id;
   NodeId right_child_id;
   NodeId left_sibling_id;
   NodeId right_sibling_id;
@@ -34,6 +35,7 @@ class FlatTree {
   // https://opendsa-server.cs.vt.edu/ODSA/Books/Everything/html/GenTreeImplement.html
   struct Node {
     size_t parent{kNullNodeIndex};
+    size_t left_child{kNullNodeIndex};
     size_t right_child{kNullNodeIndex};
     size_t left_sibling{kNullNodeIndex};
     size_t right_sibling{kNullNodeIndex};
@@ -48,8 +50,8 @@ class FlatTree {
 
   NodeSurroundingInfo node_surrounding_info(NodeId node_id) const;
   NodeId parent_of(NodeId node_id) const;
-  NodeId left_sibling_of(NodeId node_id) const;
-  NodeId right_sibling_of(NodeId node_id) const;
+  std::optional<NodeId> left_sibling_of(NodeId node_id) const;
+  std::optional<NodeId> right_sibling_of(NodeId node_id) const;
   [[nodiscard]] uint32_t node_level(NodeId node_id) const;
 
   /**
@@ -80,6 +82,9 @@ class FlatTree {
   /**
    * @brief Changes the parent of the node with index `node_id` to the node with index `parent_id`.
    *
+   * @warning If `parent_id` is a
+   * descendant of `node_id` this function produces an undefined behaviour.
+   *
    * @param node_id
    * @param parent_id
    * @return NodeIndex
@@ -89,13 +94,32 @@ class FlatTree {
   const std::vector<NodeId>& nodes_bfs_order() const;
   const std::vector<NodeId>& nodes_dfs_preorder() const;
 
+  /**
+   * @brief If `node_id` equals `ancestor_id` then it's not an descendant. This function iterates over the subtree so
+   * it's heavy.
+   *
+   * @param node_id
+   * @param ancestor_id
+   * @return true
+   * @return false
+   */
+  [[nodiscard]] bool is_descendant(NodeId node_id, NodeId ancestor_id) const;
+
   [[nodiscard]] bool exists(NodeId node_id) const;
 
-  [[nodiscard]] NodeId compose_id(size_t index) const { return nodes_pool_.compose_id(index); }
+  [[nodiscard]] std::optional<NodeId> compose_id(size_t index) const {
+    auto result = nodes_pool_.compose_id(index);
+    if (result == kNullNodeId) {
+      return std::nullopt;
+    }
+    return result;
+  }
+
   [[nodiscard]] static size_t index_of(NodeId id) { return EntityPool<NodeId>::index_of(id); }
+  [[nodiscard]] static uint32_t version_of(NodeId id) { return EntityPool<NodeId>::version_of(id); }
 
  private:
-  FlatTree();
+  FlatTree() = default;
   void set_dirty();
 
   friend FlatTreeDFSIterator;
@@ -139,7 +163,7 @@ class FlatTreeDFSIterator {
     ++(*this);
     return tmp;
   }
-  bool operator==(const FlatTreeDFSIterator& other) const { return current_ == other.current_ && tree_ == other.tree_; }
+  bool operator==(const FlatTreeDFSIterator& other) const { return current_ == other.current_; }
   bool operator!=(const FlatTreeDFSIterator& other) const { return !(*this == other); }
 
  private:
@@ -178,7 +202,7 @@ class FlatTreeBFSIterator {
   using difference_type   = std::ptrdiff_t;
 
   FlatTreeBFSIterator() = default;
-  FlatTreeBFSIterator(const FlatTree* tree, NodeId start, bool inclusive = true);
+  FlatTreeBFSIterator(const FlatTree* tree, NodeId start, bool inclusive = true, bool dir_left_to_right = true);
 
   reference operator*() const { return current_; }
   pointer operator->() const { return &current_; }
@@ -192,7 +216,7 @@ class FlatTreeBFSIterator {
     ++(*this);
     return tmp;
   }
-  bool operator==(const FlatTreeBFSIterator& other) const { return current_ == other.current_ && tree_ == other.tree_; }
+  bool operator==(const FlatTreeBFSIterator& other) const { return current_ == other.current_; }
   bool operator!=(const FlatTreeBFSIterator& other) const { return !(*this == other); }
 
  private:
@@ -200,6 +224,7 @@ class FlatTreeBFSIterator {
   const FlatTree* tree_{nullptr};
   std::queue<NodeId> queue_;
   NodeId current_{FlatTree::kNullNodeId};
+  bool dir_left_to_right_{true};
 };
 
 /**
@@ -208,13 +233,14 @@ class FlatTreeBFSIterator {
  */
 struct FlatTreeBFSRange {
   const FlatTree* tree_{nullptr};
-  NodeId root_    = FlatTree::kNullNodeId;
-  bool inclusive_ = true;
+  NodeId root_            = FlatTree::kNullNodeId;
+  bool inclusive_         = true;
+  bool dir_left_to_right_ = true;
 
-  FlatTreeBFSRange(const FlatTree* tree, NodeId root, bool inclusive = true)
-      : tree_(tree), root_(root), inclusive_(inclusive) {}
+  FlatTreeBFSRange(const FlatTree* tree, NodeId root, bool inclusive = true, bool dir_left_to_right = true)
+      : tree_(tree), root_(root), inclusive_(inclusive), dir_left_to_right_(dir_left_to_right) {}
 
-  FlatTreeBFSIterator begin() const { return FlatTreeBFSIterator(tree_, root_, inclusive_); }
+  FlatTreeBFSIterator begin() const { return FlatTreeBFSIterator(tree_, root_, inclusive_, dir_left_to_right_); }
   FlatTreeBFSIterator end() const { return FlatTreeBFSIterator(); }
 };
 

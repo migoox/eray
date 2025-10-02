@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <cassert>
 #include <liberay/vkren/scene/entity_pool.hpp>
 #include <liberay/vkren/scene/flat_tree.hpp>
+#include <optional>
 #include <stack>
 #include <unordered_map>
 #include <vector>
@@ -18,13 +20,21 @@ NodeId FlatTree::create_node(NodeId parent_id) {
 
   nodes_[new_node_index] = Node{
       .parent        = parent_index,
+      .left_child    = kNullNodeIndex,
       .right_child   = kNullNodeIndex,
-      .left_sibling  = nodes_[new_node_index].right_child,
+      .left_sibling  = nodes_[parent_index].right_child,
       .right_sibling = kNullNodeIndex,
   };
-  nodes_[nodes_[new_node_index].right_child].right_child = new_node_index;
-  nodes_[parent_index].right_child                       = new_node_index;
-  level_[new_node_index]                                 = level_[parent_index] + 1;
+
+  if (nodes_[parent_index].right_child != kNullNodeIndex) {
+    nodes_[nodes_[parent_index].right_child].right_sibling = new_node_index;
+  }
+  if (nodes_[parent_index].left_child == kNullNodeIndex) {
+    nodes_[parent_index].left_child = new_node_index;
+  }
+  nodes_[parent_index].right_child = new_node_index;
+
+  level_[new_node_index] = level_[parent_index] + 1;
 
   set_dirty();
 
@@ -32,46 +42,78 @@ NodeId FlatTree::create_node(NodeId parent_id) {
 }
 
 NodeId FlatTree::parent_of(NodeId node_id) const {
+  assert(node_id != kNullNodeId && "Node must not be null");
+
   auto index = EntityPool<NodeId>::index_of(node_id);
-  return compose_id(nodes_[index].parent);
+  assert(nodes_[index].parent != kNullNodeIndex && "Parent must never be null");
+
+  return nodes_pool_.compose_id(nodes_[index].parent);
 }
-NodeId FlatTree::left_sibling_of(NodeId node_id) const {
+
+std::optional<NodeId> FlatTree::left_sibling_of(NodeId node_id) const {
+  assert(node_id != kNullNodeId && "Node must not be null");
+  if (node_id == kNullNodeId) {
+    return std::nullopt;
+  }
+
   auto index = EntityPool<NodeId>::index_of(node_id);
+  if (nodes_[index].left_sibling == kNullNodeIndex) {
+    return std::nullopt;
+  }
+
   return compose_id(nodes_[index].left_sibling);
 }
-NodeId FlatTree::right_sibling_of(NodeId node_id) const {
+
+std::optional<NodeId> FlatTree::right_sibling_of(NodeId node_id) const {
+  assert(node_id != kNullNodeId && "Node must not be null");
+  if (node_id == kNullNodeId) {
+    return std::nullopt;
+  }
+
   auto index = EntityPool<NodeId>::index_of(node_id);
+  if (nodes_[index].right_sibling == kNullNodeIndex) {
+    return std::nullopt;
+  }
+
   return compose_id(nodes_[index].right_sibling);
 }
 
 NodeSurroundingInfo FlatTree::node_surrounding_info(NodeId node_id) const {
+  assert(node_id != kNullNodeId && "Node must not be null");
+
   auto index       = EntityPool<NodeId>::index_of(node_id);
   const auto& node = nodes_[index];
   return NodeSurroundingInfo{
-      .parent_id        = compose_id(node.parent),
-      .right_child_id   = compose_id(node.right_child),
-      .left_sibling_id  = compose_id(node.left_sibling),
-      .right_sibling_id = compose_id(node.right_sibling),
+      .parent_id        = nodes_pool_.compose_id(node.parent),
+      .left_child_id    = nodes_pool_.compose_id(node.left_child),
+      .right_child_id   = nodes_pool_.compose_id(node.right_child),
+      .left_sibling_id  = nodes_pool_.compose_id(node.left_sibling),
+      .right_sibling_id = nodes_pool_.compose_id(node.right_sibling),
   };
 }
 
 void FlatTree::delete_node(NodeId node_id) {
   auto node_index = EntityPool<NodeId>::index_of(node_id);
-  assert(node_index != kNullNodeIndex && "Provided node must not be null");
   assert(node_index != kRootNodeIndex && "Root node must not be deleted");
   assert(exists(node_id) && "Node must exist");
 
   auto left   = nodes_[node_index].left_sibling;
   auto right  = nodes_[node_index].right_sibling;
   auto parent = nodes_[node_index].parent;
+
+  if (nodes_[parent].left_child == nodes_[parent].right_child) {
+    nodes_[parent].left_child = nodes_[parent].right_child = kNullNodeIndex;
+  } else if (node_index == nodes_[parent].left_child) {
+    nodes_[parent].left_child = right;
+  } else if (node_index == nodes_[parent].right_child) {
+    nodes_[parent].right_child = left;
+  }
+
   if (left != kNullNodeIndex) {
     nodes_[left].right_sibling = right;
   }
   if (right != kNullNodeIndex) {
     nodes_[right].left_sibling = left;
-  }
-  if (nodes_[parent].right_child == node_index) {
-    nodes_[parent].right_child = left;
   }
 
   set_dirty();
@@ -83,22 +125,19 @@ void FlatTree::delete_node(NodeId node_id) {
 }
 
 NodeId FlatTree::copy_node(NodeId node_id, NodeId parent_id) {
-  auto node_index   = EntityPool<NodeId>::index_of(node_id);
-  auto parent_index = EntityPool<NodeId>::index_of(parent_id);
-
-  assert(node_index != kNullNodeIndex && "Provided node must not be null");
-  assert(parent_index != kNullNodeIndex && "Parent must not be null");
   assert(exists(node_id) && "Node must exist");
   assert(exists(parent_id) && "Parent must exist");
 
   auto old_to_new     = std::unordered_map<NodeId, NodeId>();
-  old_to_new[node_id] = create_node(parent_id);
+  old_to_new[node_id] = create_node();  // use root and later change parent, this handles node_id == parent_id case
 
   for (auto curr_node_id : FlatTreeBFSRange(this, node_id, false)) {
     auto curr_node_index     = EntityPool<NodeId>::index_of(curr_node_id);
     auto curr_parent_id      = nodes_pool_.compose_id(nodes_[curr_node_index].parent);
     old_to_new[curr_node_id] = create_node(old_to_new[curr_parent_id]);
   }
+
+  change_parent(old_to_new[node_id], parent_id);
 
   set_dirty();
 
@@ -118,24 +157,33 @@ void FlatTree::change_parent(NodeId node_id, NodeId parent_id) {
   auto left   = nodes_[node_index].left_sibling;
   auto right  = nodes_[node_index].right_sibling;
   auto parent = nodes_[node_index].parent;
+
+  if (nodes_[parent].left_child == nodes_[parent].right_child) {
+    nodes_[parent].left_child = nodes_[parent].right_child = kNullNodeIndex;
+  } else if (node_index == nodes_[parent].left_child) {
+    nodes_[parent].left_child = right;
+  } else if (node_index == nodes_[parent].right_child) {
+    nodes_[parent].right_child = left;
+  }
+
   if (left != kNullNodeIndex) {
     nodes_[left].right_sibling = right;
   }
   if (right != kNullNodeIndex) {
     nodes_[right].left_sibling = left;
   }
-  if (nodes_[parent].right_child == node_index) {
-    nodes_[parent].right_child = left;
-  }
 
   nodes_[node_index].parent        = parent_index;
   nodes_[node_index].right_sibling = kNullNodeIndex;
   nodes_[node_index].left_sibling  = kNullNodeIndex;
 
-  auto right_child = nodes_[parent_index].right_child;
-  if (right_child != kNullNodeIndex) {
-    nodes_[right_child].right_sibling = node_index;
-    nodes_[node_index].left_sibling   = right_child;
+  level_[node_index] = level_[parent_index] + 1;
+
+  if (nodes_[parent_index].right_child != kNullNodeIndex) {
+    nodes_[nodes_[parent_index].right_child].right_sibling = node_index;
+  }
+  if (nodes_[parent_index].left_child == kNullNodeIndex) {
+    nodes_[parent_index].left_child = node_index;
   }
   nodes_[parent_index].right_child = node_index;
 
@@ -143,7 +191,7 @@ void FlatTree::change_parent(NodeId node_id, NodeId parent_id) {
 }
 
 uint32_t FlatTree::node_level(NodeId node_id) const {
-  assert(node_id != kNullNodeId && "Node must not be null");
+  assert(exists(node_id) && "Node must exist");
   auto node_index = EntityPool<NodeId>::index_of(node_id);
   return level_[node_index];
 }
@@ -190,14 +238,26 @@ FlatTree FlatTree::create(size_t max_nodes_count) {
   tree.nodes_.resize(max_nodes_count, Node{});
   tree.level_.resize(max_nodes_count, 0);
   tree.nodes_pool_ = EntityPool<NodeId>::create(max_nodes_count);
-
+  auto root_id     = tree.nodes_pool_.create();
+  assert(root_id == kRootNodeId && "Root index invariant not met");
   return tree;
 }
 
-bool FlatTree::exists(NodeId node_id) const {
-  assert(node_id != kNullNodeId && "Node must not be null");
-  return nodes_pool_.exists(node_id);
+bool FlatTree::is_descendant(NodeId node_id, NodeId ancestor_id) const {
+  assert(exists(node_id) && "Node must not be null");
+  assert(exists(ancestor_id) && "Ancestor node must not be null");
+
+  if (node_id == ancestor_id) {
+    return false;
+  }
+
+  std::ranges::any_of(FlatTreeBFSRange(this, ancestor_id, false),
+                      [node_id](auto& descendant_id) { return descendant_id == node_id; });
+
+  return false;
 }
+
+bool FlatTree::exists(NodeId node_id) const { return node_id != kNullNodeId && nodes_pool_.exists(node_id); }
 
 void FlatTree::set_dirty() {
   dfs_dirty_ = true;
@@ -205,9 +265,10 @@ void FlatTree::set_dirty() {
 }
 
 FlatTreeDFSIterator::FlatTreeDFSIterator(const FlatTree* tree, NodeId start, bool inclusive)
-    : tree_(tree), current_(start) {
+    : tree_(tree), current_(FlatTree::kNullNodeId) {
   if (tree_ && tree_->exists(start)) {
     stack_.push(start);
+    advance();
     if (!inclusive) {
       advance();
     }
@@ -215,7 +276,6 @@ FlatTreeDFSIterator::FlatTreeDFSIterator(const FlatTree* tree, NodeId start, boo
 }
 
 void FlatTreeDFSIterator::advance() {
-  assert(current_ != FlatTree::kNullNodeId && "Node must not be null");
   if (stack_.empty()) {
     current_ = FlatTree::kNullNodeId;
     return;
@@ -233,15 +293,16 @@ void FlatTreeDFSIterator::advance() {
   // push children
   auto child = tree_->nodes_[EntityPool<NodeId>::index_of(current_)].right_child;
   while (child != FlatTree::kNullNodeIndex) {
-    stack_.push(tree_->compose_id(child));
+    stack_.push(tree_->nodes_pool_.compose_id(child));
     child = tree_->nodes_[child].left_sibling;
   }
 }
 
-FlatTreeBFSIterator::FlatTreeBFSIterator(const FlatTree* tree, NodeId start, bool inclusive)
-    : tree_(tree), current_(start) {
+FlatTreeBFSIterator::FlatTreeBFSIterator(const FlatTree* tree, NodeId start, bool inclusive, bool dir_left_to_right)
+    : tree_(tree), current_(FlatTree::kNullNodeId), dir_left_to_right_(dir_left_to_right) {
   if (tree_ && tree_->exists(start)) {
     queue_.push(start);
+    advance();
     if (!inclusive) {
       advance();
     }
@@ -249,7 +310,6 @@ FlatTreeBFSIterator::FlatTreeBFSIterator(const FlatTree* tree, NodeId start, boo
 }
 
 void FlatTreeBFSIterator::advance() {
-  assert(current_ != FlatTree::kNullNodeId && "Node must not be null");
   if (queue_.empty()) {
     current_ = FlatTree::kNullNodeId;
     return;
@@ -265,10 +325,18 @@ void FlatTreeBFSIterator::advance() {
   }
 
   // push children
-  auto child = tree_->nodes_[EntityPool<NodeId>::index_of(current_)].right_child;
-  while (child != FlatTree::kNullNodeIndex) {
-    queue_.push(tree_->compose_id(child));
-    child = tree_->nodes_[child].left_sibling;
+  if (dir_left_to_right_) {
+    auto child = tree_->nodes_[EntityPool<NodeId>::index_of(current_)].left_child;
+    while (child != FlatTree::kNullNodeIndex) {
+      queue_.push(tree_->nodes_pool_.compose_id(child));
+      child = tree_->nodes_[child].right_sibling;
+    }
+  } else {
+    auto child = tree_->nodes_[EntityPool<NodeId>::index_of(current_)].right_child;
+    while (child != FlatTree::kNullNodeIndex) {
+      queue_.push(tree_->nodes_pool_.compose_id(child));
+      child = tree_->nodes_[child].left_sibling;
+    }
   }
 }
 

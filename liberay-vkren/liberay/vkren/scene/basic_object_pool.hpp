@@ -34,6 +34,7 @@ class BasicObjectPool {
         std::views::iota(0U, max_objs_count) | std::views::reverse | std::ranges::to<std::vector<size_t>>();
     obj_pool.obj_count_ = 0;
     obj_pool.version_.resize(max_objs_count, 0);
+    obj_pool.exist_.resize(max_objs_count, false);
 
     return obj_pool;
   }
@@ -42,32 +43,51 @@ class BasicObjectPool {
     auto ind = free_.back();
     free_.pop_back();
     ++obj_count_;
+    exist_[ind] = true;
     return TIdExtractor::compose_id(ind, version_[ind]);
   }
 
   void remove(TComposedId id) {
     --obj_count_;
-    auto index = TIdExtractor::index_of(id);
+    auto index    = TIdExtractor::index_of(id);
+    exist_[index] = false;
     free_.push_back(index);
     ++version_[index];
   }
 
   [[nodiscard]] bool exists(TComposedId id) const {
-    return version_[TIdExtractor::index_of(id)] == TIdExtractor::version_of(id);
+    auto index   = TIdExtractor::index_of(id);
+    auto version = TIdExtractor::version_of(id);
+    return index < exist_.size() && exist_[index] && version_[index] == version;
   }
+
   [[nodiscard]] size_t count() const { return obj_count_; }
+
+  /**
+   * @brief Returns null id if object indexed with `index` does not exist.
+   *
+   * @param index
+   * @return TComposedId
+   */
+  [[nodiscard]] TComposedId compose_id(size_t index) const {
+    if (index == kNullIndex || index >= exist_.size() || !exist_[index]) {
+      return kNullId;
+    }
+
+    return Extractor::compose_id(index, version_[index]);
+  }
 
   [[nodiscard]] static size_t index_of(TComposedId id) { return Extractor::index_of(id); }
   [[nodiscard]] static uint32_t version_of(TComposedId id) { return Extractor::version_of(id); }
   [[nodiscard]] static TComposedId compose_id(size_t index, uint32_t version) {
     return Extractor::compose_id(index, version);
   }
-  [[nodiscard]] TComposedId compose_id(size_t index) const { return Extractor::compose_id(index, version_[index]); }
 
  private:
   BasicObjectPool() = default;
 
   std::vector<uint32_t> version_;
+  std::vector<bool> exist_;
   std::vector<size_t> free_;
   size_t obj_count_{};
 };
