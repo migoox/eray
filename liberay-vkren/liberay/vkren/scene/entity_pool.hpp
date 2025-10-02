@@ -56,6 +56,9 @@ using MeshSurfaceId = EntityId<MeshPrimitiveTag>;
 struct MaterialTag {};
 using MaterialId = EntityId<MaterialTag>;
 
+struct TextureTag {};
+using TextureId = EntityId<TextureTag>;
+
 struct ShaderTag {};
 using ShaderId = EntityId<ShaderTag>;
 

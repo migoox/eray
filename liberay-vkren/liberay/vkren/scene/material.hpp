@@ -11,7 +11,7 @@
 namespace eray::vkren {
 
 struct Uniforms {
-  std::unordered_map<std::string, vk::Image> textures;
+  std::unordered_map<std::string, TextureId> textures;
 
   std::unordered_map<std::string, float> float_values;
   std::unordered_map<std::string, math::Vec2f> float2_values;
@@ -27,7 +27,7 @@ struct Uniforms {
 
   template <typename TType>
   TType get(util::zstring_view name) const {
-    if constexpr (std::is_same_v<TType, vk::Image>) {
+    if constexpr (std::is_same_v<TType, TextureId>) {
       return textures.at(name.c_str());
     } else if constexpr (std::is_same_v<TType, float>) {
       return float_values.at(name.c_str());

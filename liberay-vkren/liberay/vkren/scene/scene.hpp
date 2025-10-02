@@ -4,6 +4,7 @@
 #include <liberay/math/mat_fwd.hpp>
 #include <liberay/math/quat.hpp>
 #include <liberay/util/zstring_view.hpp>
+#include <liberay/vkren/image.hpp>
 #include <liberay/vkren/scene/camera.hpp>
 #include <liberay/vkren/scene/entity_pool.hpp>
 #include <liberay/vkren/scene/flat_tree.hpp>
@@ -11,6 +12,7 @@
 #include <liberay/vkren/scene/material.hpp>
 #include <liberay/vkren/scene/sparse_set.hpp>
 #include <liberay/vkren/scene/transform_tree.hpp>
+#include <unordered_set>
 #include <vulkan/vulkan.hpp>
 
 namespace eray::vkren {
@@ -32,9 +34,9 @@ struct Scene {
 
  private:
   TransformTree tree_;
-  SparseSet<EntityIndex, MeshId> mesh_nodes_;
-  SparseSet<EntityIndex, Camera> camera_nodes_;
-  SparseSet<EntityIndex, Light> light_nodes_;
+  EntitySparseSet<MeshId> mesh_nodes_;
+  EntitySparseSet<Camera> camera_nodes_;
+  EntitySparseSet<Light> light_nodes_;
 
   struct Meshes {
     EntityPool<MeshId> pool;
@@ -55,7 +57,7 @@ struct Scene {
      * @brief Every primitive mesh has it's GPUMeshPrimitive, but not necessarily MaterialId which might be null.
      *
      */
-    EntitySparseSet<MaterialId, GPUMeshSurface> data;
+    EntitySparseSet<MaterialId, GPUMeshSurface, std::unordered_set<MeshId>> data;
 
   } primitive_meshes_;
 
@@ -66,8 +68,14 @@ struct Scene {
      * @brief Every material has it's gpu data.
      *
      */
-    EntitySparseSet<Material, GPUMaterial> data;
+    EntitySparseSet<Material, GPUMaterial, std::unordered_set<MeshSurfaceId>> data;
   } materials_;
+
+  struct Textures {
+    EntityPool<TextureId> textures;
+
+    EntitySparseSet<ImageResource, std::unordered_set<MaterialId>> data;
+  };
 };
 
 }  // namespace eray::vkren

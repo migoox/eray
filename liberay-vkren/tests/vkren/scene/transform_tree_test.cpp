@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <liberay/vkren/scene/transform_tree.hpp>
-#include <set>
-#include <vector>
 
 using FlatTree      = eray::vkren::FlatTree;
 using TransformTree = eray::vkren::TransformTree;

@@ -46,7 +46,7 @@ class BasicSparseSet {
     sparse_[dense_[last_ind]]         = curr_ind;
     sparse_[static_cast<size_t>(key)] = NullKey;
 
-    std::apply([&](auto&... vecs) { ((vecs[curr_ind] = vecs[last_ind], vecs.pop_back()), ...); }, values_);
+    std::apply([&](auto&... vecs) { ((vecs[curr_ind] = std::move(vecs[last_ind]), vecs.pop_back()), ...); }, values_);
 
     dense_[curr_ind] = dense_[last_ind];
     dense_.pop_back();
