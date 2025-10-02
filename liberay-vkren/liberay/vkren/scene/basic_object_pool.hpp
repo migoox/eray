@@ -34,10 +34,13 @@ class BasicObjectPool {
         std::views::iota(0U, max_objs_count) | std::views::reverse | std::ranges::to<std::vector<size_t>>();
     obj_pool.obj_count_ = 0;
     obj_pool.version_.resize(max_objs_count, 0);
+
+    return obj_pool;
   }
 
   [[nodiscard]] TComposedId create() {
     auto ind = free_.back();
+    free_.pop_back();
     ++obj_count_;
     return TIdExtractor::compose_id(ind, version_[ind]);
   }

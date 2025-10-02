@@ -76,42 +76,42 @@ class TransformTree {
    *
    * @return Transform
    */
-  const Transform& local_transform(NodeId);
+  const Transform& local_transform(NodeId node_id);
 
   /**
    * @brief Returns world transform of the node. This function does not call `update()` implicitly.
    *
    * @return Transform
    */
-  const Transform& world_transform(NodeId);
+  const Transform& world_transform(NodeId node_id);
 
   /**
    * @brief Returns model matrix of the node.
    *
    * @return math::Mat4f
    */
-  const math::Mat4f& local_to_parent_matrix(NodeId);
+  const math::Mat4f& local_to_parent_matrix(NodeId node_id);
 
   /**
    * @brief Returns inverse of the model matrix of the node.
    *
    * @return math::Mat4f
    */
-  const math::Mat4f& parent_to_local_matrix(NodeId);
+  const math::Mat4f& parent_to_local_matrix(NodeId node_id);
 
   /**
    * @brief Returns global matrix of the node. This function does not call `update()` implicitly.
    *
    * @return math::Mat4f
    */
-  const math::Mat4f& local_to_world_matrix(NodeId);
+  const math::Mat4f& local_to_world_matrix(NodeId node_id);
 
   /**
    * @brief Returns inverse of the `local_to_world_matrix`.
    *
    * @return math::Mat4f
    */
-  const math::Mat4f& world_to_local_matrix(NodeId);
+  const math::Mat4f& world_to_local_matrix(NodeId node_id);
 
   /**
    * @brief Returns all current global transformation matrices. This function does not call `update()` implicitly.
