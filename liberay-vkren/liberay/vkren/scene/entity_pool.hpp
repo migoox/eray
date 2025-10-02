@@ -51,10 +51,13 @@ struct MeshTag {};
 using MeshId = EntityId<MeshTag>;
 
 struct MeshPrimitiveTag {};
-using MeshPrimitiveId = EntityId<MeshPrimitiveTag>;
+using MeshSurfaceId = EntityId<MeshPrimitiveTag>;
 
 struct MaterialTag {};
 using MaterialId = EntityId<MaterialTag>;
+
+struct ShaderTag {};
+using ShaderId = EntityId<ShaderTag>;
 
 struct LightTag {};
 using LightId = EntityId<LightTag>;
