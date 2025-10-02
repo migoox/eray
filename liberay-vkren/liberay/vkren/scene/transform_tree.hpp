@@ -4,15 +4,16 @@
 #include <liberay/math/mat_fwd.hpp>
 #include <liberay/math/quat.hpp>
 #include <liberay/math/vec_fwd.hpp>
+#include <liberay/vkren/scene/entity_pool.hpp>
 #include <liberay/vkren/scene/flat_tree.hpp>
 #include <unordered_set>
 
 namespace eray::vkren {
 
 struct Transform {
-  math::Vec3f position;
-  math::Quatf rotation;
-  math::Vec3f scale;
+  math::Vec3f position{0.F, 0.F, 0.F};
+  math::Quatf rotation{1.F, 0.F, 0.F, 0.F};
+  math::Vec3f scale{1.F, 1.F, 1.F};
 };
 
 class TransformTree {
@@ -70,6 +71,10 @@ class TransformTree {
    * @return false
    */
   bool exists(NodeId node_id) const;
+
+  NodeId parent_of(NodeId node_id) const;
+  std::optional<NodeId> left_sibling_of(NodeId node_id) const;
+  std::optional<NodeId> right_sibling_of(NodeId node_id) const;
 
   /**
    * @brief Returns local transform of the node. This function does not call `update()` implicitly.

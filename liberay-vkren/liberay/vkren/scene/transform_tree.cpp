@@ -130,14 +130,17 @@ void TransformTree::update() {
 
 void TransformTree::set_local_position(NodeId node_id, math::Vec3f position) {
   local_transforms_[FlatTree::index_of(node_id)].position = std::move(position);
+  dirty_nodes_.insert(node_id);
 }
 
 void TransformTree::set_local_rotation(NodeId node_id, math::Quatf rotation) {
   local_transforms_[FlatTree::index_of(node_id)].rotation = std::move(rotation);
+  dirty_nodes_.insert(node_id);
 }
 
 void TransformTree::set_local_scale(NodeId node_id, math::Vec3f scale) {
   local_transforms_[FlatTree::index_of(node_id)].scale = std::move(scale);
+  dirty_nodes_.insert(node_id);
 }
 
 const math::Mat4f& TransformTree::local_to_parent_matrix(NodeId node_id) {
@@ -155,5 +158,13 @@ const math::Mat4f& TransformTree::local_to_world_matrix(NodeId node_id) {
 const math::Mat4f& TransformTree::world_to_local_matrix(NodeId node_id) {
   return world_model_inv_mats_[FlatTree::index_of(node_id)];
 }
+
+bool TransformTree::exists(NodeId node_id) const { return tree_.exists(node_id); }
+
+NodeId TransformTree::parent_of(NodeId node_id) const { return tree_.parent_of(node_id); }
+
+std::optional<NodeId> TransformTree::left_sibling_of(NodeId node_id) const { return tree_.left_sibling_of(node_id); }
+
+std::optional<NodeId> TransformTree::right_sibling_of(NodeId node_id) const { return tree_.right_sibling_of(node_id); }
 
 }  // namespace eray::vkren
