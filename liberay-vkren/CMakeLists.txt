@@ -18,7 +18,7 @@ add_subdirectory(third_party/vma)
 
 configure_library(
     NAME liberay-vkren
-    DEPS_PUBLIC liberay-util liberay-math liberay-res liberay-os glfw Vulkan::Vulkan VMA
+    DEPS_PUBLIC liberay-util liberay-math liberay-res liberay-os glfw imgui Vulkan::Vulkan VMA
     COMPILE_DEFINITIONS
       VULKAN_HPP_NO_EXCEPTIONS
       VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
