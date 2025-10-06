@@ -18,7 +18,7 @@
 namespace eray::vkren {
 
 Result<SwapChain, Error> SwapChain::create(Device& device, std::shared_ptr<os::Window> window,
-                                           vk::SampleCountFlagBits sample_count) noexcept {
+                                           vk::SampleCountFlagBits sample_count, bool vsync) noexcept {
   auto swap_chain = SwapChain();
 
   window->set_event_callback<eray::os::FramebufferResizedEvent>([&swap_chain](const auto&) -> bool {
@@ -30,6 +30,7 @@ Result<SwapChain, Error> SwapChain::create(Device& device, std::shared_ptr<os::W
   auto framebuffer_size         = window->framebuffer_size();
   swap_chain.window_            = std::move(window);
   swap_chain.msaa_sample_count_ = sample_count;
+  swap_chain.vsync_             = vsync;
 
   TRY(swap_chain.create_swap_chain(device, framebuffer_size.width, framebuffer_size.height));
   TRY(swap_chain.create_image_views(device));
@@ -71,7 +72,7 @@ Result<void, Error> SwapChain::create_swap_chain(Device& device, uint32_t width,
   //
   // Note: Only the VK_PRESENT_MODE_MAILBOX_KHR is guaranteed to be available
 
-  auto swap_present_mode = choose_swap_presentMode(available_present_modes);
+  auto swap_present_mode = choose_swap_present_mode(available_present_modes, vsync_);
 
   // Basic Surface capabilities (min/max number of images in the swap chain, min/max width and height of images)
   auto surface_capabilities = device.physical_device().getSurfaceCapabilitiesKHR(device.surface());
@@ -86,11 +87,11 @@ Result<void, Error> SwapChain::create_swap_chain(Device& device, uint32_t width,
   };
 
   // It is recommended to request at least one more image than the minimum
-  auto min_img_count = std::max(3U, surface_capabilities.minImageCount + 1);
-  if (surface_capabilities.maxImageCount > 0 && min_img_count > surface_capabilities.maxImageCount) {
+  min_image_count_ = std::max(3U, surface_capabilities.minImageCount + 1);
+  if (surface_capabilities.maxImageCount > 0 && min_image_count_ > surface_capabilities.maxImageCount) {
     // 0 is a special value that means that there is no maximum
 
-    min_img_count = surface_capabilities.maxImageCount;
+    min_image_count_ = surface_capabilities.maxImageCount;
   }
 
   auto swap_chain_info = vk::SwapchainCreateInfoKHR{
@@ -102,7 +103,7 @@ Result<void, Error> SwapChain::create_swap_chain(Device& device, uint32_t width,
 
       // Minimum number of images (image buffers). More images reduce the risk of waiting for the GPU to finish
       // rendering, which improves performance
-      .minImageCount = min_img_count,  //
+      .minImageCount = min_image_count_,  //
 
       .imageFormat     = swap_surface_format.format,      //
       .imageColorSpace = swap_surface_format.colorSpace,  //
@@ -316,12 +317,20 @@ vk::SurfaceFormatKHR SwapChain::choose_swap_surface_format(const std::vector<vk:
   return available_formats[0];
 }
 
-vk::PresentModeKHR SwapChain::choose_swap_presentMode(const std::vector<vk::PresentModeKHR>& available_present_modes) {
-  auto mode_it = std::ranges::find_if(available_present_modes, [](const auto& mode) {
-    return mode ==
-           vk::PresentModeKHR::eMailbox;  // Note: good if energy usage is not a concern, avoid for mobile devices
-  });
+vk::PresentModeKHR SwapChain::choose_swap_present_mode(const std::vector<vk::PresentModeKHR>& available_present_modes,
+                                                       bool vsync) {
+  if (!vsync) {
+    auto mode_it = std::ranges::find_if(available_present_modes,
+                                        [](const auto& mode) { return mode == vk::PresentModeKHR::eImmediate; });
+    if (mode_it != available_present_modes.end()) {
+      return *mode_it;
+    }
+  }
 
+  // Note: Mailbox is a good solution only if energy usage is not a concern, avoid for mobile devices, see:
+  // https://docs.vulkan.org/samples/latest/samples/performance/swapchain_images/README.html#_best_practice_summary
+  auto mode_it = std::ranges::find_if(available_present_modes,
+                                      [](const auto& mode) { return mode == vk::PresentModeKHR::eMailbox; });
   if (mode_it != available_present_modes.end()) {
     return *mode_it;
   }

@@ -649,4 +649,10 @@ void Device::push_deletor(std::function<void()>&& function) { main_deletion_queu
 
 Device::~Device() { destroy(); }
 
+void Device::immediate_command_submit(const std::function<void(vk::CommandBuffer)>& function) const {
+  auto cmd_buf = begin_single_time_commands();
+  function(cmd_buf);
+  end_single_time_commands(cmd_buf);
+}
+
 }  // namespace eray::vkren
