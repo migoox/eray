@@ -3,6 +3,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <cstddef>
+#include <liberay/os/window/window.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
@@ -10,8 +11,6 @@
 #include <liberay/vkren/image.hpp>
 #include <memory>
 #include <vulkan/vulkan.hpp>
-
-#include "liberay/os/window/window.hpp"
 
 namespace eray::vkren {
 
@@ -33,7 +32,8 @@ class SwapChain {
   SwapChain& operator=(SwapChain&&) noexcept = default;
 
   static Result<SwapChain, Error> create(Device& device, std::shared_ptr<os::Window>,
-                                         vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) noexcept;
+                                         vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1,
+                                         bool vsync                           = true) noexcept;
 
   vk::raii::SwapchainKHR* operator->() noexcept { return &swap_chain_; }
   const vk::raii::SwapchainKHR* operator->() const noexcept { return &swap_chain_; }
@@ -133,6 +133,16 @@ class SwapChain {
   Result<void, Error> recreate();
 
   /**
+   * @brief Minimum number of images (image buffers). More images reduce the risk of waiting for the GPU to finish
+   * rendering, which improves performance.
+   *
+   * @return uint32_t
+   */
+  uint32_t min_image_count() const { return min_image_count_; }
+
+  bool vsync_enabled() const { return vsync_; }
+
+  /**
    * @brief Returns a window to which swap chain presents its images.
    *
    * @return const os::Window&
@@ -153,7 +163,8 @@ class SwapChain {
                                                                 vk::FormatFeatureFlags features);
 
   static vk::SurfaceFormatKHR choose_swap_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats);
-  static vk::PresentModeKHR choose_swap_presentMode(const std::vector<vk::PresentModeKHR>& available_present_modes);
+  static vk::PresentModeKHR choose_swap_present_mode(const std::vector<vk::PresentModeKHR>& available_present_modes,
+                                                     bool vsync);
 
  private:
   /**
@@ -165,6 +176,10 @@ class SwapChain {
    *
    */
   vk::raii::SwapchainKHR swap_chain_ = vk::raii::SwapchainKHR(nullptr);
+
+  uint32_t min_image_count_{};
+
+  bool vsync_;
 
   std::vector<vk::Image> images_;
 
