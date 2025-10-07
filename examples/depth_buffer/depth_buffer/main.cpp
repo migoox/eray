@@ -14,7 +14,7 @@
 #include <liberay/util/panic.hpp>
 #include <liberay/util/try.hpp>
 #include <liberay/util/zstring_view.hpp>
-#include <liberay/vkren/application.hpp>
+#include <liberay/vkren/app.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/descriptor.hpp>

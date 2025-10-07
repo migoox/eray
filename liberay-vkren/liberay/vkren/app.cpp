@@ -8,7 +8,7 @@
 #include <liberay/os/window_api.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
-#include <liberay/vkren/application.hpp>
+#include <liberay/vkren/app.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <version/version.hpp>
