@@ -2,13 +2,11 @@
 
 #include <imgui/imgui.h>
 
-#include <functional>
 #include <liberay/os/window/window.hpp>
 #include <liberay/vkren/deletion_queue.hpp>
 #include <liberay/vkren/descriptor.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/swap_chain.hpp>
-#include <optional>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
@@ -23,24 +21,15 @@ struct VulkanApplicationContext {
    *
    */
   vk::raii::Context vk_context_;
-
   Device device_                            = Device(nullptr);
   SwapChain swap_chain_                     = SwapChain(nullptr);
   DescriptorSetLayoutManager dsl_manager_   = DescriptorSetLayoutManager(nullptr);
   DescriptorAllocator dsl_allocator_        = DescriptorAllocator(nullptr);
   std::shared_ptr<eray::os::Window> window_ = nullptr;
-
-  static constexpr int kMaxFramesInFlight = 2;
 };
 
 struct VulkanApplicationCreateInfo {
   std::string app_name = "Application";
-
-  /**
-   * @brief Allows for custom Vulkan Device creation. Useful when you want to set non default profiles.
-   *
-   */
-  std::optional<std::function<Device()>> device_creator = std::nullopt;
 
   /**
    * @brief Enables MSAA.
@@ -53,79 +42,94 @@ struct VulkanApplicationCreateInfo {
    *
    */
   bool vsync = true;
-
-  /**
-   * @brief If not provided and the `enable_msaa` is set to `true`, maximum usable sample count will be used.
-   *
-   */
-  std::optional<std::function<vk::SampleCountFlagBits(const vk::raii::PhysicalDevice& physical_device)>>
-      msaa_sample_count_getter = std::nullopt;
-
-  /**
-   * @brief Invoked when clear color value is needed.
-   *
-   */
-  std::optional<std::function<vk::ClearColorValue()>> clear_color_value_getter = std::nullopt;
-
-  /**
-   * @brief Invoked when clear depth stencil value is needed.
-   *
-   */
-  std::optional<std::function<vk::ClearDepthStencilValue()>> clear_depth_stencil_getter = std::nullopt;
-
-  /**
-   * @brief Called after the window and Vulkan initialization and before the main application loop.
-   *
-   */
-  std::function<void(VulkanApplicationContext& ctx)> on_init = [](VulkanApplicationContext&) {};
-
-  /**
-   * @brief Called right after the window is initialized.
-   *
-   */
-  std::function<void(os::Window& window)> on_window_setup = [](os::Window&) {};
-
-  /**
-   * @brief Called after the new image is acquired, before the graphics command buffer is recorded. Useful for UBO
-   * updating.
-   *
-   */
-  std::function<void(VulkanApplicationContext& ctx, uint32_t image_index)> on_frame_prepare =
-      [](VulkanApplicationContext&, uint32_t) {};
-
-  /**
-   * @brief Called right after the imgui is prepared for drawing a new frame.
-   *
-   */
-  std::function<void(VulkanApplicationContext& ctx)> on_imgui = [](VulkanApplicationContext&) {
-    ImGui::ShowDemoWindow();
-  };
-
-  /**
-   * @brief Invoked when graphics command buffer gets recorded.
-   *
-   */
-  std::function<void(VulkanApplicationContext& ctx, vk::raii::CommandBuffer& graphics_command_buffer,
-                     uint32_t image_index)>
-      on_record_graphics = [](VulkanApplicationContext&, vk::raii::CommandBuffer&, uint32_t) {};
-
-  /**
-   * @brief Called after the main loop is exited before anything has been destroyed.
-   *
-   */
-  std::function<void()> on_destroy = []() {};
 };
 
 class VulkanApplication {
  public:
   explicit VulkanApplication(std::nullptr_t) {}
-  static VulkanApplication create(VulkanApplicationCreateInfo&& create_info);
+
+  VulkanApplication(const VulkanApplication&)                = delete;
+  VulkanApplication(VulkanApplication&&) noexcept            = default;
+  VulkanApplication& operator=(const VulkanApplication&)     = delete;
+  VulkanApplication& operator=(VulkanApplication&&) noexcept = default;
+
+  template <typename TDerived>
+  static TDerived create(VulkanApplicationCreateInfo&& create_info = {}) {
+    auto app         = TDerived();
+    app.create_info_ = std::move(create_info);
+    return app;
+  }
+
+  virtual ~VulkanApplication() = default;
 
   void run();
 
- private:
+ protected:
+  /**
+   * @brief Allows for custom Vulkan Device creation. Useful when you want to set non default profiles.
+   *
+   */
+  virtual Device create_device();
+
+  /**
+   * @brief If not provided and the `enable_msaa` is set to `true`,
+   * maximum usable sample count will be used.
+   */
+  virtual vk::SampleCountFlagBits get_msaa_sample_count(const vk::raii::PhysicalDevice& physical_device);
+
+  /**
+   * @brief Invoked when clear color value is needed.
+   */
+  virtual vk::ClearColorValue get_clear_color_value() {
+    return vk::ClearColorValue(std::array<float, 4>{0.0F, 0.0F, 0.0F, 1.0F});
+  }
+
+  /**
+   * @brief Invoked when clear depth stencil value is needed.
+   */
+  virtual vk::ClearDepthStencilValue get_clear_depth_stencil_value() {
+    return vk::ClearDepthStencilValue{.depth = 1.0F, .stencil = 0};
+  }
+
+  /**
+   * @brief Called right after the window is initialized.
+   */
+  virtual void on_window_setup(os::Window& /*window*/) {}
+
+  /**
+   * @brief Called after the window and Vulkan initialization and before the main loop.
+   */
+  virtual void on_init(VulkanApplicationContext& /*ctx*/) {}
+
+  /**
+   * @brief Called after a new image is acquired, before recording the graphics command buffer.
+   * Useful for updating UBOs.
+   */
+  virtual void on_frame_prepare(VulkanApplicationContext& /*ctx*/, uint32_t /*image_index*/) {}
+
+  /**
+   * @brief Called right after ImGui is prepared for drawing a new frame.
+   */
+  virtual void on_imgui(VulkanApplicationContext& /*ctx*/) { ImGui::ShowDemoWindow(); }
+
+  /**
+   * @brief Invoked when the graphics command buffer gets recorded.
+   */
+  virtual void on_record_graphics(VulkanApplicationContext& /*ctx*/,
+                                  vk::raii::CommandBuffer& /*graphics_command_buffer*/, uint32_t /*image_index*/) {}
+
+  /**
+   * @brief Called after the main loop exits, before destruction.
+   */
+  virtual void on_destroy() {}
+
+  // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
+  // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
+  static constexpr int kMaxFramesInFlight = 2;
+
   VulkanApplication() = default;
 
+ private:
   void init_vk();
   void init_imgui();
 
@@ -142,15 +146,10 @@ class VulkanApplication {
   void destroy();
 
   void create_dsl();
-  void create_device();
   void create_swap_chain();
   void create_command_pool();
   void create_command_buffers();
   void create_sync_objs();
-
-  // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
-  // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
-  static constexpr int kMaxFramesInFlight = VulkanApplicationContext::kMaxFramesInFlight;
 
  private:
   VulkanApplicationContext context_;
