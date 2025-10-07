@@ -8,7 +8,7 @@
 #include <liberay/os/window_api.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/panic.hpp>
-#include <liberay/vkren/application.hpp>
+#include <liberay/vkren/app.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <version/version.hpp>
@@ -19,24 +19,25 @@
 
 namespace eray::vkren {
 
-VulkanApplication VulkanApplication::create(VulkanApplicationCreateInfo&& create_info) {
-  auto app         = VulkanApplication();
-  app.create_info_ = std::move(create_info);
-  return app;
-}
-
 void VulkanApplication::run() {
   context_.window_ = eray::os::System::instance().create_window().or_panic("Could not create a window");
-  create_info_.on_window_setup(*context_.window_);
+  on_window_setup(*context_.window_);
   init_vk();
-  create_info_.on_init(context_);
   init_imgui();
+  on_init(context_);
   main_loop();
   destroy();
 }
 
+Device VulkanApplication::create_device() {
+  auto desktop_profile                  = Device::CreateInfo::DesktopProfile{};
+  auto device_info                      = desktop_profile.get(*context_.window_);
+  device_info.app_info.pApplicationName = create_info_.app_name.c_str();
+  return Device::create(context_.vk_context_, device_info).or_panic("Could not create a logical device wrapper");
+}
+
 void VulkanApplication::init_vk() {
-  create_device();
+  context_.device_ = create_device();
   create_swap_chain();
   create_dsl();
   create_command_pool();
@@ -44,32 +45,47 @@ void VulkanApplication::init_vk() {
   create_sync_objs();
 }
 
-void VulkanApplication::create_device() {
-  if (create_info_.device_creator) {
-    context_.device_ = (*create_info_.device_creator)();
-  } else {
-    auto desktop_profile                  = vkren::Device::CreateInfo::DesktopProfile{};
-    auto device_info                      = desktop_profile.get(*context_.window_);
-    device_info.app_info.pApplicationName = "Compute Particles Example";
-    context_.device_ =
-        vkren::Device::create(context_.vk_context_, device_info).or_panic("Could not create a logical device wrapper");
-  }
-}
-
 void VulkanApplication::main_loop() {
+  auto previous_time = Clock::now();
   while (!context_.window_->should_close()) {
     context_.window_->poll_events();
+    auto current_time = Clock::now();
+    auto delta        = current_time - previous_time;
+    previous_time     = current_time;
+
+    lag_ += std::chrono::duration_cast<Duration>(delta);
+    second_ += std::chrono::duration_cast<Duration>(delta);
+    while (lag_ >= kTickTime) {
+      on_physics_update(context_, kTickTime);
+
+      lag_ -= kTickTime;
+      time_ += kTickTime;
+      ++ticks_;
+    }
+
+    ++frames_;
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    create_info_.on_imgui(context_);
-    ImGuiIO& io = ImGui::GetIO();
+    on_imgui(context_);
     ImGui::Render();
+    render_frame(delta);
+
+    ImGuiIO& io = ImGui::GetIO();
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
       ImGui::UpdatePlatformWindows();
       ImGui::RenderPlatformWindowsDefault();
     }
-    draw_frame();
+
+    if (second_ > 1s) {
+      uint16_t seconds = static_cast<uint16_t>(std::chrono::duration_cast<std::chrono::seconds>(second_).count());
+
+      fps_    = static_cast<uint16_t>(frames_ / seconds);
+      tps_    = static_cast<uint16_t>(ticks_ / seconds);
+      frames_ = 0;
+      ticks_  = 0;
+      second_ = 0ns;
+    }
   }
 
   // Since draw frame operations are async, when the main loop ends the drawing operations may still be going on.
@@ -77,13 +93,14 @@ void VulkanApplication::main_loop() {
   context_.device_->waitIdle();
 }
 
-void VulkanApplication::draw_frame() {
+void VulkanApplication::render_frame(Duration delta) {
   // A binary (there is also a timeline semaphore) semaphore is used to add order between queue operations (work
   // submitted to the queue). Semaphores are used for both -- to order work inside the same queue and between
   // different queues. The waiting happens on GPU only, the host (CPU) is not blocked.
   //
   // A fence is used on CPU. Unlike the semaphores the vkWaitForFence is blocking the host.
 
+  // The solution below is not correct:
   while (vk::Result::eTimeout ==
          context_.device_->waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
     ;
@@ -93,7 +110,7 @@ void VulkanApplication::draw_frame() {
   uint32_t image_index{};
   if (auto acquire_opt = context_.swap_chain_.acquire_next_image(
           UINT64_MAX, *present_finished_semaphores_[current_semaphore_], nullptr)) {
-    if (acquire_opt->status != vkren::SwapChain::AcquireResult::Status::Success) {
+    if (acquire_opt->status != SwapChain::AcquireResult::Status::Success) {
       return;
     }
     image_index = acquire_opt->image_index;
@@ -102,7 +119,7 @@ void VulkanApplication::draw_frame() {
     return;
   }
 
-  create_info_.on_frame_prepare(context_, current_frame_);
+  on_frame_prepare(context_, current_frame_, delta);
 
   context_.device_->resetFences(*in_flight_fences_[current_frame_]);
   graphics_command_buffers_[current_frame_].reset();
@@ -146,31 +163,28 @@ void VulkanApplication::draw_frame() {
 }
 
 void VulkanApplication::create_dsl() {
-  context_.dsl_manager_   = vkren::DescriptorSetLayoutManager::create(context_.device_);
-  auto ratios             = vkren::DescriptorPoolSizeRatio::create_default();
-  context_.dsl_allocator_ = vkren::DescriptorAllocator::create_and_init(context_.device_, 100, ratios).or_panic();
+  context_.dsl_manager_   = DescriptorSetLayoutManager::create(context_.device_);
+  auto ratios             = DescriptorPoolSizeRatio::create_default();
+  context_.dsl_allocator_ = DescriptorAllocator::create_and_init(context_.device_, 100, ratios).or_panic();
 }
 
 void VulkanApplication::destroy() {
-  create_info_.on_destroy();
+  on_destroy();
   deletion_queue_.flush();
   context_.swap_chain_.destroy();
 
   eray::util::Logger::succ("Successfully destroyed the vulkan application");
 }
 
-void VulkanApplication::create_swap_chain() {
-  auto sample_count = vk::SampleCountFlagBits::e1;
-  if (create_info_.enable_msaa) {
-    if (create_info_.msaa_sample_count_getter) {
-      sample_count = (*create_info_.msaa_sample_count_getter)(context_.device_.physical_device());
-    } else {
-      sample_count = context_.device_.max_usable_sample_count();
-    }
-  }
+vk::SampleCountFlagBits VulkanApplication::get_msaa_sample_count(const vk::raii::PhysicalDevice& /*physical_device*/) {
+  return context_.device_.max_usable_sample_count();
+}
 
-  context_.swap_chain_ = vkren::SwapChain::create(context_.device_, context_.window_, sample_count, create_info_.vsync)
-                             .or_panic("Could not create a swap chain");
+void VulkanApplication::create_swap_chain() {
+  context_.swap_chain_ =
+      SwapChain::create(context_.device_, context_.window_, get_msaa_sample_count(context_.device_.physical_device()),
+                        create_info_.vsync)
+          .or_panic("Could not create a swap chain");
 }
 
 void VulkanApplication::create_command_pool() {
@@ -189,7 +203,7 @@ void VulkanApplication::create_command_pool() {
   };
 
   command_pool_ =
-      vkren::Result(context_.device_->createCommandPool(command_pool_info)).or_panic("Could not create a command pool");
+      Result(context_.device_->createCommandPool(command_pool_info)).or_panic("Could not create a command pool");
 }
 
 void VulkanApplication::create_command_buffers() {
@@ -206,8 +220,8 @@ void VulkanApplication::create_command_buffers() {
       .commandBufferCount = kMaxFramesInFlight,                //
   };
 
-  auto result = vkren::Result(context_.device_->allocateCommandBuffers(alloc_info))
-                    .or_panic("Could not allocate a command buffer");
+  auto result =
+      Result(context_.device_->allocateCommandBuffers(alloc_info)).or_panic("Could not allocate a command buffer");
   std::ranges::move(result | std::views::take(kMaxFramesInFlight), graphics_command_buffers_.begin());
 }
 
@@ -241,14 +255,8 @@ void VulkanApplication::create_sync_objs() {
 }
 
 void VulkanApplication::record_graphics_command_buffer(size_t frame_index, uint32_t image_index) {
-  auto clear_color_value         = vk::ClearColorValue(0.0F, 0.0F, 0.0F, 1.0F);
-  auto clear_depth_stencil_value = vk::ClearDepthStencilValue(1.0F, 0);
-  if (create_info_.clear_color_value_getter) {
-    clear_color_value = (*create_info_.clear_color_value_getter)();
-  }
-  if (create_info_.clear_depth_stencil_getter) {
-    clear_depth_stencil_value = (*create_info_.clear_depth_stencil_getter)();
-  }
+  auto clear_color_value         = get_clear_color_value();
+  auto clear_depth_stencil_value = get_clear_depth_stencil_value();
 
   context_.swap_chain_.begin_rendering(graphics_command_buffers_[frame_index], image_index, clear_color_value,
                                        clear_depth_stencil_value);
@@ -257,7 +265,7 @@ void VulkanApplication::record_graphics_command_buffer(size_t frame_index, uint3
   // pixels outside the scissored rectangle. We want to draw to entire framebuffer.
   graphics_command_buffers_[frame_index].setScissor(
       0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = context_.swap_chain_.extent()});
-  create_info_.on_record_graphics(context_, graphics_command_buffers_[frame_index], static_cast<uint32_t>(frame_index));
+  on_record_graphics(context_, graphics_command_buffers_[frame_index], static_cast<uint32_t>(frame_index));
 
   {
     vk::CommandBuffer buff = graphics_command_buffers_[frame_index];
