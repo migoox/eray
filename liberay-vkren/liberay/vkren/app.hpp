@@ -2,6 +2,7 @@
 
 #include <imgui/imgui.h>
 
+#include <chrono>
 #include <liberay/os/window/window.hpp>
 #include <liberay/vkren/deletion_queue.hpp>
 #include <liberay/vkren/descriptor.hpp>
@@ -12,6 +13,8 @@
 #include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
+
+using namespace std::chrono_literals;
 
 struct VulkanApplicationContext {
   /**
@@ -46,6 +49,9 @@ struct VulkanApplicationCreateInfo {
 
 class VulkanApplication {
  public:
+  using Duration = std::chrono::nanoseconds;
+  using Clock    = std::chrono::high_resolution_clock;
+
   explicit VulkanApplication(std::nullptr_t) {}
 
   VulkanApplication(const VulkanApplication&)                = delete;
@@ -101,11 +107,13 @@ class VulkanApplication {
    */
   virtual void on_init(VulkanApplicationContext& /*ctx*/) {}
 
+  virtual void on_physics_update(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
+
   /**
    * @brief Called after a new image is acquired, before recording the graphics command buffer.
    * Useful for updating UBOs.
    */
-  virtual void on_frame_prepare(VulkanApplicationContext& /*ctx*/, uint32_t /*image_index*/) {}
+  virtual void on_frame_prepare(VulkanApplicationContext& /*ctx*/, uint32_t /*image_index*/, Duration /*delta*/) {}
 
   /**
    * @brief Called right after ImGui is prepared for drawing a new frame.
@@ -123,6 +131,10 @@ class VulkanApplication {
    */
   virtual void on_destroy() {}
 
+  std::uint16_t fps() const { return fps_; }
+  std::uint16_t tps() const { return tps_; }
+  Duration time() const { return time_; }
+
   // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
   // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
   static constexpr int kMaxFramesInFlight = 2;
@@ -134,7 +146,7 @@ class VulkanApplication {
   void init_imgui();
 
   void main_loop();
-  void draw_frame();
+  void render_frame(Duration delta);
 
   /**
    * @brief Writes the commands we what to execute into a command buffer
@@ -153,6 +165,15 @@ class VulkanApplication {
 
  private:
   VulkanApplicationContext context_;
+
+  static constexpr Duration kTickTime = 16666us;  // 60 TPS = 16.6(6) ms/t
+  Duration time_                      = 0ns;
+  std::uint16_t fps_                  = 0;
+  std::uint16_t tps_                  = 0;
+  Duration lag_                       = 0ns;
+  Duration second_                    = 0ns;
+  uint16_t frames_                    = 0U;
+  uint16_t ticks_                     = 0U;
 
   /**
    * @brief Command pools manage the memory that is used to store the buffers and command buffers are allocated from

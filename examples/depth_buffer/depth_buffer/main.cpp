@@ -48,9 +48,7 @@ struct Vertex {
     return vk::VertexInputBindingDescription{
         // Index of the binding in the array of bindings
         .binding = 0,
-
-        // Specifies the number of bytes from one entry to the next
-        .stride = sizeof(Vertex),
+        .stride  = sizeof(Vertex),
 
         // VK_VERTEX_INPUT_RATE_VERTEX: move to the next data entry after each vertex
         // VK_VERTEX_INPUT_RATE_INSTANCE: move to the next data entry after each instance (instanced rendering)
@@ -63,14 +61,9 @@ struct Vertex {
         vk::VertexInputAttributeDescription{
             // References the location directive of the input in the vertex shader
             .location = 0,
-
-            // From which binding the per-vertex data comes.
-            .binding = 0,
-
-            // Describes the type of data for the attribute
-            .format = vk::Format::eR32G32B32Sfloat,
-
-            .offset = offsetof(Vertex, pos),
+            .binding  = 0,
+            .format   = vk::Format::eR32G32B32Sfloat,
+            .offset   = offsetof(Vertex, pos),
         },
         vk::VertexInputAttributeDescription{
             .location = 1,
@@ -167,7 +160,7 @@ class DepthBufferApplication : public vkren::VulkanApplication {
 
  public:
   void on_init(vkren::VulkanApplicationContext& ctx) override {
-    // -- Buffers setup ------------------------------------------------------------------------------------------------
+    // == Buffers setup ================================================================================================
     {
       auto vb = VertexBuffer::create();
 
@@ -181,7 +174,6 @@ class DepthBufferApplication : public vkren::VulkanApplication {
                         .or_panic("Could not create a Vertex Buffer");
       ind_buffer_.write(indices_region).or_panic("Could not fill the index buffer");
 
-      // Copying to uniform buffer each frame means that staging buffer makes no sense.
       // We should have multiple buffers, because multiple frames may be in flight at the same time and
       // we don’t want to update the buffer in preparation of the next frame while a previous one is still
       // reading from it!
@@ -193,11 +185,13 @@ class DepthBufferApplication : public vkren::VulkanApplication {
         auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(ctx.device_, size_bytes)
                        .or_panic("Could not create the uniform buffer");
         uniform_buffers_.emplace_back(std::move(ubo.buffer));
+
+        // Copying to uniform buffer each frame means that staging buffer makes no sense.
         uniform_buffers_mapped_.emplace_back(ubo.mapped_data);
       }
     }
 
-    // -- Images setup -------------------------------------------------------------------------------------------------
+    // == Images setup =================================================================================================
     {
       auto img = eray::res::Image::load_from_path(eray::os::System::executable_dir() / "assets" / "cad.jpeg")
                      .or_panic("cad is not there :(");
@@ -225,7 +219,7 @@ class DepthBufferApplication : public vkren::VulkanApplication {
       txt_sampler_ = vkren::Result(ctx.device_->createSampler(sampler_info)).or_panic("Could not create the sampler");
     }
 
-    // -- Descriptors setup --------------------------------------------------------------------------------------------
+    // == Descriptors setup ============================================================================================
     {
       auto result = vkren::DescriptorSetBuilder::create(ctx.dsl_manager_, ctx.dsl_allocator_)
                         .with_binding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
@@ -245,7 +239,7 @@ class DepthBufferApplication : public vkren::VulkanApplication {
       }
     }
 
-    // -- Shaders + Graphics Pipeline ----------------------------------------------------------------------------------
+    // == Shaders + Graphics Pipeline ==================================================================================
     {
       auto main_binary =
           eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
@@ -270,14 +264,11 @@ class DepthBufferApplication : public vkren::VulkanApplication {
     }
   }
 
-  void on_frame_prepare(vkren::VulkanApplicationContext& ctx, uint32_t image_index) override {
+  void on_frame_prepare(vkren::VulkanApplicationContext& ctx, uint32_t image_index, Duration /*delta*/) override {
     auto window_size = ctx.window_->window_size();
 
-    static auto start_time = std::chrono::high_resolution_clock::now();
-    auto curr_time         = std::chrono::high_resolution_clock::now();
-    auto time              = std::chrono::duration<float>(curr_time - start_time).count();
-
-    auto s = std::sin(time * 0.7F);
+    auto t = std::chrono::duration<float>(time()).count();
+    auto s = std::sin(t * 0.7F);
     s      = (s * s - 0.5F) * 90.F;
     UniformBufferObject ubo{};
     ubo.model = eray::math::rotation_axis(eray::math::radians(s), eray::math::Vec3f(0.F, 1.F, 0.F));
@@ -320,7 +311,7 @@ class DepthBufferApplication : public vkren::VulkanApplication {
 };
 
 int main() {
-  // -- Setup singletons -----------------------------------------------------------------------------------------------
+  // == Setup singletons ===============================================================================================
   using Logger = eray::util::Logger;
   using System = eray::os::System;
 
@@ -330,11 +321,11 @@ int main() {
       eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");
   System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
 
-  // -- Application ----------------------------------------------------------------------------------------------------
+  // == Application ====================================================================================================
   auto app = eray::vkren::VulkanApplication::create<DepthBufferApplication>();
   app.run();
 
-  // -- Cleanup --------------------------------------------------------------------------------------------------------
+  // == Cleanup ========================================================================================================
   eray::os::System::instance().terminate();
 
   return 0;

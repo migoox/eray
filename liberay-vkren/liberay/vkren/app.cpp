@@ -46,19 +46,46 @@ void VulkanApplication::init_vk() {
 }
 
 void VulkanApplication::main_loop() {
+  auto previous_time = Clock::now();
   while (!context_.window_->should_close()) {
     context_.window_->poll_events();
+    auto current_time = Clock::now();
+    auto delta        = current_time - previous_time;
+    previous_time     = current_time;
+
+    lag_ += std::chrono::duration_cast<Duration>(delta);
+    second_ += std::chrono::duration_cast<Duration>(delta);
+    while (lag_ >= kTickTime) {
+      on_physics_update(context_, kTickTime);
+
+      lag_ -= kTickTime;
+      time_ += kTickTime;
+      ++ticks_;
+    }
+
+    ++frames_;
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     on_imgui(context_);
-    ImGuiIO& io = ImGui::GetIO();
     ImGui::Render();
+    render_frame(delta);
+
+    ImGuiIO& io = ImGui::GetIO();
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
       ImGui::UpdatePlatformWindows();
       ImGui::RenderPlatformWindowsDefault();
     }
-    draw_frame();
+
+    if (second_ > 1s) {
+      uint16_t seconds = static_cast<uint16_t>(std::chrono::duration_cast<std::chrono::seconds>(second_).count());
+
+      fps_    = static_cast<uint16_t>(frames_ / seconds);
+      tps_    = static_cast<uint16_t>(ticks_ / seconds);
+      frames_ = 0;
+      ticks_  = 0;
+      second_ = 0ns;
+    }
   }
 
   // Since draw frame operations are async, when the main loop ends the drawing operations may still be going on.
@@ -66,7 +93,7 @@ void VulkanApplication::main_loop() {
   context_.device_->waitIdle();
 }
 
-void VulkanApplication::draw_frame() {
+void VulkanApplication::render_frame(Duration delta) {
   // A binary (there is also a timeline semaphore) semaphore is used to add order between queue operations (work
   // submitted to the queue). Semaphores are used for both -- to order work inside the same queue and between
   // different queues. The waiting happens on GPU only, the host (CPU) is not blocked.
@@ -92,7 +119,7 @@ void VulkanApplication::draw_frame() {
     return;
   }
 
-  on_frame_prepare(context_, current_frame_);
+  on_frame_prepare(context_, current_frame_, delta);
 
   context_.device_->resetFences(*in_flight_fences_[current_frame_]);
   graphics_command_buffers_[current_frame_].reset();
