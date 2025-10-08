@@ -14,7 +14,7 @@ function(configure_binary)
 
     set(CMAKE_CXX_STANDARD 23)
 
-    message(STATUS "Configuring example ${PROJECT_NAME}")
+    message(STATUS "Configuring binary ${PROJECT_NAME}")
     list(APPEND CMAKE_MESSAGE_INDENT "  ")
 
     # Executable target configuration
