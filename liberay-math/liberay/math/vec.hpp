@@ -30,7 +30,7 @@ struct Vec {
   auto x() const
     requires(N >= 1)
   {
-    return data[1];
+    return data[0];
   }
   auto y() const
     requires(N >= 2)
