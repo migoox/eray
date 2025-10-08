@@ -48,7 +48,12 @@ void VulkanApplication::main_loop() {
   auto previous_time = Clock::now();
   while (!context_.window_->should_close()) {
     context_.window_->poll_events();
-    on_input_events_polled(context_);
+    auto& io = ImGui::GetIO();
+    if (!io.WantCaptureMouse && !io.WantCaptureKeyboard) {
+      on_input_events_polled(context_);
+    }
+    context_.window_->process_queued_events();
+
     auto current_time = Clock::now();
     auto delta        = current_time - previous_time;
     previous_time     = current_time;
@@ -71,7 +76,6 @@ void VulkanApplication::main_loop() {
     ImGui::Render();
     render_frame(delta);
 
-    ImGuiIO& io = ImGui::GetIO();
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
       ImGui::UpdatePlatformWindows();
       ImGui::RenderPlatformWindowsDefault();
