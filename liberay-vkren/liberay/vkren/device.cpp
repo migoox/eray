@@ -265,14 +265,23 @@ Result<void, Error> Device::pick_physical_device(const CreateInfo& info) noexcep
   auto candidates = std::multimap<uint32_t, vk::raii::PhysicalDevice>();
   for (const auto& device : devices) {
     auto props          = device.getProperties();  // name, type, supported Vulkan version
+    auto features       = device.getFeatures();
     auto queue_families = device.getQueueFamilyProperties();
     auto extensions     = device.enumerateDeviceExtensionProperties();
+
+    if (features.tessellationShader == vk::False) {
+      util::Logger::info(
+          "Physical device with name {} is not suitable. This device will not be considered. Reason: Tessellation not "
+          "supported.",
+          std::string_view(props.deviceName));
+    }
 
     auto supported = vk::False;
     vpGetPhysicalDeviceProfileSupport(*instance_, *device, &info.profile_properties, &supported);
     if (!supported) {
-      util::Logger::info("Physical device with name {} is not suitable. This device will not be considered.",
-                         std::string_view(props.deviceName));
+      util::Logger::info(
+          "Physical device with name {} is not suitable for the requested profile. This device will not be considered.",
+          std::string_view(props.deviceName));
       continue;
     }
 
@@ -422,11 +431,14 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
 
   // == Logical Device Creation ========================================================================================
 
-  auto device_create_info = vk::DeviceCreateInfo{
-      .queueCreateInfoCount    = 1,
-      .pQueueCreateInfos       = &device_queue_create_info,
-      .enabledExtensionCount   = static_cast<uint32_t>(info.device_extensions.size()),
-      .ppEnabledExtensionNames = info.device_extensions.data(),
+  auto features               = physical_device_.getFeatures();
+  features.tessellationShader = vk::True;
+  auto device_create_info     = vk::DeviceCreateInfo{
+          .queueCreateInfoCount    = 1,
+          .pQueueCreateInfos       = &device_queue_create_info,
+          .enabledExtensionCount   = static_cast<uint32_t>(info.device_extensions.size()),
+          .ppEnabledExtensionNames = info.device_extensions.data(),
+          .pEnabledFeatures        = &features,
   };
 
   auto vp_device_create_info                    = VpDeviceCreateInfo{};

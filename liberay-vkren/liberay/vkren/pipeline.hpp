@@ -18,9 +18,28 @@ struct GraphicsPipelineBuilder {
   GraphicsPipelineBuilder() = delete;
   static GraphicsPipelineBuilder create(const SwapChain& swap_chain);
 
+  GraphicsPipelineBuilder& with_shaders(vk::ShaderModule shader_module,
+                                        util::zstring_view vertex_shader_entry_point   = "",
+                                        util::zstring_view fragment_shader_entry_point = "") {
+    with_shaders(shader_module, shader_module, vertex_shader_entry_point, fragment_shader_entry_point);
+    return *this;
+  }
+
   GraphicsPipelineBuilder& with_shaders(vk::ShaderModule vertex_shader, vk::ShaderModule fragment_shader,
                                         util::zstring_view vertex_shader_entry_point   = "",
                                         util::zstring_view fragment_shader_entry_point = "");
+
+  GraphicsPipelineBuilder& with_tessellation_stage(vk::ShaderModule shader_module, uint32_t control_point_count,
+                                                   util::zstring_view tess_control_shader_entry_point = "",
+                                                   util::zstring_view tess_eval_shader_entry_point    = "") {
+    with_tessellation_stage(shader_module, shader_module, control_point_count, tess_control_shader_entry_point,
+                            tess_eval_shader_entry_point);
+    return *this;
+  }
+  GraphicsPipelineBuilder& with_tessellation_stage(vk::ShaderModule tess_control_shader,
+                                                   vk::ShaderModule tess_eval_shader, uint32_t control_point_count,
+                                                   util::zstring_view tess_control_shader_entry_point = "",
+                                                   util::zstring_view tess_eval_shader_entry_point    = "");
 
   GraphicsPipelineBuilder& with_primitive_topology(vk::PrimitiveTopology topology,
                                                    bool primitive_restart_enable = false);
@@ -88,11 +107,16 @@ struct GraphicsPipelineBuilder {
   vk::PipelineDepthStencilStateCreateInfo _depth_stencil;
   vk::PipelineColorBlendAttachmentState _color_blend;
   vk::PipelineLayoutCreateInfo _pipeline_layout;
+  vk::PipelineTessellationStateCreateInfo _tess_stage;
   vk::Format _color_attachment_format;
   vk::Format _depth_stencil_format;
 
-  static constexpr util::zstring_view kDefaultVertexShaderEntryPoint   = "mainVert";
-  static constexpr util::zstring_view kDefaultFragmentShaderEntryPoint = "mainFrag";
+  bool tess_stage{false};
+
+  static constexpr util::zstring_view kDefaultVertexShaderEntryPoint              = "mainVert";
+  static constexpr util::zstring_view kDefaultFragmentShaderEntryPoint            = "mainFrag";
+  static constexpr util::zstring_view kDefaultTessellationControlShaderEntryPoint = "mainTessControl";
+  static constexpr util::zstring_view kDefaultTessellationEvalShaderEntryPoint    = "mainTessEval";
 
  private:
   explicit GraphicsPipelineBuilder(const SwapChain& swap_chain);

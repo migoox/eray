@@ -109,6 +109,26 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_shaders(vk::ShaderModule 
   return *this;
 }
 
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_tessellation_stage(
+    vk::ShaderModule tess_control_shader, vk::ShaderModule tess_eval_shader, uint32_t control_point_count,
+    util::zstring_view tess_control_shader_entry_point, util::zstring_view tess_eval_shader_entry_point) {
+  _shader_stages.push_back(vk::PipelineShaderStageCreateInfo{
+      .stage  = vk::ShaderStageFlagBits::eTessellationControl,
+      .module = tess_control_shader,
+      .pName  = tess_control_shader_entry_point.empty() ? kDefaultTessellationControlShaderEntryPoint.c_str()
+                                                        : tess_control_shader_entry_point.c_str(),
+  });
+  _shader_stages.push_back(vk::PipelineShaderStageCreateInfo{
+      .stage  = vk::ShaderStageFlagBits::eTessellationEvaluation,
+      .module = tess_eval_shader,
+      .pName  = tess_eval_shader_entry_point.empty() ? kDefaultTessellationEvalShaderEntryPoint.c_str()
+                                                     : tess_eval_shader_entry_point.c_str(),
+  });
+  tess_stage                     = true;
+  _tess_stage.patchControlPoints = control_point_count;
+  return *this;
+}
+
 Result<Pipeline, Error> GraphicsPipelineBuilder::build(const Device& device) {
   // == Shader stage ===================================================================================================
   assert(!_shader_stages.empty() && "Shader stages must be provided");
@@ -157,6 +177,7 @@ Result<Pipeline, Error> GraphicsPipelineBuilder::build(const Device& device) {
             .pStages             = _shader_stages.data(),
             .pVertexInputState   = &_vertex_input_state,
             .pInputAssemblyState = &_input_assembly,
+            .pTessellationState  = tess_stage ? &_tess_stage : nullptr,
             .pViewportState      = &_viewport_state,
             .pRasterizationState = &_rasterizer,
             .pMultisampleState   = &_multisampling,

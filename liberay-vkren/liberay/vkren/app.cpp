@@ -269,6 +269,16 @@ void VulkanApplication::record_graphics_command_buffer(size_t frame_index, uint3
   // pixels outside the scissored rectangle. We want to draw to entire framebuffer.
   graphics_command_buffers_[frame_index].setScissor(
       0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = context_.swap_chain_.extent()});
+  graphics_command_buffers_[frame_index].setViewport(
+      0, vk::Viewport{
+             .x      = 0.0F,
+             .y      = 0.0F,
+             .width  = static_cast<float>(context_.swap_chain_.extent().width),
+             .height = static_cast<float>(context_.swap_chain_.extent().height),
+             // Note: min and max depth must be between [0.0F, 1.0F] and min might be higher than max.
+             .minDepth = 0.0F,
+             .maxDepth = 1.0F  //
+         });
   on_record_graphics(context_, graphics_command_buffers_[frame_index], static_cast<uint32_t>(frame_index));
 
   {
