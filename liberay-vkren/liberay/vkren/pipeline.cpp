@@ -124,8 +124,15 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_tessellation_stage(
       .pName  = tess_eval_shader_entry_point.empty() ? kDefaultTessellationEvalShaderEntryPoint.c_str()
                                                      : tess_eval_shader_entry_point.c_str(),
   });
-  tess_stage                     = true;
-  _tess_stage.patchControlPoints = patch_control_point_count;
+  tess_stage = true;
+
+  return *this;
+}
+
+GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_tessellation_domain_origin(
+    vk::TessellationDomainOrigin domain_origin) {
+  _tess_domain_origin.domainOrigin = domain_origin;
+  _tess_stage.pNext                = &_tess_domain_origin;
   return *this;
 }
 

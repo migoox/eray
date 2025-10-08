@@ -42,6 +42,9 @@ struct GraphicsPipelineBuilder {
                                                    util::zstring_view tess_control_shader_entry_point = "",
                                                    util::zstring_view tess_eval_shader_entry_point    = "");
 
+  // https://docs.vulkan.org/spec/latest/chapters/tessellation.html#img-tessellation-topology-ul
+  GraphicsPipelineBuilder& with_tessellation_domain_origin(vk::TessellationDomainOrigin domain_origin);
+
   GraphicsPipelineBuilder& with_primitive_topology(vk::PrimitiveTopology topology,
                                                    bool primitive_restart_enable = false);
 
@@ -109,6 +112,7 @@ struct GraphicsPipelineBuilder {
   vk::PipelineColorBlendAttachmentState _color_blend;
   vk::PipelineLayoutCreateInfo _pipeline_layout;
   vk::PipelineTessellationStateCreateInfo _tess_stage;
+  vk::PipelineTessellationDomainOriginStateCreateInfoKHR _tess_domain_origin;
   vk::Format _color_attachment_format;
   vk::Format _depth_stencil_format;
 
