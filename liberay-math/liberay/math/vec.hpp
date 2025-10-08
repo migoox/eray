@@ -48,6 +48,27 @@ struct Vec {
     return data[3];
   }
 
+  auto x(auto x)
+    requires(N >= 1)
+  {
+    data[0] = x;
+  }
+  auto y(auto y)
+    requires(N >= 2)
+  {
+    data[1] = y;
+  }
+  auto z(auto z)
+    requires(N >= 3)
+  {
+    data[2] = z;
+  }
+  auto w(auto w)
+    requires(N >= 4)
+  {
+    data[3] = w;
+  }
+
   /**
    * @brief Default constructor that sets all components of a vector to 0
    *
