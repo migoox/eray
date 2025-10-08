@@ -29,15 +29,16 @@ struct GraphicsPipelineBuilder {
                                         util::zstring_view vertex_shader_entry_point   = "",
                                         util::zstring_view fragment_shader_entry_point = "");
 
-  GraphicsPipelineBuilder& with_tessellation_stage(vk::ShaderModule shader_module, uint32_t control_point_count,
+  GraphicsPipelineBuilder& with_tessellation_stage(vk::ShaderModule shader_module, uint32_t patch_control_point_count,
                                                    util::zstring_view tess_control_shader_entry_point = "",
                                                    util::zstring_view tess_eval_shader_entry_point    = "") {
-    with_tessellation_stage(shader_module, shader_module, control_point_count, tess_control_shader_entry_point,
+    with_tessellation_stage(shader_module, shader_module, patch_control_point_count, tess_control_shader_entry_point,
                             tess_eval_shader_entry_point);
     return *this;
   }
   GraphicsPipelineBuilder& with_tessellation_stage(vk::ShaderModule tess_control_shader,
-                                                   vk::ShaderModule tess_eval_shader, uint32_t control_point_count,
+                                                   vk::ShaderModule tess_eval_shader,
+                                                   uint32_t patch_control_point_count,
                                                    util::zstring_view tess_control_shader_entry_point = "",
                                                    util::zstring_view tess_eval_shader_entry_point    = "");
 

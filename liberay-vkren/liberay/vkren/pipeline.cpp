@@ -110,7 +110,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_shaders(vk::ShaderModule 
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_tessellation_stage(
-    vk::ShaderModule tess_control_shader, vk::ShaderModule tess_eval_shader, uint32_t control_point_count,
+    vk::ShaderModule tess_control_shader, vk::ShaderModule tess_eval_shader, uint32_t patch_control_point_count,
     util::zstring_view tess_control_shader_entry_point, util::zstring_view tess_eval_shader_entry_point) {
   _shader_stages.push_back(vk::PipelineShaderStageCreateInfo{
       .stage  = vk::ShaderStageFlagBits::eTessellationControl,
@@ -125,7 +125,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_tessellation_stage(
                                                      : tess_eval_shader_entry_point.c_str(),
   });
   tess_stage                     = true;
-  _tess_stage.patchControlPoints = control_point_count;
+  _tess_stage.patchControlPoints = patch_control_point_count;
   return *this;
 }
 
