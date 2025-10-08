@@ -107,6 +107,8 @@ class VulkanApplication {
    */
   virtual void on_init(VulkanApplicationContext& /*ctx*/) {}
 
+  virtual void on_input_events_polled(VulkanApplicationContext& /*ctx*/) {}
+
   virtual void on_physics_update(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
 
   /**

@@ -48,6 +48,7 @@ void VulkanApplication::main_loop() {
   auto previous_time = Clock::now();
   while (!context_.window_->should_close()) {
     context_.window_->poll_events();
+    on_input_events_polled(context_);
     auto current_time = Clock::now();
     auto delta        = current_time - previous_time;
     previous_time     = current_time;
