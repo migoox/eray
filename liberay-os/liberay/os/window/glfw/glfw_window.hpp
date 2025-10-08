@@ -28,8 +28,8 @@ class GLFWWindow final : public Window {
 
   WindowAPI window_api() const final { return window_api_; }
 
-  bool is_btn_held(KeyCode code) final;
-  bool is_mouse_btn_held(MouseBtnCode code) final;
+  bool is_btn_pressed(KeyCode code) final;
+  bool is_mouse_btn_pressed(MouseBtnCode code) final;
 
   void set_mouse_cursor_mode(CursorMode cursor_mode) final;
   CursorMode mouse_cursor_mode() final;

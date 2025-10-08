@@ -71,9 +71,9 @@ class Window {
    */
   virtual void poll_events() = 0;
 
-  virtual bool should_close() const                 = 0;
-  virtual bool is_btn_held(KeyCode code)            = 0;
-  virtual bool is_mouse_btn_held(MouseBtnCode code) = 0;
+  virtual bool should_close() const                    = 0;
+  virtual bool is_btn_pressed(KeyCode code)            = 0;
+  virtual bool is_mouse_btn_pressed(MouseBtnCode code) = 0;
 
   /**
    * @brief Subscribe to event notifications dispatched by window event dispatcher. It's

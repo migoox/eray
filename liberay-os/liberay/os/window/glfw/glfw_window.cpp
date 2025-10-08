@@ -134,12 +134,12 @@ Window::MousePosition GLFWWindow::mouse_pos() const {
   return pos;
 }
 
-bool GLFWWindow::is_btn_held(KeyCode code) {
+bool GLFWWindow::is_btn_pressed(KeyCode code) {
   // TODO(migoox): use array of booleans instead
   return glfwGetKey(glfw::glfw_win_ptr(glfw_window_ptr_), key_code_to_glfw(code)) == GLFW_PRESS;
 }
 
-bool GLFWWindow::is_mouse_btn_held(MouseBtnCode code) {
+bool GLFWWindow::is_mouse_btn_pressed(MouseBtnCode code) {
   // TODO(migoox): use array of booleans instead
   return glfwGetMouseButton(glfw::glfw_win_ptr(glfw_window_ptr_), mouse_code_to_glfw(code)) == GLFW_PRESS;
 }
