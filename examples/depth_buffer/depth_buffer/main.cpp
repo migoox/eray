@@ -26,7 +26,6 @@
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <vector>
-#include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -316,7 +315,7 @@ int main() {
   using System = eray::os::System;
 
   Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-  Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+  Logger::instance().set_abs_build_path();
   auto window_creator =
       eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");
   System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");

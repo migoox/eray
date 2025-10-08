@@ -242,12 +242,19 @@ void Logger::add_scribe(std::unique_ptr<LoggerScribe> scribe) {
   scribes_.push_back(std::move(scribe));
 }
 
-void Logger::set_abs_build_path(const std::filesystem::path& abs_build_path) {
+void Logger::set_abs_build_path(std::optional<std::filesystem::path> abs_build_path) {
   const std::lock_guard lock(mutex_);
+  if (!abs_build_path) {
+#ifdef ERAY_ABS_BUILD_PATH
+    abs_build_path = ERAY_ABS_BUILD_PATH;
+#else
+    return;
+#endif
+  }
 
   auto logger_path =
       std::filesystem::path{std::source_location::current().file_name()}.lexically_normal().generic_string();
-  auto proj_abs_path = abs_build_path.lexically_normal().generic_string();
+  auto proj_abs_path = abs_build_path->lexically_normal().generic_string();
 
   if (logger_path.starts_with(proj_abs_path)) {
     file_name_start_pos_ = proj_abs_path.size() + 1;

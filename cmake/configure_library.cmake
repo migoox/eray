@@ -14,7 +14,7 @@ function(configure_library)
     set(CMAKE_CXX_STANDARD 23)
 
     message(STATUS "Configuring " ${PROJECT_NAME})
-    list(APPEND CMAKE_MESSAGE_INDENT "  ")
+    list(APPEND CMAKE_MESSAGE_INDENT "  [${PROJECT_NAME}] ")
 
     if(ARGS_HEADER_ONLY)
         add_library(${PROJECT_NAME} INTERFACE)
@@ -43,8 +43,17 @@ function(configure_library)
 
         # Compile definitions
         if(ARGS_COMPILE_DEFINITIONS)
+            message(STATUS "Default compile definitions: ERAY_ABS_BUILD_PATH=${CMAKE_SOURCE_DIR}")
             message(STATUS "Requested compile definitions: ${ARGS_COMPILE_DEFINITIONS}")
-            target_compile_definitions(${PROJECT_NAME} INTERFACE ${ARGS_COMPILE_DEFINITIONS})
+            target_compile_definitions(${PROJECT_NAME} INTERFACE 
+                ${ARGS_COMPILE_DEFINITIONS}
+                ERAY_ABS_BUILD_PATH="${CMAKE_SOURCE_DIR}"
+            )
+        else()
+            message(STATUS "Default compile definitions: ERAY_ABS_BUILD_PATH=${CMAKE_SOURCE_DIR}")
+            target_compile_definitions(${PROJECT_NAME} INTERFACE 
+                ERAY_ABS_BUILD_PATH="${CMAKE_SOURCE_DIR}"
+            )
         endif()
     else()
         file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/liberay/*.cpp")
@@ -81,10 +90,15 @@ function(configure_library)
         target_link_libraries(${PROJECT_NAME} PUBLIC ${DEPS_PUBLIC})
 
         # Compile definitions
+        message(STATUS "Default compile definitions: ERAY_ABS_BUILD_PATH=${CMAKE_SOURCE_DIR}")
+        target_compile_definitions(${PROJECT_NAME} PRIVATE 
+            ERAY_ABS_BUILD_PATH="${CMAKE_SOURCE_DIR}"
+        )
         if(ARGS_COMPILE_DEFINITIONS)
             message(STATUS "Requested compile definitions: ${ARGS_COMPILE_DEFINITIONS}")
             target_compile_definitions(${PROJECT_NAME} PUBLIC ${ARGS_COMPILE_DEFINITIONS})
         endif()
+
 
         # Compiler and linker
         target_compile_options(${PROJECT_NAME} PRIVATE ${PROJ_CXX_FLAGS})

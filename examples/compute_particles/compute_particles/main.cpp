@@ -22,6 +22,7 @@
 #include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
+#include <liberay/vkren/descriptor.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/glfw/vk_glfw_window_creator.hpp>
 #include <liberay/vkren/image.hpp>
@@ -30,15 +31,12 @@
 #include <liberay/vkren/swap_chain.hpp>
 #include <memory>
 #include <vector>
-#include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
-
-#include "liberay/vkren/descriptor.hpp"
 
 namespace vkren = eray::vkren;
 
@@ -501,7 +499,7 @@ int main() {
   using System = eray::os::System;
 
   Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-  Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+  Logger::instance().set_abs_build_path();
 
   auto window_creator =
       eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");

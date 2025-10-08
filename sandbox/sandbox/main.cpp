@@ -3,13 +3,12 @@
 #include <liberay/os/rendering_api.hpp>
 #include <liberay/os/system.hpp>
 #include <liberay/util/logger.hpp>
-#include <version/version.hpp>
 
 int main() {
   using Logger = eray::util::Logger;
 
   Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-  Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+  Logger::instance().set_abs_build_path();
 
   auto window_creator =
       eray::os::OpenGLGLFWWindowCreator::create().or_panic("Could not create GLFW OpenGL window creator");

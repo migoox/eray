@@ -15,7 +15,7 @@ function(configure_binary)
     set(CMAKE_CXX_STANDARD 23)
 
     message(STATUS "Configuring binary ${PROJECT_NAME}")
-    list(APPEND CMAKE_MESSAGE_INDENT "  ")
+    list(APPEND CMAKE_MESSAGE_INDENT "  [${PROJECT_NAME}] ")
 
     # Executable target configuration
     file(GLOB_RECURSE SOURCES 
@@ -30,8 +30,17 @@ function(configure_binary)
         target_link_options(${PROJECT_NAME} PRIVATE ${PROJ_EXE_LINKER_FLAGS})
     endif()
     if(ARGS_COMPILE_DEFINITIONS)
+        message(STATUS "Default compile definitions: ERAY_ABS_BUILD_PATH=${CMAKE_SOURCE_DIR}")
         message(STATUS "Requested compile definitions: ${ARGS_COMPILE_DEFINITIONS}")
-        target_compile_definitions(${PROJECT_NAME} PRIVATE ${ARGS_COMPILE_DEFINITIONS})
+        target_compile_definitions(${PROJECT_NAME} PRIVATE
+            ${ARGS_COMPILE_DEFINITIONS}
+            ERAY_ABS_BUILD_PATH="${CMAKE_SOURCE_DIR}"
+        )
+    else()
+        message(STATUS "Default compile definitions: ERAY_ABS_BUILD_PATH=${CMAKE_SOURCE_DIR}")
+        target_compile_definitions(${PROJECT_NAME} PRIVATE
+            ERAY_ABS_BUILD_PATH="${CMAKE_SOURCE_DIR}"
+        )
     endif()
 
     add_dependencies(${PROJECT_NAME} ${ARGS_SHADER_TARGETS})

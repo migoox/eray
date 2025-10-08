@@ -15,7 +15,6 @@
 #include <ranges>
 #include <variant>
 #include <vector>
-#include <version/version.hpp>
 #include <vk_triangle/vertex.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
@@ -1631,7 +1630,7 @@ class TriangleApplication {
 
 int main() {
   eray::util::Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-  eray::util::Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+  eray::util::Logger::instance().set_abs_build_path();
 
   auto app = TriangleApplication();
   if (auto result = app.run(); !result) {

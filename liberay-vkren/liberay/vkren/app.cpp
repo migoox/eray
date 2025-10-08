@@ -11,7 +11,6 @@
 #include <liberay/vkren/app.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/swap_chain.hpp>
-#include <version/version.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_structs.hpp>

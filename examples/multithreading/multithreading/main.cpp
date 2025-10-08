@@ -30,7 +30,6 @@
 #include <thread>
 #include <variant>
 #include <vector>
-#include <version/version.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -1300,7 +1299,7 @@ class ComputeParticlesMultithreadingApplication {
 
 int main() {
   eray::util::Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-  eray::util::Logger::instance().set_abs_build_path(ERAY_BUILD_ABS_PATH);
+  eray::util::Logger::instance().set_abs_build_path();
 
   auto app = ComputeParticlesMultithreadingApplication();
   if (auto result = app.run(); !result) {

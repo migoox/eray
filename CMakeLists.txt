@@ -24,10 +24,6 @@ if(IS_STABLE EQUAL 0)
 endif()
 message(STATUS "Version: ${CMAKE_PROJECT_VERSION}${VERSION_SUFFIX}")
 
-# Generate the version header
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.hpp.in
-               ${CMAKE_BINARY_DIR}/generated/version/version.hpp)
-
 # Set the binaries and libraries output directory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
