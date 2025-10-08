@@ -31,7 +31,7 @@ function(configure_binary)
     endif()
     if(ARGS_COMPILE_DEFINITIONS)
         message(STATUS "Requested compile definitions: ${ARGS_COMPILE_DEFINITIONS}")
-        target_compile_definitions(${PROJECT_NAME} INTERFACE ${ARGS_COMPILE_DEFINITIONS})
+        target_compile_definitions(${PROJECT_NAME} PRIVATE ${ARGS_COMPILE_DEFINITIONS})
     endif()
 
     add_dependencies(${PROJECT_NAME} ${ARGS_SHADER_TARGETS})
