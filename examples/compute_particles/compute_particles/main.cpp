@@ -498,8 +498,8 @@ int main() {
   using Logger = eray::util::Logger;
   using System = eray::os::System;
 
+  Logger::instance().init();
   Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-  Logger::instance().set_abs_build_path();
 
   auto window_creator =
       eray::os::VulkanGLFWWindowCreator::create().or_panic("Could not create a Vulkan GLFW window creator");

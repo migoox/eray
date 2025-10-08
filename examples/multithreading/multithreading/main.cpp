@@ -1298,8 +1298,8 @@ class ComputeParticlesMultithreadingApplication {
 };
 
 int main() {
+  eray::util::Logger::instance().init();
   eray::util::Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-  eray::util::Logger::instance().set_abs_build_path();
 
   auto app = ComputeParticlesMultithreadingApplication();
   if (auto result = app.run(); !result) {

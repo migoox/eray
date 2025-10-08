@@ -7,8 +7,8 @@
 int main() {
   using Logger = eray::util::Logger;
 
+  Logger::instance().init();
   Logger::instance().add_scribe(std::make_unique<eray::util::TerminalLoggerScribe>());
-  Logger::instance().set_abs_build_path();
 
   auto window_creator =
       eray::os::OpenGLGLFWWindowCreator::create().or_panic("Could not create GLFW OpenGL window creator");

@@ -143,8 +143,8 @@ class Logger {
     }
   }
 
+  void init(std::optional<std::filesystem::path> abs_build_path = std::nullopt);
   void add_scribe(std::unique_ptr<LoggerScribe> scribe);
-  void set_abs_build_path(std::optional<std::filesystem::path> abs_build_path = std::nullopt);
 
   static Logger& instance() {
     static Logger instance;

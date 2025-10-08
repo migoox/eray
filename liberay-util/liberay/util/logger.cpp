@@ -242,7 +242,7 @@ void Logger::add_scribe(std::unique_ptr<LoggerScribe> scribe) {
   scribes_.push_back(std::move(scribe));
 }
 
-void Logger::set_abs_build_path(std::optional<std::filesystem::path> abs_build_path) {
+void Logger::init(std::optional<std::filesystem::path> abs_build_path) {
   const std::lock_guard lock(mutex_);
   if (!abs_build_path) {
 #ifdef ERAY_ABS_BUILD_PATH
