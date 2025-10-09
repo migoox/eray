@@ -353,7 +353,7 @@ class ComputeParticlesApplication {
            });
     graphics_command_buffers_[frame_index].setScissor(
         0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_.extent()});
-    graphics_command_buffers_[frame_index].bindVertexBuffers(0, {ssbuffers_[current_frame_].buffer()}, {0});
+    graphics_command_buffers_[frame_index].bindVertexBuffers(0, {ssbuffers_[current_frame_].vk_buffer()}, {0});
     graphics_command_buffers_[frame_index].draw(ParticleSystem::kParticleCount, 1, 0, 0);
 
     swap_chain_.end_rendering(graphics_command_buffers_[frame_index], image_index);

@@ -647,11 +647,11 @@ class ComputeParticlesMultithreadingApplication {
                       })
                       .or_panic("Could not create a Storage Buffer");
 
-      temp.copy_from(staging_buff.buffer(), vk::BufferCopy{
-                                                .srcOffset = 0,
-                                                .dstOffset = 0,
-                                                .size      = region.size_bytes(),
-                                            });
+      temp.copy_from(staging_buff.vk_buffer(), vk::BufferCopy{
+                                                   .srcOffset = 0,
+                                                   .dstOffset = 0,
+                                                   .size      = region.size_bytes(),
+                                               });
       ssbuffers_.emplace_back(std::move(temp));
     }
 
@@ -951,7 +951,7 @@ class ComputeParticlesMultithreadingApplication {
            });
     graphics_command_buffers_[current_frame_].setScissor(
         0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_.extent()});
-    graphics_command_buffers_[current_frame_].bindVertexBuffers(0, {ssbuffers_[current_frame_].buffer()}, {0});
+    graphics_command_buffers_[current_frame_].bindVertexBuffers(0, {ssbuffers_[current_frame_].vk_buffer()}, {0});
     graphics_command_buffers_[current_frame_].draw(ParticleSystem::kParticleCount, 1, 0, 0);
 
     graphics_command_buffers_[current_frame_].endRendering();
@@ -1074,20 +1074,20 @@ class ComputeParticlesMultithreadingApplication {
 
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
       auto buffer_info = vk::DescriptorBufferInfo{
-          .buffer = uniform_buffers_[i].buffer(),
+          .buffer = uniform_buffers_[i].vk_buffer(),
           .offset = 0,
           .range  = sizeof(UniformBufferObject),
       };
 
       auto last_ind           = (i - 1) % kMaxFramesInFlight;
       auto last_frame_ss_info = vk::DescriptorBufferInfo{
-          .buffer = ssbuffers_[last_ind].buffer(),
+          .buffer = ssbuffers_[last_ind].vk_buffer(),
           .offset = 0,
           .range  = sizeof(Particle) * ParticleSystem::kParticleCount,
       };
       auto curr_ind              = i;
       auto current_frame_ss_info = vk::DescriptorBufferInfo{
-          .buffer = ssbuffers_[curr_ind].buffer(),
+          .buffer = ssbuffers_[curr_ind].vk_buffer(),
           .offset = 0,
           .range  = sizeof(Particle) * ParticleSystem::kParticleCount,
       };

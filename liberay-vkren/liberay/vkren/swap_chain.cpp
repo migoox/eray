@@ -416,7 +416,7 @@ void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_
       .newLayout           = vk::ImageLayout::eDepthStencilAttachmentOptimal,
       .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .image               = depth_stencil_image_.image(),  //
+      .image               = depth_stencil_image_.vk_image(),  //
       .subresourceRange    = depth_stencil_image_.full_resource_range(),
   };
 
@@ -462,7 +462,7 @@ void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_
         .newLayout           = vk::ImageLayout::eColorAttachmentOptimal,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = color_image_.image(),  //
+        .image               = color_image_.vk_image(),  //
         .subresourceRange    = color_image_.full_resource_range(),
     };
 

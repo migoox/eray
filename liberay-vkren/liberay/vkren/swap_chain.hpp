@@ -42,8 +42,8 @@ class SwapChain {
   const vk::raii::SwapchainKHR& operator*() const noexcept { return swap_chain_; }
 
   const std::vector<vk::Image>& images() const { return images_; }
-  vk::Image depth_stencil_attachment_image() const { return depth_stencil_image_.image(); }
-  vk::Image color_attachment_image() const { return color_image_.image(); }
+  vk::Image depth_stencil_attachment_image() const { return depth_stencil_image_.vk_image(); }
+  vk::Image color_attachment_image() const { return color_image_.vk_image(); }
 
   const std::vector<vk::raii::ImageView>& image_views() { return image_views_; }
   vk::ImageView depth_stencil_attachment_image_view() const { return depth_stencil_image_view_; }

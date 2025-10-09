@@ -209,8 +209,8 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region) {
         .dstOffsets = dst_offsets,
     };
 
-    cmd_buff.blitImage(image(), vk::ImageLayout::eTransferSrcOptimal, image(), vk::ImageLayout::eTransferDstOptimal,
-                       {blit}, vk::Filter::eLinear);
+    cmd_buff.blitImage(vk_image(), vk::ImageLayout::eTransferSrcOptimal, vk_image(),
+                       vk::ImageLayout::eTransferDstOptimal, {blit}, vk::Filter::eLinear);
 
     transition_mip_level_layout(cmd_buff, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
                                 i - 1);
@@ -236,7 +236,7 @@ Result<void, Error> ImageResource::upload(util::MemoryRegion src_region) {
 
 Result<vk::raii::ImageView, Error> ImageResource::create_image_view(vk::ImageViewType image_view_type) const {
   auto img_create_info = vk::ImageViewCreateInfo{
-      .image    = image(),
+      .image    = vk_image(),
       .viewType = image_view_type,
       .format   = description.format,
       .components =
@@ -278,7 +278,7 @@ Result<vk::raii::ImageView, Error> ImageResource::create_image_view() const {
 
 void ImageResource::transition_layout(vk::CommandBuffer cmd, vk::ImageLayout current_layout,
                                       vk::ImageLayout new_layout) {
-  vk_util::transition_image_barrier(cmd, image(),
+  vk_util::transition_image_barrier(cmd, vk_image(),
                                     vk::ImageSubresourceRange{
                                         .aspectMask     = aspect,
                                         .baseMipLevel   = 0,
@@ -291,7 +291,7 @@ void ImageResource::transition_layout(vk::CommandBuffer cmd, vk::ImageLayout cur
 
 void ImageResource::transition_mip_level_layout(vk::CommandBuffer cmd, vk::ImageLayout current_layout,
                                                 vk::ImageLayout new_layout, uint32_t base_level, uint32_t level_count) {
-  vk_util::transition_image_barrier(cmd, image(),
+  vk_util::transition_image_barrier(cmd, vk_image(),
                                     vk::ImageSubresourceRange{
                                         .aspectMask     = aspect,
                                         .baseMipLevel   = base_level,

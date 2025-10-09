@@ -283,8 +283,8 @@ class DepthBufferApplication : public vkren::VulkanApplication {
                           uint32_t image_index) override {
     // We can specify type of the pipeline
     graphics_command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
-    graphics_command_buffer.bindVertexBuffers(0, vert_buffer_.buffer(), {0});
-    graphics_command_buffer.bindIndexBuffer(ind_buffer_.buffer(), 0, vk::IndexType::eUint16);
+    graphics_command_buffer.bindVertexBuffers(0, vert_buffer_.vk_buffer(), {0});
+    graphics_command_buffer.bindIndexBuffer(ind_buffer_.vk_buffer(), 0, vk::IndexType::eUint16);
 
     // Describes the region of framebuffer that the output will be rendered to
     graphics_command_buffer.setViewport(

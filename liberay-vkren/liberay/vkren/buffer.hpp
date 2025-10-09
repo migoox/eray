@@ -72,7 +72,7 @@ class ExclusiveBufferResource {
    */
   void copy_from(const vk::raii::Buffer& src_buff, vk::BufferCopy cpy_info) const;
 
-  const vk::raii::Buffer& buffer() const { return buffer_; }
+  const vk::raii::Buffer& vk_buffer() const { return buffer_; }
   const vk::raii::DeviceMemory& memory() const { return memory_; }
   vk::DeviceSize memory_size_bytes() const { return mem_size_bytes_; }
   vk::BufferUsageFlags usage() const { return usage_; }
@@ -227,11 +227,11 @@ struct BufferResource {
    */
   std::optional<void*> mapping() const;
 
-  vk::Buffer buffer() const { return _buffer._vk_handle; }
+  vk::Buffer vk_buffer() const { return _buffer._vk_handle; }
 
   vk::DescriptorBufferInfo desc_buffer_info(size_t offset = 0) const {
     return vk::DescriptorBufferInfo{
-        .buffer = buffer(),
+        .buffer = vk_buffer(),
         .offset = offset,
         .range  = size_bytes,
     };

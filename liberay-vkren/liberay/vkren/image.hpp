@@ -95,7 +95,7 @@ struct ImageResource {
 
   VmaAllocationInfo alloc_info() const { return _image.alloc_info(); }
 
-  vk::Image image() const { return _image._vk_handle; }
+  vk::Image vk_image() const { return _image._vk_handle; }
 
   Result<vk::raii::ImageView, Error> create_image_view(vk::ImageViewType image_view_type) const;
 
