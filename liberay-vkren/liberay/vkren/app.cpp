@@ -54,6 +54,10 @@ void VulkanApplication::main_loop() {
     }
     context_.window_->process_queued_events();
 
+    if (auto result = os::System::file_dialog().update(); !result) {
+      util::Logger::err("File dialog update failed");
+    }
+
     auto current_time = Clock::now();
     auto delta        = current_time - previous_time;
     previous_time     = current_time;

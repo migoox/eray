@@ -12,6 +12,9 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
+#include "liberay/os/file_dialog.hpp"
+#include "liberay/os/system.hpp"
+
 namespace eray::vkren {
 
 using namespace std::chrono_literals;
@@ -136,6 +139,8 @@ class VulkanApplication {
   std::uint16_t fps() const { return fps_; }
   std::uint16_t tps() const { return tps_; }
   Duration time() const { return time_; }
+
+  os::FileDialog& file_dialog() { return os::System::file_dialog(); }
 
   // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
   // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
