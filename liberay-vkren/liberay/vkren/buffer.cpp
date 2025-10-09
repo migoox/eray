@@ -159,6 +159,46 @@ Result<BufferResource, Error> BufferResource::create_staging_buffer(Device& devi
   };
 }
 
+Result<PersistentlyMappedBufferResource, Error> BufferResource::persistently_mapped_staging_buffer(
+    Device& device, vk::DeviceSize size_bytes) {
+  auto buf_create_info = vk::BufferCreateInfo{
+      .sType = vk::StructureType::eBufferCreateInfo,
+      .size  = size_bytes,
+      .usage = vk::BufferUsageFlagBits::eTransferSrc,
+  };
+
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
+  alloc_create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+  VmaAllocationInfo alloc_info;
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info, alloc_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
+  }
+
+  if (!alloc_info.pMappedData) {
+    return std::unexpected(Error{
+        .msg  = "Persistent mapping failed: allocation did not provide pMappedData",
+        .code = ErrorCode::VulkanObjectCreationFailure{},
+    });
+  }
+
+  return PersistentlyMappedBufferResource{
+      .buffer =
+          BufferResource{
+              ._buffer      = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
+              ._p_device    = &device,
+              .size_bytes   = size_bytes,
+              .usage        = buf_create_info.usage,
+              .transfer_src = true,
+              .persistently_mapped = true,
+              .mappable            = true,
+          },
+      .mapped_data = alloc_info.pMappedData,
+  };
+}
+
 Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_buffer(Device& device,
                                                                                        vk::DeviceSize size_bytes) {
   auto buf_create_info = vk::BufferCreateInfo{
