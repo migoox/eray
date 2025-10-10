@@ -43,7 +43,9 @@ function(configure_binary)
         )
     endif()
 
-    add_dependencies(${PROJECT_NAME} ${ARGS_SHADER_TARGETS})
+    if (ARGS_SHADER_TARGETS)
+        add_dependencies(${PROJECT_NAME} ${ARGS_SHADER_TARGETS})
+    endif()
 
     # Copy assets folder to build directory
     if(EXISTS "${PROJECT_SOURCE_DIR}/assets")
@@ -55,7 +57,7 @@ function(configure_binary)
         add_dependencies(${PROJECT_NAME} "${PROJECT_NAME}__copy_assets")
     endif()
 
-    if(EXISTS "${PROJECT_SOURCE_DIR}/shaders")
+    if(ARGS_SHADER_TARGETS AND EXISTS "${PROJECT_SOURCE_DIR}/shaders")
         add_custom_target("${PROJECT_NAME}__copy_shaders"
             COMMAND ${CMAKE_COMMAND} -DASSETS_SOURCE_DIR=${PROJECT_SOURCE_DIR}/shaders
                                 -DASSETS_DEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>
