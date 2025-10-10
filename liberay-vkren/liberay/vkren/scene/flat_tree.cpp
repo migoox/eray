@@ -240,6 +240,7 @@ FlatTree FlatTree::create(size_t max_nodes_count) {
   tree.nodes_pool_ = EntityPool<NodeId>::create(max_nodes_count);
   auto root_id     = tree.nodes_pool_.create();
   assert(root_id == kRootNodeId && "Root index invariant not met");
+  static_cast<void>(root_id);
   return tree;
 }
 
@@ -251,10 +252,8 @@ bool FlatTree::is_descendant(NodeId node_id, NodeId ancestor_id) const {
     return false;
   }
 
-  std::ranges::any_of(FlatTreeBFSRange(this, ancestor_id, false),
-                      [node_id](auto& descendant_id) { return descendant_id == node_id; });
-
-  return false;
+  return std::ranges::any_of(FlatTreeBFSRange(this, ancestor_id, false),
+                             [node_id](auto& descendant_id) { return descendant_id == node_id; });
 }
 
 bool FlatTree::exists(NodeId node_id) const { return node_id != kNullNodeId && nodes_pool_.exists(node_id); }

@@ -9,8 +9,6 @@ function(configure_library)
 
     cmake_minimum_required(VERSION 3.28 FATAL_ERROR)
 
-    project(${ARGS_NAME} CXX C)
-
     set(CMAKE_CXX_STANDARD 23)
 
     message(STATUS "Configuring " ${PROJECT_NAME})

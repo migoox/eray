@@ -1,3 +1,5 @@
+project(liberay-vkren CXX C)
+
 cmake_minimum_required(VERSION 3.30)
 
 include(../cmake/configure_library.cmake)

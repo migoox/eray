@@ -183,6 +183,7 @@ inline size_t bytes_per_pixel(vk::Format format) {
     default:
       assert(false && "Block Compression Formats are not supported by the bytes_per_pixel function!");
   }
+  return 0;
 }
 
 }  // namespace helper

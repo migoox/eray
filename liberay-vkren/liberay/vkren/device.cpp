@@ -38,7 +38,17 @@ Device::CreateInfo Device::CreateInfo::DesktopProfile::get(const eray::os::Windo
     uint32_t glfw_extensions_count = 0;
     if (auto* glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extensions_count)) {
       required_global_extensions = std::vector<const char*>(glfw_extensions, glfw_extensions + glfw_extensions_count);
-      eray::util::Logger::info("{}", required_global_extensions);
+      std::string global_extensions_str;
+      for (const char* ext : required_global_extensions) {
+        global_extensions_str += ext;
+        global_extensions_str += ", ";
+      }
+      if (!global_extensions_str.empty()) {
+        global_extensions_str.pop_back();
+        global_extensions_str.pop_back();
+      }
+
+      eray::util::Logger::info("{}", global_extensions_str);
     } else {
       eray::util::panic("Could not get required instance extensions from GLFW");
     }

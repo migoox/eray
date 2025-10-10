@@ -221,7 +221,7 @@ void DescriptorSetWriter::write_image(uint32_t binding, vk::ImageView image, vk:
 }
 
 void DescriptorSetWriter::write_buffer(uint32_t binding, vk::DescriptorBufferInfo info, vk::DescriptorType type) {
-  write_buffer(binding, info.buffer, info.range, info.offset, type);
+  write_buffer(binding, info.buffer, static_cast<size_t>(info.range), static_cast<size_t>(info.offset), type);
 }
 
 void DescriptorSetWriter::write_buffer(uint32_t binding, vk::Buffer buffer, size_t size, size_t offset,

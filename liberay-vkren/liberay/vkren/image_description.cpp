@@ -57,6 +57,7 @@ vk::DeviceSize ImageDescription::find_full_size_bytes() const {
   }
 
   assert(false && "At least one of the values: array_layers, depth must be equal 1!");
+  return 0;
 }
 
 ImageDescription ImageDescription::from(const res::Image& image) {

@@ -1,9 +1,9 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 new file mode 100644
-index 00000000..fe754340
+index 00000000..8b06b5c5
 --- /dev/null
 +++ b/CMakeLists.txt
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,17 @@
 +cmake_minimum_required(VERSION 3.20)
 +
 +project(imgui)
@@ -12,12 +12,13 @@ index 00000000..fe754340
 +set(CMAKE_CXX_STANDARD 11)
 +set(CMAKE_DISABLE_IN_SOURCE_BUILD TRUE)
 +
++find_package(Vulkan REQUIRED)
 +file(GLOB IMGUI_SOURCE_FILES
 +  "src/imgui/*.cpp"
 +  "src/imgui/imgui_stdlib.cpp"
 +  )
 +
-+add_library(${PROJECT_NAME} STATIC ${IMGUI_SOURCE_FILES})
++add_library(${PROJECT_NAME} STATIC ${IMGUI_SOURCE_FILES} Vulkan::Vulkan)
 +target_link_libraries(${PROJECT_NAME} PUBLIC glfw)
 +target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC src)
 diff --git a/imconfig.h b/src/imgui/imconfig.h
@@ -249,6 +250,8 @@ similarity index 100%
 rename from imstb_truetype.h
 rename to src/imgui/imstb_truetype.h
 diff --git a/backends/vulkan/generate_spv.sh b/src/imgui/vulkan/generate_spv.sh
+old mode 100755
+new mode 100644
 similarity index 100%
 rename from backends/vulkan/generate_spv.sh
 rename to src/imgui/vulkan/generate_spv.sh

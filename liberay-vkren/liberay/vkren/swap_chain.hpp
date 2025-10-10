@@ -179,7 +179,7 @@ class SwapChain {
 
   uint32_t min_image_count_{};
 
-  bool vsync_;
+  bool vsync_{};
 
   std::vector<vk::Image> images_;
 

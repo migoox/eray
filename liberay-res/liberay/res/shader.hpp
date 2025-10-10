@@ -2,6 +2,7 @@
 
 #include <liberay/res/error.hpp>
 #include <liberay/util/result.hpp>
+#include <span>
 
 namespace eray::res {
 

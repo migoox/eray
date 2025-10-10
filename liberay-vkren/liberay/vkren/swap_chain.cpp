@@ -1,4 +1,5 @@
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include <expected>
 #include <liberay/os/window/events/event.hpp>
@@ -532,7 +533,9 @@ Result<SwapChain::AcquireResult, Error> SwapChain::acquire_next_image(uint64_t t
   uint32_t image_index        = 0;
   // When vk::Result::eErrorOutOfDateKHR is encountered the swap_chain_.acquireNextImage(timeout,
   // semaphore, fence); fails because of assertion failure. For that reason C-API is used instead.
-  auto result = vk::Result(vkAcquireNextImageKHR(device, swap_chain, timeout, semaphore, fence, &image_index));
+  auto result =
+      vk::Result(vkAcquireNextImageKHR(device, static_cast<VkSwapchainKHR>(swap_chain), timeout,
+                                       static_cast<VkSemaphore>(semaphore), static_cast<VkFence>(fence), &image_index));
 
   if (result == vk::Result::eErrorOutOfDateKHR) {
     // The swap chain has become incompatible with the surface and can no longer be used for rendering. Usually

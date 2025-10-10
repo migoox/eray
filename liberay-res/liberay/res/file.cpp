@@ -1,4 +1,5 @@
 #include <liberay/res/file.hpp>
+#include <span>
 
 namespace eray::res {
 

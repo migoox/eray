@@ -1,3 +1,5 @@
+project(liberay-math CXX C)
+
 include_guard()
 include(../cmake/deps_fetcher.cmake)
 include(../cmake/configure_library.cmake)

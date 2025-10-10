@@ -63,7 +63,7 @@ Result<VmaBuffer, Error> VmaAllocationManager::create_buffer(const vk::BufferCre
   }
 
   auto vma_buff = VmaBuffer{
-      .vk_buffer  = buf,
+      .vk_buffer  = vk::Buffer(buf),
       .allocation = alloc,
   };
   vma_objects_.emplace(vma_buff);
@@ -86,7 +86,7 @@ Result<VmaImage, Error> VmaAllocationManager::create_image(const vk::ImageCreate
     });
   }
   auto vma_img = VmaImage{
-      .vk_image   = vkimg,
+      .vk_image   = vk::Image(vkimg),
       .allocation = alloc,
   };
   vma_objects_.emplace(vma_img);
@@ -99,8 +99,12 @@ void VmaAllocationManager::destroy() {
 
   for (const auto& o : vma_objects_) {
     std::visit(util::match{
-                   [this](VmaBuffer buffer) { vmaDestroyBuffer(allocator_, buffer.vk_buffer, buffer.allocation); },
-                   [this](VmaImage image) { vmaDestroyImage(allocator_, image.vk_image, image.allocation); },
+                   [this](VmaBuffer buffer) {
+                     vmaDestroyBuffer(allocator_, static_cast<VkBuffer>(buffer.vk_buffer), buffer.allocation);
+                   },
+                   [this](VmaImage image) {
+                     vmaDestroyImage(allocator_, static_cast<VkImage>(image.vk_image), image.allocation);
+                   },
                },
                o);
   }
@@ -117,12 +121,12 @@ VmaAllocationManager::~VmaAllocationManager() {
 
 void VmaAllocationManager::delete_buffer(VmaBuffer buffer) {
   vma_objects_.erase(buffer);
-  vmaDestroyBuffer(allocator_, buffer.vk_buffer, buffer.allocation);
+  vmaDestroyBuffer(allocator_, static_cast<VkBuffer>(buffer.vk_buffer), buffer.allocation);
 }
 
 void VmaAllocationManager::delete_image(VmaImage image) {
   vma_objects_.erase(image);
-  vmaDestroyImage(allocator_, image.vk_image, image.allocation);
+  vmaDestroyImage(allocator_, static_cast<VkImage>(image.vk_image), image.allocation);
 }
 
 Result<VmaBuffer, Error> VmaAllocationManager::create_buffer(const vk::BufferCreateInfo& buffer_create_info,

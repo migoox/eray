@@ -356,11 +356,11 @@ void VulkanApplication::init_imgui() {
   init_info.QueueFamily                 = context_.device_.graphics_queue_family();
   init_info.Queue                       = static_cast<VkQueue>(graphics_queue);
   init_info.DescriptorPool              = static_cast<VkDescriptorPool>(imgui_descriptor_pool);
-  init_info.RenderPass                  = nullptr;
+  init_info.RenderPass                  = VK_NULL_HANDLE;
   init_info.MinImageCount               = context_.swap_chain_.min_image_count();
   init_info.ImageCount                  = static_cast<uint32_t>(context_.swap_chain_.images().size());
   init_info.MSAASamples                 = static_cast<VkSampleCountFlagBits>(context_.swap_chain_.msaa_sample_count());
-  init_info.PipelineCache               = nullptr;
+  init_info.PipelineCache               = VK_NULL_HANDLE;
   init_info.Subpass                     = 0;
   init_info.UseDynamicRendering         = true;
   init_info.PipelineRenderingCreateInfo = {

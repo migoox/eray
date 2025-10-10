@@ -7,6 +7,7 @@
 #include <liberay/util/memory_region.hpp>
 #include <liberay/util/result.hpp>
 #include <liberay/util/ruleof.hpp>
+#include <span>
 #include <vector>
 
 namespace eray::res {
