@@ -19,113 +19,151 @@
             }
         },
         {
-            "name": "gnu-x64-release",
+            "name": "linux-gcc-x64-release",
             "binaryDir": "${sourceDir}/build/${presetName}",
-            "hidden": true,
             "generator": "Ninja",
             "inherits": [
                 "dev-options"
             ],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "PROJ_CXX_FLAGS": "-O3;-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=3;-D_GLIBCXX_ASSERTIONS=1;-fstack-protector-strong;-fcf-protection=full;-Wall;-Wextra;-Wpedantic;-Wconversion;-Wsign-conversion;-Wcast-qual;-Wformat=2;-Wundef;-Werror=float-equal;-Werror=switch;-Wshadow;-Wcast-align;-Wunused;-Wnull-dereference;-Wdouble-promotion;-Wimplicit-fallthrough;-Wextra-semi;-Woverloaded-virtual;-Wnon-virtual-dtor;-Wold-style-cast;-Werror=missing-designated-field-initializers"
+                "CMAKE_C_COMPILER": "gcc",
+                "CMAKE_CXX_COMPILER": "g++",
+                "PROJ_CXX_FLAGS": "-O3;-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=2;-D_GLIBCXX_ASSERTIONS=1;-fstack-protector-strong;-fcf-protection=full;-Wall;-Wextra;-Wpedantic;-Wsign-conversion;-Wcast-qual;-Wformat=2;-Wundef;-Werror=switch;-Wshadow;-Wcast-align;-Wunused;-Wnull-dereference;-Wdouble-promotion;-Wimplicit-fallthrough;-Wextra-semi;-Woverloaded-virtual;-Wnon-virtual-dtor;-Wold-style-cast;-Werror=missing-designated-field-initializers"
             }
         },
         {
-            "name": "gnu-x64-debug",
+            "name": "linux-gcc-x64-debug",
             "binaryDir": "${sourceDir}/build/${presetName}",
-            "hidden": true,
             "generator": "Ninja",
             "inherits": [
                 "dev-options"
             ],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "PROJ_CXX_FLAGS": "-O0;-g3;-ggdb;-fno-omit-frame-pointer;-fno-inline;-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=3;-D_GLIBCXX_ASSERTIONS=1;-fstack-protector-strong;-fcf-protection=full;-fstack-clash-protection;-Wall;-Wextra;-Wpedantic;-Wconversion;-Wsign-conversion;-Wcast-qual;-Wformat=2;-Wundef;-Werror=float-equal;-Werror=switch;-Wshadow;-Wcast-align;-Wunused;-Wnull-dereference;-Wdouble-promotion;-Wimplicit-fallthrough;-Wextra-semi;-Woverloaded-virtual;-Wnon-virtual-dtor;-Wold-style-cast;-Werror=missing-designated-field-initializers",
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
-            }
-        },
-        {
-            "name": "clang-x64-release",
-            "inherits": [
-                "gnu-x64-release"
-            ],
-            "cacheVariables": {
-                "CMAKE_C_COMPILER": "clang",
-                "CMAKE_CXX_COMPILER": "clang++"
-            }
-        },
-        {
-            "name": "clang-x64-debug",
-            "inherits": [
-                "gnu-x64-debug"
-            ],
-            "cacheVariables": {
-                "CMAKE_C_COMPILER": "clang",
-                "CMAKE_CXX_COMPILER": "clang++"
-            }
-        },
-        {
-            "name": "gcc-x64-release",
-            "inherits": [
-                "gnu-x64-release"
-            ],
-            "cacheVariables": {
                 "CMAKE_C_COMPILER": "gcc",
                 "CMAKE_CXX_COMPILER": "g++",
-                "PROJ_EXE_LINKER_FLAGS": "-Wl,--allow-shlib-undefined,--as-needed;SHELL: -z noexecstack;SHELL: -z relro;SHELL: -z now;SHELL: -z nodlopen",
-                "PROJ_SHARED_LINKER_FLAGS": "-Wl,--allow-shlib-undefined,--as-needed;SHELL: -z noexecstack;SHELL: -z relro;SHELL: -z now;SHELL: -z nodlopen"
+                "PROJ_CXX_FLAGS": "-O0;-g3;-ggdb;-fno-omit-frame-pointer;-fno-inline;-D_GLIBCXX_ASSERTIONS=1;-fstack-protector-strong;-fcf-protection=full;-fstack-clash-protection;-fsanitize=address;-fsanitize=undefined;-Wall;-Wextra;-Wpedantic;-Wconversion;-Wsign-conversion;-Wcast-qual;-Wformat=2;-Wundef;-Werror=float-equal;-Werror=switch;-Wshadow;-Wcast-align;-Wunused;-Wnull-dereference;-Wdouble-promotion;-Wimplicit-fallthrough;-Wextra-semi;-Woverloaded-virtual;-Wnon-virtual-dtor;-Wold-style-cast;-Werror=missing-designated-field-initializers",
+                "PROJ_EXE_LINKER_FLAGS": "-fsanitize=address -fsanitize=undefined"
             }
         },
         {
-            "name": "gcc-x64-debug",
+            "name": "linux-clang-x64-release",
             "inherits": [
-                "gnu-x64-debug"
+                "linux-gcc-x64-release"
             ],
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "generator": "Ninja",
             "cacheVariables": {
-                "CMAKE_C_COMPILER": "gcc",
-                "CMAKE_CXX_COMPILER": "g++"
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
             }
         },
         {
-            "name": "msvc-x64-release",
+            "name": "linux-clang-x64-debug",
+            "inherits": [
+                "linux-gcc-x64-debug"
+            ],
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "windows-clang-x64-release",
+            "inherits": [
+                "linux-clang-x64-release"
+            ],
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_LINKER": "link.exe"
+            }
+        },
+        {
+            "name": "windows-clang-x64-debug",
+            "inherits": [
+                "linux-clang-x64-debug"
+            ],
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "PROJ_CXX_FLAGS": "-O0;-g3;-ggdb;-fno-omit-frame-pointer;-fno-inline;-D_GLIBCXX_ASSERTIONS=1;-fstack-protector-strong;-fcf-protection=full;-fstack-clash-protection;-Wall;-Wextra;-Wpedantic;-Wconversion;-Wsign-conversion;-Wcast-qual;-Wformat=2;-Wundef;-Werror=float-equal;-Werror=switch;-Wshadow;-Wcast-align;-Wunused;-Wnull-dereference;-Wdouble-promotion;-Wimplicit-fallthrough;-Wextra-semi;-Woverloaded-virtual;-Wnon-virtual-dtor;-Wold-style-cast;-Werror=missing-designated-field-initializers",
+                "PROJ_EXE_LINKER_FLAGS": "",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_LINKER": "link.exe"
+            }
+        },
+        {
+            "name": "windows-msvc-x64-release",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "generator": "Visual Studio 17 2022",
             "inherits": [
                 "dev-options"
             ],
             "cacheVariables": {
-                "CMAKE_CONFIGURATION_TYPES": "Release",
-                "PROJ_CXX_FLAGS": "/sdl;/guard:cf;/utf-8;/diagnostics:caret;/w14165;/w44242;/w44254;/w44263;/w34265;/w34287;/w44296;/w44365;/w44388;/w44464;/w14545;/w14546;/w14547;/w14549;/w14555;/w34619;/w34640;/w24826;/w14905;/w14906;/w14928;/w45038;/W4;/permissive-;/volatile:iso;/Zc:inline;/Zc:preprocessor;/Zc:enumTypes;/Zc:lambda;/Zc:__cplusplus;/Zc:externConstexpr;/Zc:throwingNew;/EHsc",
-                "PROJ_EXE_LINKER_FLAGS": "/machine:x64;/guard:cf"
+                "CMAKE_CONFIGURATION_TYPES": "Release"
+            }
+        },
+        {
+            "name": "windows-msvc-x64-debug",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "generator": "Visual Studio 17 2022",
+            "inherits": [
+                "dev-options"
+            ],
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "Debug",
+                "PROJ_CXX_FLAGS": "/Od;/Zi;/W3;/WX;/analyze;/permissive-;/EHsc;/sdl;/fsanitize=address;/fsanitize=undefined",
+                "PROJ_EXE_LINKER_FLAGS": "/machine:x64;/fsanitize=address;/fsanitize=undefined"
             }
         }
     ],
     "buildPresets": [
         {
-            "name": "clang-x64-release",
-            "configurePreset": "clang-x64-release",
+            "name": "linux-gcc-x64-release",
+            "configurePreset": "linux-gcc-x64-release",
             "configuration": "Release"
         },
         {
-            "name": "clang-x64-debug",
-            "configurePreset": "clang-x64-debug",
+            "name": "linux-gcc-x64-debug",
+            "configurePreset": "linux-gcc-x64-debug",
             "configuration": "Debug"
         },
         {
-            "name": "gcc-x64-release",
-            "configurePreset": "gcc-x64-release",
+            "name": "linux-clang-x64-release",
+            "configurePreset": "linux-clang-x64-release",
             "configuration": "Release"
         },
         {
-            "name": "gcc-x64-debug",
-            "configurePreset": "gcc-x64-debug",
+            "name": "linux-clang-x64-debug",
+            "configurePreset": "linux-clang-x64-debug",
             "configuration": "Debug"
         },
         {
-            "name": "msvc-x64-release",
-            "configurePreset": "msvc-x64-release",
+            "name": "windows-clang-x64-release",
+            "configurePreset": "windows-clang-x64-release",
             "configuration": "Release"
+        },
+        {
+            "name": "windows-clang-x64-debug",
+            "configurePreset": "windows-clang-x64-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "windows-msvc-x64-release",
+            "configurePreset": "windows-msvc-x64-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "windows-msvc-x64-debug",
+            "configurePreset": "windows-msvc-x64-debug",
+            "configuration": "Debug"
         }
     ]
 }

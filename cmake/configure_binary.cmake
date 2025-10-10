@@ -26,7 +26,7 @@ function(configure_binary)
     target_include_directories(${PROJECT_NAME}
                             PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} "${CMAKE_BINARY_DIR}/generated" "${ARGS_INCLUDE_DIRS}")
     target_compile_options(${PROJECT_NAME} PRIVATE ${PROJ_CXX_FLAGS})
-    if(BUILD_SHARED_LIBS)
+    if(BUILD_SHARED_LIBS AND PROJ_EXE_LINKER_FLAGS)
         target_link_options(${PROJECT_NAME} PRIVATE ${PROJ_EXE_LINKER_FLAGS})
     endif()
     if(ARGS_COMPILE_DEFINITIONS)
