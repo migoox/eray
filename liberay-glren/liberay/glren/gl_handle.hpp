@@ -7,14 +7,14 @@
 
 namespace eray::driver::gl {
 
-template <typename Tag, void (*DeleteFunc)(GLuint)>
+template <typename Tag, typename Deleter>
 class GLObjectHandle {
  public:
   GLObjectHandle() = default;
   explicit GLObjectHandle(GLuint id) : id_(id) {}
   ~GLObjectHandle() {
     if (id_ != 0) {
-      DeleteFunc(id_);
+      Deleter(id_);
     }
   }
 
@@ -27,7 +27,7 @@ class GLObjectHandle {
     }
 
     if (id_ != 0) {
-      DeleteFunc(id_);
+      Deleter(id_);
     }
 
     id_       = other.id_;
@@ -48,34 +48,54 @@ class GLObjectHandle {
   GLuint id_ = 0;
 };
 
+struct ShaderDeleter {
+  void operator()(GLuint id) const {
+    ERAY_GL_CALL(glDeleteShader(id));
+    eray::util::Logger::info("Deleted OpenGL shader with id {}", id);
+  }
+};
+
+struct ShaderProgramDeleter {
+  void operator()(GLuint id) const {
+    ERAY_GL_CALL(glDeleteProgram(id));
+    eray::util::Logger::info("Deleted OpenGL shader program with id {}", id);
+  }
+};
+
+struct TextureDeleter {
+  void operator()(GLuint id) const {
+    ERAY_GL_CALL(glDeleteTextures(1, &id));
+    eray::util::Logger::info("Deleted OpenGL texture with id {}", id);
+  }
+};
+
+struct VertexArrayDeleter {
+  void operator()(GLuint id) const {
+    ERAY_GL_CALL(glDeleteVertexArrays(1, &id));
+    eray::util::Logger::info("Deleted OpenGL vertex array with id {}", id);
+  }
+};
+
+struct BufferDeleter {
+  void operator()(GLuint id) const {
+    ERAY_GL_CALL(glDeleteBuffers(1, &id));
+    eray::util::Logger::info("Deleted OpenGL buffer with id {}", id);
+  }
+};
+
 struct ShaderTag {};
-using ShaderHandle = GLObjectHandle<ShaderTag, [](auto id) {
-  ERAY_GL_CALL(glDeleteShader(id));
-  eray::util::Logger::info("Deleted OpenGL shader with id {}", id);
-}>;
+using ShaderHandle = GLObjectHandle<ShaderTag, ShaderDeleter>;
 
 struct ShaderProgramTag {};
-using ShaderProgramHandle = GLObjectHandle<ShaderProgramTag, [](auto id) {
-  ERAY_GL_CALL(glDeleteProgram(id));
-  eray::util::Logger::info("Deleted OpenGL shader program with id {}", id);
-}>;
+using ShaderProgramHandle = GLObjectHandle<ShaderProgramTag, ShaderProgramDeleter>;
 
 struct TextureTag {};
-using TextureHandle = GLObjectHandle<TextureTag, [](auto id) {
-  ERAY_GL_CALL(glDeleteTextures(1, &id));
-  eray::util::Logger::info("Deleted OpenGL texture with id {}", id);
-}>;
+using TextureHandle = GLObjectHandle<TextureTag, TextureDeleter>;
 
 struct VertexArrayTag {};
-using VertexArrayHandle = GLObjectHandle<VertexArrayTag, [](auto id) {
-  ERAY_GL_CALL(glDeleteVertexArrays(1, &id));
-  eray::util::Logger::info("Deleted OpenGL vertex array with id {}", id);
-}>;
+using VertexArrayHandle = GLObjectHandle<VertexArrayTag, VertexArrayDeleter>;
 
 struct BufferTag {};
-using BufferHandle = GLObjectHandle<BufferTag, [](auto id) {
-  ERAY_GL_CALL(glDeleteBuffers(1, &id));
-  eray::util::Logger::info("Deleted OpenGL buffer with id {}", id);
-}>;
+using BufferHandle = GLObjectHandle<BufferTag, BufferDeleter>;
 
 }  // namespace eray::driver::gl

@@ -402,6 +402,11 @@ struct Vec {
   }
 };
 
+template <typename T>
+constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
+  return (v < lo) ? lo : (hi < v) ? hi : v;  // NOLINT
+}
+
 namespace internal {
 
 template <std::size_t... Is, CPrimitive T>
@@ -413,12 +418,12 @@ constexpr T dot_base(std::index_sequence<Is...>, const T* lhs, const T* rhs) {
 
 template <std::size_t... Is, CPrimitive T>
 constexpr void clamp_base(std::index_sequence<Is...>, T* data, T min, T max) {
-  ((data[Is] = std::clamp(data[Is], min, max)), ...);  // C++17 std::clamp
+  ((data[Is] = clamp(data[Is], min, max)), ...);
 }
 
 template <std::size_t... Is, CPrimitive T>
 constexpr void clamp_base(std::index_sequence<Is...>, T* data, const T* min_data, const T* max_data) {
-  ((data[Is] = std::clamp(data[Is], min_data[Is], max_data[Is])), ...);
+  ((data[Is] = clamp(data[Is], min_data[Is], max_data[Is])), ...);
 }
 
 template <std::size_t... Is, CPrimitive T>

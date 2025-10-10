@@ -220,6 +220,9 @@ function(fetch_assimp)
     set(ASSIMP_BUILD_ZLIB
         ON
         CACHE BOOL "Build the zlib" FORCE)
+    set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
+    set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
 
     FetchContent_Declare(
       assimp 

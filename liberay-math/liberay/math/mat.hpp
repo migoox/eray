@@ -258,8 +258,8 @@ struct Mat {
   static constexpr Vec<M, T> mult_vec_lhs(const Vec<M, T>& lhs, const Mat& rhs) {
     // TODO(migoox): optimize this (maybe some sort of SIMD operation?)
     auto result = Vec<M, T>();
-    for (int i = 0; i < N; ++i) {
-      for (int j = 0; j < M; ++j) {
+    for (size_t i = 0; i < N; ++i) {
+      for (size_t j = 0; j < M; ++j) {
         result[i] += lhs[j] * rhs[i][j];
       }
     }
@@ -270,8 +270,8 @@ struct Mat {
   static constexpr Vec<M, T> mult_vec_rhs(const Mat& lhs, const Vec<M, T>& rhs) {
     // TODO(migoox): optimize this (maybe some sort of SIMD operation?)
     auto result = Vec<M, T>();
-    for (int i = 0; i < N; ++i) {
-      for (int j = 0; j < M; ++j) {
+    for (size_t i = 0; i < N; ++i) {
+      for (size_t j = 0; j < M; ++j) {
         result[i] += rhs[j] * lhs[j][i];
       }
     }
