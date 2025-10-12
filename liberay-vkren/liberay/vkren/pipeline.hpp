@@ -100,6 +100,7 @@ struct GraphicsPipelineBuilder {
   GraphicsPipelineBuilder& with_constant_ranges();
 
   Result<Pipeline, Error> build(const Device& device);
+  Result<vk::raii::Pipeline, Error> build(const Device& device, vk::PipelineLayout layout);
 
   std::vector<vk::PipelineShaderStageCreateInfo> _shader_stages;
   std::vector<vk::DynamicState> _dynamic_states;

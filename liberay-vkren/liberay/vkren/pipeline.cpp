@@ -215,6 +215,74 @@ Result<Pipeline, Error> GraphicsPipelineBuilder::build(const Device& device) {
       });
 }
 
+Result<vk::raii::Pipeline, Error> GraphicsPipelineBuilder::build(const Device& device, vk::PipelineLayout layout) {
+  // == Shader stage ===================================================================================================
+  assert(!_shader_stages.empty() && "Shader stages must be provided");
+
+  // == Dynamic states =================================================================================================
+
+  // Most of the pipeline state needs to be baked into the pipeline state. For example changing the size of a
+  // viewport, line width and blend constants can be changed dynamically without the full pipeline recreation.
+  //
+  // Note: This will cause the configuration of these values to be ignored, and you will be able (and required)
+  // to specify the data at drawing time.
+
+  auto dynamic_states = std::vector{
+      vk::DynamicState::eViewport,
+      vk::DynamicState::eScissor,
+  };
+
+  auto dynamic_state = vk::PipelineDynamicStateCreateInfo{
+      .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),  //
+      .pDynamicStates    = dynamic_states.data(),                         //
+  };
+
+  // With dynamic state only the count is necessary.
+
+  // == Input assembly =================================================================================================
+  // TODO(migoox): Add multiple color attachments support
+  vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
+      .colorAttachmentCount    = 1,
+      .pColorAttachmentFormats = &_color_attachment_format,
+      .depthAttachmentFormat   = _depth_stencil_format,
+  };
+
+  // TODO(migoox): Add multiple color attachments support
+  auto color_blending_info = vk::PipelineColorBlendStateCreateInfo{
+      .logicOpEnable   = vk::False,
+      .logicOp         = vk::LogicOp::eCopy,
+      .attachmentCount = 1,
+      .pAttachments    = &_color_blend,  //
+  };
+
+  auto pipeline_info = vk::GraphicsPipelineCreateInfo{
+      .pNext               = &pipeline_rendering_create_info,
+      .stageCount          = static_cast<uint32_t>(_shader_stages.size()),
+      .pStages             = _shader_stages.data(),
+      .pVertexInputState   = &_vertex_input_state,
+      .pInputAssemblyState = &_input_assembly,
+      .pTessellationState  = tess_stage ? &_tess_stage : nullptr,
+      .pViewportState      = &_viewport_state,
+      .pRasterizationState = &_rasterizer,
+      .pMultisampleState   = &_multisampling,
+      .pDepthStencilState  = &_depth_stencil,
+      .pColorBlendState    = &color_blending_info,
+      .pDynamicState       = &dynamic_state,
+      .layout              = layout,
+      .renderPass          = nullptr,
+      .basePipelineHandle  = VK_NULL_HANDLE,
+      .basePipelineIndex   = -1,
+  };
+
+  return device->createGraphicsPipeline(nullptr, pipeline_info).transform_error([](auto err) {
+    return Error{
+        .msg     = "Graphics Pipeline creation failure",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = err,
+    };
+  });
+}
+
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_primitive_topology(vk::PrimitiveTopology topology,
                                                                           bool primitive_restart_enable) {
   _input_assembly = vk::PipelineInputAssemblyStateCreateInfo{
