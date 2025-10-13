@@ -165,6 +165,7 @@ struct BufferResource {
    * @return Result<Buffer, Error>
    */
   [[nodiscard]] static Result<BufferResource, Error> create_uniform_buffer(Device& device, vk::DeviceSize size_bytes);
+  [[nodiscard]] static Result<BufferResource, Error> create_storage_buffer(Device& device, vk::DeviceSize size_bytes);
 
   [[nodiscard]] static Result<PersistentlyMappedBufferResource, Error> create_persistently_mapped_uniform_buffer(
       Device& device, vk::DeviceSize size_bytes);

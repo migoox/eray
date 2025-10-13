@@ -323,6 +323,34 @@ Result<BufferResource, Error> BufferResource::create_uniform_buffer(Device& devi
   };
 }
 
+Result<BufferResource, Error> BufferResource::create_storage_buffer(Device& device, vk::DeviceSize size_bytes) {
+  vk::BufferCreateInfo buf_create_info = {
+      .sType       = vk::StructureType::eBufferCreateInfo,
+      .size        = size_bytes,
+      .usage       = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+      .sharingMode = vk::SharingMode::eExclusive,
+  };
+
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.usage                   = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+  VmaAllocationInfo alloc_info;
+  auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info, alloc_info);
+  if (!buff_opt) {
+    std::unexpected(buff_opt.error());
+  }
+
+  return BufferResource{
+      ._buffer             = VmaRaiiBuffer(device.vma_alloc_manager(), buff_opt->allocation, buff_opt->vk_buffer),
+      ._p_device           = &device,
+      .size_bytes          = size_bytes,
+      .usage               = buf_create_info.usage,
+      .transfer_src        = false,
+      .persistently_mapped = false,
+      .mappable            = false,
+  };
+}
+
 [[nodiscard]] Result<PersistentlyMappedBufferResource, Error> BufferResource::create_persistently_mapped_uniform_buffer(
     Device& device, vk::DeviceSize size_bytes) {
   // TODO(migoox): Read about HOST_COHERENT & HOST_CACHED (might improve the performance)
