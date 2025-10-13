@@ -443,12 +443,16 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
 
   auto features               = physical_device_.getFeatures();
   features.tessellationShader = vk::True;
-  auto device_create_info     = vk::DeviceCreateInfo{
-          .queueCreateInfoCount    = 1,
-          .pQueueCreateInfos       = &device_queue_create_info,
-          .enabledExtensionCount   = static_cast<uint32_t>(info.device_extensions.size()),
-          .ppEnabledExtensionNames = info.device_extensions.data(),
-          .pEnabledFeatures        = &features,
+  vk::PhysicalDeviceVulkan11Features vk11features{};
+  vk11features.shaderDrawParameters = vk::True;
+
+  auto device_create_info = vk::DeviceCreateInfo{
+      .pNext                   = &vk11features,
+      .queueCreateInfoCount    = 1,
+      .pQueueCreateInfos       = &device_queue_create_info,
+      .enabledExtensionCount   = static_cast<uint32_t>(info.device_extensions.size()),
+      .ppEnabledExtensionNames = info.device_extensions.data(),
+      .pEnabledFeatures        = &features,
   };
 
   auto vp_device_create_info                    = VpDeviceCreateInfo{};
