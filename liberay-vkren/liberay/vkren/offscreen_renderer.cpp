@@ -11,7 +11,10 @@ Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Devic
   OffscreenFragmentRenderer off_rend{};
   off_rend._p_device = &device;
   if (auto img_opt = ImageResource::create_attachment_image(
-          device, target_image_desc, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc,
+          device, target_image_desc,
+          vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc |
+              vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled |
+              vk::ImageUsageFlagBits::eHostTransfer,
           vk::ImageAspectFlagBits::eColor)) {
     off_rend.target_img_ = std::move(*img_opt);
   } else {

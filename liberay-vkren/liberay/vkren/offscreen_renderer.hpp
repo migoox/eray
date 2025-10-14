@@ -30,7 +30,15 @@ struct OffscreenFragmentRenderer {
   void init_pipeline(vk::ShaderModule vertex_module, vk::ShaderModule fragment_module,
                      vk::DescriptorSetLayout descriptor_set_layout);
 
+  vk::Image target_image() const { return target_img_._image._vk_handle; }
   vk::ImageView target_image_view() const { return target_img_view_; }
+
+  /**
+   * @brief Expects the target image to be in VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL. After execution, this image is in
+   * the  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL.
+   *
+   * @param descriptor_set
+   */
   void render_once(vk::DescriptorSet descriptor_set, vk::ClearColorValue = {1.F, 1.F, 1.F, 1.F});
 };
 

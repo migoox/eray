@@ -20,6 +20,7 @@
 #include <vulkan/vulkan_profiles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 namespace eray::vkren {
 
@@ -85,10 +86,9 @@ Device::CreateInfo Device::CreateInfo::DesktopProfile::get(
   // == Device Extensions ==============================================================================================
   device_extensions_.clear();
   device_extensions_ = {
-      vk::KHRSwapchainExtensionName,         // requires Surface Instance Extension
-      vk::KHRSpirv14ExtensionName,           //
-      vk::KHRSynchronization2ExtensionName,  //
-      vk::KHRCreateRenderpass2ExtensionName  //
+      vk::KHRSwapchainExtensionName,  // requires Surface Instance Extension
+      vk::KHRSpirv14ExtensionName,           vk::KHRSynchronization2ExtensionName,
+      vk::KHRCreateRenderpass2ExtensionName, "VK_EXT_host_image_copy",
   };
 
   // feature chains are defined by the profile only
@@ -99,7 +99,7 @@ Device::CreateInfo Device::CreateInfo::DesktopProfile::get(
       .applicationVersion = VK_MAKE_VERSION(1, 0, 0),  // NOLINT
       .pEngineName        = "No Engine",
       .engineVersion      = VK_MAKE_VERSION(1, 0, 0),  // NOLINT
-      .apiVersion         = vk::ApiVersion14           //
+      .apiVersion         = vk::ApiVersion14,
   };
 
   return CreateInfo{
@@ -441,13 +441,19 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
 
   // == Logical Device Creation ========================================================================================
 
-  auto features               = physical_device_.getFeatures();
-  features.tessellationShader = vk::True;
-  vk::PhysicalDeviceVulkan11Features vk11features{};
+  vk::PhysicalDeviceVulkan14Features vk14features{};
+  vk::PhysicalDeviceVulkan11Features vk11features{
+      .pNext = &vk14features,  // chain forward
+  };
+  auto features2                    = physical_device_.getFeatures2();
+  features2.pNext                   = &vk11features;
+  auto features                     = features2.features;
+  features.tessellationShader       = vk::True;
   vk11features.shaderDrawParameters = vk::True;
+  vk14features.hostImageCopy        = vk::True;
 
   auto device_create_info = vk::DeviceCreateInfo{
-      .pNext                   = &vk11features,
+      .pNext                   = &vk11features,  // ✅ correct chain root
       .queueCreateInfoCount    = 1,
       .pQueueCreateInfos       = &device_queue_create_info,
       .enabledExtensionCount   = static_cast<uint32_t>(info.device_extensions.size()),
