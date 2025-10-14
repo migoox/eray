@@ -24,7 +24,7 @@ Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Devic
   off_rend.target_img_view_ = Result(off_rend.target_img_.create_image_view()).or_panic("Image view creation failed");
 
   auto buff = device.begin_single_time_commands();
-  off_rend.target_img_.transition_layout(buff, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferSrcOptimal);
+  off_rend.target_img_.transition_layout(buff, vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal);
   device.end_single_time_commands(buff);
 
   auto color_attachment_desc = vk::AttachmentDescription{
@@ -207,7 +207,8 @@ void OffscreenFragmentRenderer::init_pipeline(vk::ShaderModule vertex_module, vk
 void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk::ClearColorValue clear_color) {
   {
     auto buff = _p_device->begin_single_time_commands();
-    target_img_.transition_layout(buff, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eColorAttachmentOptimal);
+    target_img_.transition_layout(buff, vk::ImageLayout::eShaderReadOnlyOptimal,
+                                  vk::ImageLayout::eColorAttachmentOptimal);
     _p_device->end_single_time_commands(buff);
   }
 
@@ -254,7 +255,8 @@ void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk
 
   {
     auto buff = _p_device->begin_single_time_commands();
-    target_img_.transition_layout(buff, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eTransferSrcOptimal);
+    target_img_.transition_layout(buff, vk::ImageLayout::eColorAttachmentOptimal,
+                                  vk::ImageLayout::eShaderReadOnlyOptimal);
     _p_device->end_single_time_commands(buff);
   }
 }
