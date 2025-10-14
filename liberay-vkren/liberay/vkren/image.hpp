@@ -97,6 +97,19 @@ struct ImageResource {
 
   vk::Image vk_image() const { return _image._vk_handle; }
 
+  vk::Extent3D extent() const {
+    return vk::Extent3D{.width = description.width, .height = description.height, .depth = description.depth};
+  }
+  vk::ImageSubresourceLayers subresource_layers(uint32_t mip_level = 0, uint32_t base_layer = 0,
+                                                uint32_t layer_count = 1) const {
+    return vk::ImageSubresourceLayers{
+        .aspectMask     = aspect,
+        .mipLevel       = mip_level,
+        .baseArrayLayer = base_layer,
+        .layerCount     = layer_count,
+    };
+  }
+
   Result<vk::raii::ImageView, Error> create_image_view(vk::ImageViewType image_view_type) const;
 
   /**
