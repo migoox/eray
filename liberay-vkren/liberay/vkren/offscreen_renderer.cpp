@@ -31,7 +31,7 @@ Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Devic
       .flags          = {},
       .format         = target_image_desc.format,
       .samples        = vk::SampleCountFlagBits::e1,
-      .loadOp         = vk::AttachmentLoadOp::eClear,
+      .loadOp         = vk::AttachmentLoadOp::eLoad,
       .storeOp        = vk::AttachmentStoreOp::eStore,
       .stencilLoadOp  = vk::AttachmentLoadOp::eDontCare,
       .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
@@ -158,21 +158,18 @@ void OffscreenFragmentRenderer::init_pipeline(vk::ShaderModule vertex_module, vk
                                                      .alphaToOneEnable      = false};
 
   vk::PipelineColorBlendAttachmentState blend_attachment{
-      .blendEnable         = false,
+      .blendEnable         = vk::True,
       .srcColorBlendFactor = vk::BlendFactor::eOne,
-      .dstColorBlendFactor = vk::BlendFactor::eZero,
-      .colorBlendOp        = vk::BlendOp::eAdd,
+      .dstColorBlendFactor = vk::BlendFactor::eOne,
+      .colorBlendOp        = vk::BlendOp::eMin,
       .srcAlphaBlendFactor = vk::BlendFactor::eOne,
-      .dstAlphaBlendFactor = vk::BlendFactor::eZero,
-      .alphaBlendOp        = vk::BlendOp::eAdd,
+      .dstAlphaBlendFactor = vk::BlendFactor::eOne,
+      .alphaBlendOp        = vk::BlendOp::eMin,
       .colorWriteMask      = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
                         vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
 
-  vk::PipelineColorBlendStateCreateInfo blend{.flags           = {},
-                                              .logicOpEnable   = false,
-                                              .logicOp         = vk::LogicOp::eCopy,
-                                              .attachmentCount = 1,
-                                              .pAttachments    = &blend_attachment};
+  vk::PipelineColorBlendStateCreateInfo blend{
+      .flags = {}, .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend_attachment};
 
   vk::PipelineLayoutCreateInfo layout_info{.flags                  = {},
                                            .setLayoutCount         = 1,
@@ -259,6 +256,25 @@ void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk
                                   vk::ImageLayout::eShaderReadOnlyOptimal);
     _p_device->end_single_time_commands(buff);
   }
+}
+
+void OffscreenFragmentRenderer::clear(vk::ClearColorValue clear_value) {
+  auto cmd = _p_device->begin_single_time_commands();
+
+  target_img_.transition_layout(cmd, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral);
+
+  vk::ImageSubresourceRange range{
+      .aspectMask     = vk::ImageAspectFlagBits::eColor,
+      .baseMipLevel   = 0,
+      .levelCount     = 1,
+      .baseArrayLayer = 0,
+      .layerCount     = 1,
+  };
+  cmd.clearColorImage(target_img_.vk_image(), vk::ImageLayout::eGeneral, clear_value, range);
+
+  target_img_.transition_layout(cmd, vk::ImageLayout::eGeneral, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+  _p_device->end_single_time_commands(cmd);
 }
 
 }  // namespace eray::vkren

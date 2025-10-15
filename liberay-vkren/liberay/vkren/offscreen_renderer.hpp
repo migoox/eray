@@ -40,6 +40,7 @@ struct OffscreenFragmentRenderer {
    * @param descriptor_set
    */
   void render_once(vk::DescriptorSet descriptor_set, vk::ClearColorValue = {1.F, 1.F, 1.F, 1.F});
+  void clear(vk::ClearColorValue = {1.F, 1.F, 1.F, 1.F});
 };
 
 }  // namespace eray::vkren
