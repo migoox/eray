@@ -1,6 +1,7 @@
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/offscreen_renderer.hpp>
+#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
@@ -10,12 +11,11 @@ Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Devic
                                                                            const ImageDescription& target_image_desc) {
   OffscreenFragmentRenderer off_rend{};
   off_rend._p_device = &device;
-  if (auto img_opt = ImageResource::create_attachment_image(
-          device, target_image_desc,
-          vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc |
-              vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled |
-              vk::ImageUsageFlagBits::eHostTransfer,
-          vk::ImageAspectFlagBits::eColor)) {
+  if (auto img_opt = ImageResource::create_attachment_image(device, target_image_desc,
+                                                            vk::ImageUsageFlagBits::eColorAttachment |
+                                                                vk::ImageUsageFlagBits::eTransferDst |
+                                                                vk::ImageUsageFlagBits::eSampled,
+                                                            vk::ImageAspectFlagBits::eColor)) {
     off_rend.target_img_ = std::move(*img_opt);
   } else {
     return std::unexpected(img_opt.error());
@@ -80,10 +80,9 @@ Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Devic
           .layers          = 1,
   };
 
-  off_rend.framebuffer_ = Result(device->createFramebuffer(fb_info)).or_panic("Framebuffer creation failed");
-
-  auto fence_info = vk::FenceCreateInfo{.flags = {}};
-  off_rend.fence_ = Result(device->createFence(fence_info)).or_panic("Fence creation failed");
+  off_rend.framebuffer_        = Result(device->createFramebuffer(fb_info)).or_panic("Framebuffer creation failed");
+  off_rend.finished_semaphore_ = Result(device->createSemaphore(vk::SemaphoreCreateInfo{}))
+                                     .or_panic("Could not create a semaphore for offscreen rendering");
 
   auto command_pool_info = vk::CommandPoolCreateInfo{
       .flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -121,14 +120,14 @@ void OffscreenFragmentRenderer::init_pipeline(vk::ShaderModule vertex_module, vk
                                                       .pVertexAttributeDescriptions    = nullptr};
 
   vk::PipelineInputAssemblyStateCreateInfo input_assembly{
-      .flags = {}, .topology = vk::PrimitiveTopology::eTriangleList, .primitiveRestartEnable = false};
+      .flags = {}, .topology = vk::PrimitiveTopology::eTriangleList, .primitiveRestartEnable = vk::False};
 
-  vk::Viewport viewport{.x        = 0.0f,
-                        .y        = 0.0f,
-                        .width    = (float)target_img_.description.width,
-                        .height   = (float)target_img_.description.height,
-                        .minDepth = 0.0f,
-                        .maxDepth = 1.0f};
+  vk::Viewport viewport{.x        = 0.0F,
+                        .y        = 0.0F,
+                        .width    = static_cast<float>(target_img_.description.width),
+                        .height   = static_cast<float>(target_img_.description.height),
+                        .minDepth = 0.0F,
+                        .maxDepth = 1.0F};
 
   vk::Rect2D scissor{
       .offset = vk::Offset2D{.x = 0, .y = 0},
@@ -138,24 +137,24 @@ void OffscreenFragmentRenderer::init_pipeline(vk::ShaderModule vertex_module, vk
       .flags = {}, .viewportCount = 1, .pViewports = &viewport, .scissorCount = 1, .pScissors = &scissor};
 
   vk::PipelineRasterizationStateCreateInfo raster{.flags                   = {},
-                                                  .depthClampEnable        = false,
-                                                  .rasterizerDiscardEnable = false,
+                                                  .depthClampEnable        = vk::False,
+                                                  .rasterizerDiscardEnable = vk::False,
                                                   .polygonMode             = vk::PolygonMode::eFill,
                                                   .cullMode                = vk::CullModeFlagBits::eNone,
                                                   .frontFace               = vk::FrontFace::eCounterClockwise,
-                                                  .depthBiasEnable         = false,
-                                                  .depthBiasConstantFactor = 0.0f,
-                                                  .depthBiasClamp          = 0.0f,
-                                                  .depthBiasSlopeFactor    = 0.0f,
-                                                  .lineWidth               = 1.0f};
+                                                  .depthBiasEnable         = vk::False,
+                                                  .depthBiasConstantFactor = 0.0F,
+                                                  .depthBiasClamp          = 0.0F,
+                                                  .depthBiasSlopeFactor    = 0.0F,
+                                                  .lineWidth               = 1.0F};
 
   vk::PipelineMultisampleStateCreateInfo multisample{.flags                 = {},
                                                      .rasterizationSamples  = vk::SampleCountFlagBits::e1,
-                                                     .sampleShadingEnable   = false,
-                                                     .minSampleShading      = 1.0f,
+                                                     .sampleShadingEnable   = vk::False,
+                                                     .minSampleShading      = 1.0F,
                                                      .pSampleMask           = nullptr,
-                                                     .alphaToCoverageEnable = false,
-                                                     .alphaToOneEnable      = false};
+                                                     .alphaToCoverageEnable = vk::False,
+                                                     .alphaToOneEnable      = vk::False};
 
   vk::PipelineColorBlendAttachmentState blend_attachment{
       .blendEnable         = vk::True,
@@ -202,60 +201,102 @@ void OffscreenFragmentRenderer::init_pipeline(vk::ShaderModule vertex_module, vk
 }
 
 void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk::ClearColorValue clear_color) {
-  {
-    auto buff = _p_device->begin_single_time_commands();
-    target_img_.transition_layout(buff, vk::ImageLayout::eShaderReadOnlyOptimal,
-                                  vk::ImageLayout::eColorAttachmentOptimal);
-    _p_device->end_single_time_commands(buff);
-  }
-
-  std::array<vk::ClearValue, 1> clear_values = {clear_color};
-
-  auto rp_begin = vk::RenderPassBeginInfo{
-      .renderPass  = *render_pass_,
-      .framebuffer = *framebuffer_,
-      .renderArea =
-          vk::Rect2D{
-              .offset = vk::Offset2D{.x = 0, .y = 0},
-              .extent =
-                  vk::Extent2D{
-                      .width  = target_img_.description.width,
-                      .height = target_img_.description.height,
-                  },
-          },
-      .clearValueCount = static_cast<uint32_t>(clear_values.size()),
-      .pClearValues    = clear_values.data(),
-  };
   cmd_buff_.reset();
   cmd_buff_.begin(vk::CommandBufferBeginInfo{});
+
+  // == Change Layout ==================================================================================================
+  auto image_barrier = vk::ImageMemoryBarrier2{
+      .srcStageMask        = vk::PipelineStageFlagBits2::eFragmentShader,
+      .srcAccessMask       = vk::AccessFlagBits2::eShaderRead,
+      .dstStageMask        = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+      .dstAccessMask       = vk::AccessFlagBits2::eColorAttachmentWrite,
+      .oldLayout           = vk::ImageLayout::eShaderReadOnlyOptimal,
+      .newLayout           = vk::ImageLayout::eColorAttachmentOptimal,
+      .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+      .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+      .image               = target_image(),
+      .subresourceRange =
+          vk::ImageSubresourceRange{
+              .aspectMask     = vk::ImageAspectFlagBits::eColor,
+              .baseMipLevel   = 0,
+              .levelCount     = 1,
+              .baseArrayLayer = 0,
+              .layerCount     = 1,
+          },
+  };
+
+  auto dependency_info = vk::DependencyInfo{
+      .dependencyFlags         = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers    = &image_barrier,
+  };
+  cmd_buff_.pipelineBarrier2(dependency_info);
+
+  // == Render =========================================================================================================
+  std::array<vk::ClearValue, 1> clear_values = {clear_color};
+  auto rp_begin                              = vk::RenderPassBeginInfo{
+                                   .renderPass  = *render_pass_,
+                                   .framebuffer = *framebuffer_,
+                                   .renderArea =
+          vk::Rect2D{
+                                           .offset = vk::Offset2D{.x = 0, .y = 0},
+                                           .extent =
+                  vk::Extent2D{
+                                                   .width  = target_img_.description.width,
+                                                   .height = target_img_.description.height,
+                  },
+          },
+                                   .clearValueCount = static_cast<uint32_t>(clear_values.size()),
+                                   .pClearValues    = clear_values.data(),
+  };
   cmd_buff_.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout_, 0, descriptor_set, nullptr);
   cmd_buff_.beginRenderPass(rp_begin, vk::SubpassContents::eInline);
   cmd_buff_.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline_);
   cmd_buff_.draw(3, 1, 0, 0);
   cmd_buff_.endRenderPass();
+
+  // == Change Layout ==================================================================================================
+  image_barrier = vk::ImageMemoryBarrier2{
+      .srcStageMask        = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+      .srcAccessMask       = vk::AccessFlagBits2::eColorAttachmentWrite,
+      .dstStageMask        = vk::PipelineStageFlagBits2::eFragmentShader,
+      .dstAccessMask       = vk::AccessFlagBits2::eShaderRead,
+      .oldLayout           = vk::ImageLayout::eColorAttachmentOptimal,
+      .newLayout           = vk::ImageLayout::eShaderReadOnlyOptimal,
+      .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+      .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+      .image               = target_image(),
+      .subresourceRange =
+          vk::ImageSubresourceRange{
+              .aspectMask     = vk::ImageAspectFlagBits::eColor,
+              .baseMipLevel   = 0,
+              .levelCount     = 1,
+              .baseArrayLayer = 0,
+              .layerCount     = 1,
+          },
+  };
+
+  dependency_info = vk::DependencyInfo{
+      .dependencyFlags         = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers    = &image_barrier,
+  };
+
+  cmd_buff_.pipelineBarrier2(dependency_info);
   cmd_buff_.end();
 
+  // == Submit =========================================================================================================
   auto submit_info = vk::SubmitInfo{
       .waitSemaphoreCount   = 0,
       .pWaitSemaphores      = nullptr,
       .pWaitDstStageMask    = nullptr,
       .commandBufferCount   = 1,
       .pCommandBuffers      = &*cmd_buff_,
-      .signalSemaphoreCount = 0,
-      .pSignalSemaphores    = nullptr,
+      .signalSemaphoreCount = 1,
+      .pSignalSemaphores    = &*finished_semaphore_,
   };
 
-  (*_p_device)->resetFences({*fence_});
-
-  _p_device->graphics_queue().submit(submit_info, *fence_);
-  (void)(*_p_device)->waitForFences({*fence_}, VK_TRUE, UINT64_MAX);
-
-  {
-    auto buff = _p_device->begin_single_time_commands();
-    target_img_.transition_layout(buff, vk::ImageLayout::eColorAttachmentOptimal,
-                                  vk::ImageLayout::eShaderReadOnlyOptimal);
-    _p_device->end_single_time_commands(buff);
-  }
+  _p_device->graphics_queue().submit(submit_info);
 }
 
 void OffscreenFragmentRenderer::clear(vk::ClearColorValue clear_value) {

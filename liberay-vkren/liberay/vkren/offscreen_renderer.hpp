@@ -17,11 +17,11 @@ struct OffscreenFragmentRenderer {
   vk::raii::ImageView target_img_view_      = nullptr;
   vk::raii::RenderPass render_pass_         = nullptr;
   vk::raii::Framebuffer framebuffer_        = nullptr;
-  vk::raii::Fence fence_                    = nullptr;
   vk::raii::CommandPool cmd_pool_           = nullptr;
   vk::raii::CommandBuffer cmd_buff_         = nullptr;
   vk::raii::Pipeline pipeline_              = nullptr;
   vk::raii::PipelineLayout pipeline_layout_ = nullptr;
+  vk::raii::Semaphore finished_semaphore_   = nullptr;
   observer_ptr<const Device> _p_device      = nullptr;
 
   static Result<OffscreenFragmentRenderer, Error> create(Device& device, const ImageDescription& target_image_desc);

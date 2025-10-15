@@ -3,17 +3,17 @@
 #include <imgui/imgui.h>
 
 #include <chrono>
+#include <liberay/os/file_dialog.hpp>
+#include <liberay/os/system.hpp>
 #include <liberay/os/window/window.hpp>
 #include <liberay/vkren/deletion_queue.hpp>
 #include <liberay/vkren/descriptor.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
-
-#include "liberay/os/file_dialog.hpp"
-#include "liberay/os/system.hpp"
 
 namespace eray::vkren {
 
@@ -136,6 +136,12 @@ class VulkanApplication {
    */
   virtual void on_destroy() {}
 
+  /**
+   * @brief Allows to inject a semaphore to VkSubmitInfo for the next frame.
+   *
+   */
+  void wait_semaphore_on_submit_once(vk::Semaphore semaphore, vk::PipelineStageFlags stage_mask);
+
   std::uint16_t fps() const { return fps_; }
   std::uint16_t tps() const { return tps_; }
   Duration time() const { return time_; }
@@ -207,6 +213,9 @@ class VulkanApplication {
    */
   std::vector<vk::raii::Semaphore> present_finished_semaphores_;
   std::vector<vk::raii::Semaphore> render_finished_semaphores_;
+
+  std::vector<vk::Semaphore> external_submit_semaphores_;
+  std::vector<vk::PipelineStageFlags> submit_stage_masks_;
 
   /**
    * @brief Fences are used to block GPU until the frame is presented.

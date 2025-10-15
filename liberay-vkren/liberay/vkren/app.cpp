@@ -134,15 +134,25 @@ void VulkanApplication::render_frame(Duration delta) {
   record_graphics_command_buffer(current_frame_, image_index);
 
   auto wait_dst_stage_mask = vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput);
-  const auto submit_info   = vk::SubmitInfo{
-        .waitSemaphoreCount   = 1,
-        .pWaitSemaphores      = &*present_finished_semaphores_[current_semaphore_],
-        .pWaitDstStageMask    = &wait_dst_stage_mask,
-        .commandBufferCount   = 1,
-        .pCommandBuffers      = &*graphics_command_buffers_[current_frame_],
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores    = &*render_finished_semaphores_[image_index],  //
+  auto submit_info         = vk::SubmitInfo{
+              .waitSemaphoreCount   = 1,
+              .pWaitSemaphores      = &*present_finished_semaphores_[current_semaphore_],
+              .pWaitDstStageMask    = &wait_dst_stage_mask,
+              .commandBufferCount   = 1,
+              .pCommandBuffers      = &*graphics_command_buffers_[current_frame_],
+              .signalSemaphoreCount = 1,
+              .pSignalSemaphores    = &*render_finished_semaphores_[image_index],  //
   };
+
+  // Inject the external semaphores if there are any
+  if (!external_submit_semaphores_.empty()) {
+    external_submit_semaphores_.push_back(*present_finished_semaphores_[current_semaphore_]);
+    submit_stage_masks_.emplace_back(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+
+    submit_info.pWaitSemaphores    = external_submit_semaphores_.data();
+    submit_info.waitSemaphoreCount = static_cast<uint32_t>(external_submit_semaphores_.size());
+    submit_info.pWaitDstStageMask  = submit_stage_masks_.data();
+  }
 
   // Submits the provided commands to the queue. The vkWaitForFences blocks the execution until all
   // of the commands will be submitted. The submitting will begin after the present semaphore
@@ -168,6 +178,9 @@ void VulkanApplication::render_frame(Duration delta) {
 
   current_semaphore_ = (current_semaphore_ + 1) % present_finished_semaphores_.size();
   current_frame_     = (current_frame_ + 1) % kMaxFramesInFlight;
+
+  // External semaphores are used for a single frame only
+  external_submit_semaphores_.clear();
 }
 
 void VulkanApplication::create_dsl() {
@@ -382,6 +395,11 @@ void VulkanApplication::init_imgui() {
   deletion_queue_.push_deletor([]() { ImGui_ImplVulkan_Shutdown(); });
 
   util::Logger::succ("Successfully initialized ImGui");
+}
+
+void VulkanApplication::wait_semaphore_on_submit_once(vk::Semaphore semaphore, vk::PipelineStageFlags stage_mask) {
+  external_submit_semaphores_.push_back(semaphore);
+  submit_stage_masks_.push_back(stage_mask);
 }
 
 }  // namespace eray::vkren
