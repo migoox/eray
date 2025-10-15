@@ -139,6 +139,7 @@ class VulkanApplication {
   std::uint16_t fps() const { return fps_; }
   std::uint16_t tps() const { return tps_; }
   Duration time() const { return time_; }
+  void set_tick_time(Duration tick_time) { tick_time_ = tick_time; }
 
   os::FileDialog& file_dialog() { return os::System::file_dialog(); }
 
@@ -173,14 +174,16 @@ class VulkanApplication {
  private:
   VulkanApplicationContext context_;
 
-  static constexpr Duration kTickTime = 16666us;  // 60 TPS = 16.6(6) ms/t
-  Duration time_                      = 0ns;
-  std::uint16_t fps_                  = 0;
-  std::uint16_t tps_                  = 0;
-  Duration lag_                       = 0ns;
-  Duration second_                    = 0ns;
-  uint16_t frames_                    = 0U;
-  uint16_t ticks_                     = 0U;
+  static constexpr Duration kDefaultTickTime = 16666us;  // 60 TPS = 16.6(6) ms/t
+
+  Duration tick_time_ = kDefaultTickTime;
+  Duration time_      = 0ns;
+  std::uint16_t fps_  = 0;
+  std::uint16_t tps_  = 0;
+  Duration lag_       = 0ns;
+  Duration second_    = 0ns;
+  uint16_t frames_    = 0U;
+  uint16_t ticks_     = 0U;
 
   /**
    * @brief Command pools manage the memory that is used to store the buffers and command buffers are allocated from

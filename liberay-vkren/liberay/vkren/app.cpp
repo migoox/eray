@@ -64,11 +64,11 @@ void VulkanApplication::main_loop() {
 
     lag_ += std::chrono::duration_cast<Duration>(delta);
     second_ += std::chrono::duration_cast<Duration>(delta);
-    while (lag_ >= kTickTime) {
-      on_physics_update(context_, kTickTime);
+    while (lag_ >= tick_time_) {
+      on_physics_update(context_, tick_time_);
 
-      lag_ -= kTickTime;
-      time_ += kTickTime;
+      lag_ -= tick_time_;
+      time_ += tick_time_;
       ++ticks_;
     }
 
