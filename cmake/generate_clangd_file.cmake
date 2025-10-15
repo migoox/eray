@@ -22,6 +22,13 @@ function(generate_clangd_file COMPILER_FLAGS)
       ${FLAG}
       "\n")
     endforeach()
+
+  string(CONCAT CLANGD_FILE_CONTENT 
+    "${CLANGD_FILE_CONTENT}"
+    "  Remove:\n"
+    "    - -fmodule*\n"
+    "    - -fdeps*\n"
+    "\n")
     
 
   file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/.clangd "${CLANGD_FILE_CONTENT}")
