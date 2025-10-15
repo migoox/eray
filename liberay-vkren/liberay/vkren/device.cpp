@@ -87,8 +87,9 @@ Device::CreateInfo Device::CreateInfo::DesktopProfile::get(
   device_extensions_.clear();
   device_extensions_ = {
       vk::KHRSwapchainExtensionName,  // requires Surface Instance Extension
-      vk::KHRSpirv14ExtensionName,           vk::KHRSynchronization2ExtensionName,
-      vk::KHRCreateRenderpass2ExtensionName, "VK_EXT_host_image_copy",
+      vk::KHRSpirv14ExtensionName,
+      vk::KHRSynchronization2ExtensionName,
+      vk::KHRCreateRenderpass2ExtensionName,
   };
 
   // feature chains are defined by the profile only
@@ -450,10 +451,9 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
   auto features                     = features2.features;
   features.tessellationShader       = vk::True;
   vk11features.shaderDrawParameters = vk::True;
-  vk14features.hostImageCopy        = vk::True;
 
   auto device_create_info = vk::DeviceCreateInfo{
-      .pNext                   = &vk11features,  // ✅ correct chain root
+      .pNext                   = &vk11features,
       .queueCreateInfoCount    = 1,
       .pQueueCreateInfos       = &device_queue_create_info,
       .enabledExtensionCount   = static_cast<uint32_t>(info.device_extensions.size()),

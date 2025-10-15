@@ -405,8 +405,7 @@ class ComputeParticlesMultithreadingApplication {
     int width{};
     int height{};
     glfwGetFramebufferSize(window_, &width, &height);
-    swap_chain_ = vkren::SwapChain::create(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                           device_.max_usable_sample_count())
+    swap_chain_ = vkren::SwapChain::create(device_, window_, device_.max_usable_sample_count())
                       .or_panic("Could not create a swap chain");
   }
 
@@ -419,7 +418,7 @@ class ComputeParticlesMultithreadingApplication {
       glfwWaitEvents();
     }
 
-    if (!swap_chain_.recreate(device_, static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
+    if (!swap_chain_.recreate()) {
       return std::unexpected(SwapchainRecreationFailure{});
     }
 
