@@ -14,10 +14,16 @@ namespace eray::vkren {
  *
  */
 struct OffscreenFragmentRenderer {
-  ImageResource target_img_;
-  vk::raii::ImageView target_img_view_      = nullptr;
+  struct TargetInfo {
+    ImageResource img;
+    vk::raii::ImageView img_view      = nullptr;
+    vk::raii::Framebuffer framebuffer = nullptr;
+  };
+  static constexpr size_t kTargetCount = 2;
+  std::array<TargetInfo, kTargetCount> targets_;
+  size_t current_image_;
+
   vk::raii::RenderPass render_pass_         = nullptr;
-  vk::raii::Framebuffer framebuffer_        = nullptr;
   vk::raii::CommandPool cmd_pool_           = nullptr;
   vk::raii::CommandBuffer cmd_buff_         = nullptr;
   vk::raii::Pipeline pipeline_              = nullptr;
@@ -35,8 +41,13 @@ struct OffscreenFragmentRenderer {
   void init_pipeline(vk::ShaderModule vertex_module, vk::ShaderModule fragment_module,
                      vk::DescriptorSetLayout descriptor_set_layout);
 
-  vk::Image target_image() const { return target_img_._image._vk_handle; }
-  vk::ImageView target_image_view() const { return target_img_view_; }
+  vk::Image target_image() const { return targets_[current_image_].img.vk_image(); }
+  vk::ImageView target_image() { return targets_[current_image_].img_view; }
+  vk::ImageView back_image() { return targets_[(current_image_ + 1) % kTargetCount].img_view; }
+  vk::ImageView image(size_t i) { return targets_[i % kTargetCount].img_view; }
+
+  size_t current_image_ind() const { return current_image_; }
+  size_t next_image_ind() const { return (current_image_ + 1) % kTargetCount; }
 
   void set_viewport(int x, int y, int width, int height);
 

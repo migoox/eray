@@ -12,16 +12,32 @@ Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Devic
                                                                            const ImageDescription& target_image_desc,
                                                                            bool blocking) {
   OffscreenFragmentRenderer off_rend{};
-  off_rend._p_device = &device;
-  if (auto img_opt = ImageResource::create_attachment_image(device, target_image_desc,
-                                                            vk::ImageUsageFlagBits::eColorAttachment |
-                                                                vk::ImageUsageFlagBits::eTransferDst |
-                                                                vk::ImageUsageFlagBits::eSampled,
-                                                            vk::ImageAspectFlagBits::eColor)) {
-    off_rend.target_img_ = std::move(*img_opt);
-  } else {
-    return std::unexpected(img_opt.error());
+
+  for (auto i = 0U; i < kTargetCount; ++i) {
+    off_rend._p_device = &device;
+    if (auto img_opt = ImageResource::create_attachment_image(device, target_image_desc,
+                                                              vk::ImageUsageFlagBits::eColorAttachment |
+                                                                  vk::ImageUsageFlagBits::eTransferDst |
+                                                                  vk::ImageUsageFlagBits::eSampled,
+                                                              vk::ImageAspectFlagBits::eColor)) {
+      off_rend.targets_[i].img = std::move(*img_opt);
+    } else {
+      return std::unexpected(img_opt.error());
+    }
+    off_rend.targets_[i].img_view =
+        Result(off_rend.targets_[i].img.create_image_view()).or_panic("Image view creation failed");
   }
+  off_rend.current_image_ = 0;
+
+  auto buff = device.begin_single_time_commands();
+
+  for (auto i = 0U; i < kTargetCount; ++i) {
+    off_rend.targets_[i].img.transition_layout(buff, vk::ImageLayout::eUndefined,
+                                               vk::ImageLayout::eShaderReadOnlyOptimal);
+  }
+
+  device.end_single_time_commands(buff);
+
   off_rend.viewport = vk::Viewport{
       .x        = 0,
       .y        = 0,
@@ -30,12 +46,6 @@ Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Devic
       .minDepth = 0.F,
       .maxDepth = 1.F,
   };
-
-  off_rend.target_img_view_ = Result(off_rend.target_img_.create_image_view()).or_panic("Image view creation failed");
-
-  auto buff = device.begin_single_time_commands();
-  off_rend.target_img_.transition_layout(buff, vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal);
-  device.end_single_time_commands(buff);
 
   auto color_attachment_desc = vk::AttachmentDescription{
       .flags          = {},
@@ -79,18 +89,22 @@ Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Devic
 
   off_rend.render_pass_ = Result(device->createRenderPass(render_pass_info)).or_panic("Render pass creation failed");
 
-  auto attachments = std::array{*off_rend.target_img_view_};
-  auto fb_info     = vk::FramebufferCreateInfo{
-          .flags           = {},
-          .renderPass      = *off_rend.render_pass_,
-          .attachmentCount = static_cast<uint32_t>(attachments.size()),
-          .pAttachments    = attachments.data(),
-          .width           = target_image_desc.width,
-          .height          = target_image_desc.height,
-          .layers          = 1,
-  };
+  for (auto i = 0U; i < kTargetCount; ++i) {
+    auto attachments = std::array{*off_rend.targets_[i].img_view};
+    auto fb_info     = vk::FramebufferCreateInfo{
+            .flags           = {},
+            .renderPass      = *off_rend.render_pass_,
+            .attachmentCount = static_cast<uint32_t>(attachments.size()),
+            .pAttachments    = attachments.data(),
+            .width           = target_image_desc.width,
+            .height          = target_image_desc.height,
+            .layers          = 1,
+    };
 
-  off_rend.framebuffer_        = Result(device->createFramebuffer(fb_info)).or_panic("Framebuffer creation failed");
+    off_rend.targets_[i].framebuffer =
+        Result(device->createFramebuffer(fb_info)).or_panic("Framebuffer creation failed");
+  }
+
   off_rend.finished_semaphore_ = Result(device->createSemaphore(vk::SemaphoreCreateInfo{}))
                                      .or_panic("Could not create a semaphore for offscreen rendering");
   off_rend.finished_fence_ =
@@ -137,14 +151,14 @@ void OffscreenFragmentRenderer::init_pipeline(vk::ShaderModule vertex_module, vk
 
   vk::Viewport viewport{.x        = 0.0F,
                         .y        = 0.0F,
-                        .width    = static_cast<float>(target_img_.description.width),
-                        .height   = static_cast<float>(target_img_.description.height),
+                        .width    = static_cast<float>(targets_[current_image_].img.description.width),
+                        .height   = static_cast<float>(targets_[current_image_].img.description.height),
                         .minDepth = 0.0F,
                         .maxDepth = 1.0F};
 
-  vk::Rect2D scissor{
-      .offset = vk::Offset2D{.x = 0, .y = 0},
-      .extent = vk::Extent2D{.width = target_img_.description.width, .height = target_img_.description.height}};
+  vk::Rect2D scissor{.offset = vk::Offset2D{.x = 0, .y = 0},
+                     .extent = vk::Extent2D{.width  = targets_[current_image_].img.description.width,
+                                            .height = targets_[current_image_].img.description.height}};
 
   vk::PipelineViewportStateCreateInfo viewport_state{
       .flags = {}, .viewportCount = 1, .pViewports = &viewport, .scissorCount = 1, .pScissors = &scissor};
@@ -227,7 +241,7 @@ void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk
       .newLayout           = vk::ImageLayout::eColorAttachmentOptimal,
       .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
       .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-      .image               = target_image(),
+      .image               = targets_[current_image_].img.vk_image(),
       .subresourceRange =
           vk::ImageSubresourceRange{
               .aspectMask     = vk::ImageAspectFlagBits::eColor,
@@ -250,15 +264,12 @@ void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk
 
   auto rp_begin = vk::RenderPassBeginInfo{
       .renderPass  = *render_pass_,
-      .framebuffer = *framebuffer_,
+      .framebuffer = *targets_[current_image_].framebuffer,
       .renderArea =
           vk::Rect2D{
               .offset = vk::Offset2D{.x = 0, .y = 0},
-              .extent =
-                  vk::Extent2D{
-                      .width  = target_img_.description.width,
-                      .height = target_img_.description.height,
-                  },
+              .extent = vk::Extent2D{.width  = targets_[current_image_].img.description.width,
+                                     .height = targets_[current_image_].img.description.height},
           },
       .clearValueCount = static_cast<uint32_t>(clear_values.size()),
       .pClearValues    = clear_values.data(),
@@ -281,7 +292,7 @@ void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk
       .newLayout           = vk::ImageLayout::eShaderReadOnlyOptimal,
       .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
       .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-      .image               = target_image(),
+      .image               = targets_[current_image_].img.vk_image(),
       .subresourceRange =
           vk::ImageSubresourceRange{
               .aspectMask     = vk::ImageAspectFlagBits::eColor,
@@ -323,24 +334,24 @@ void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk
     submit_info.signalSemaphoreCount = 1;
     _p_device->graphics_queue().submit(submit_info);
   }
+
+  current_image_ = (current_image_ + 1) % kTargetCount;
 }
 
 void OffscreenFragmentRenderer::clear(vk::ClearColorValue clear_value) {
   auto cmd = _p_device->begin_single_time_commands();
-
-  target_img_.transition_layout(cmd, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral);
-
-  vk::ImageSubresourceRange range{
-      .aspectMask     = vk::ImageAspectFlagBits::eColor,
-      .baseMipLevel   = 0,
-      .levelCount     = 1,
-      .baseArrayLayer = 0,
-      .layerCount     = 1,
-  };
-  cmd.clearColorImage(target_img_.vk_image(), vk::ImageLayout::eGeneral, clear_value, range);
-
-  target_img_.transition_layout(cmd, vk::ImageLayout::eGeneral, vk::ImageLayout::eShaderReadOnlyOptimal);
-
+  for (auto i = 0U; i < kTargetCount; ++i) {
+    targets_[i].img.transition_layout(cmd, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral);
+    vk::ImageSubresourceRange range{
+        .aspectMask     = vk::ImageAspectFlagBits::eColor,
+        .baseMipLevel   = 0,
+        .levelCount     = 1,
+        .baseArrayLayer = 0,
+        .layerCount     = 1,
+    };
+    cmd.clearColorImage(targets_[i].img.vk_image(), vk::ImageLayout::eGeneral, clear_value, range);
+    targets_[i].img.transition_layout(cmd, vk::ImageLayout::eGeneral, vk::ImageLayout::eShaderReadOnlyOptimal);
+  }
   _p_device->end_single_time_commands(cmd);
 }
 
