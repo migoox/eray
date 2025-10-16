@@ -20,6 +20,14 @@ Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Devic
   } else {
     return std::unexpected(img_opt.error());
   }
+  off_rend.viewport = vk::Viewport{
+      .x        = 0,
+      .y        = 0,
+      .width    = static_cast<float>(target_image_desc.width),
+      .height   = static_cast<float>(target_image_desc.height),
+      .minDepth = 0.F,
+      .maxDepth = 1.F,
+  };
 
   off_rend.target_img_view_ = Result(off_rend.target_img_.create_image_view()).or_panic("Image view creation failed");
 
@@ -234,21 +242,24 @@ void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk
 
   // == Render =========================================================================================================
   std::array<vk::ClearValue, 1> clear_values = {clear_color};
-  auto rp_begin                              = vk::RenderPassBeginInfo{
-                                   .renderPass  = *render_pass_,
-                                   .framebuffer = *framebuffer_,
-                                   .renderArea =
+
+  auto rp_begin = vk::RenderPassBeginInfo{
+      .renderPass  = *render_pass_,
+      .framebuffer = *framebuffer_,
+      .renderArea =
           vk::Rect2D{
-                                           .offset = vk::Offset2D{.x = 0, .y = 0},
-                                           .extent =
+              .offset = vk::Offset2D{.x = 0, .y = 0},
+              .extent =
                   vk::Extent2D{
-                                                   .width  = target_img_.description.width,
-                                                   .height = target_img_.description.height,
+                      .width  = target_img_.description.width,
+                      .height = target_img_.description.height,
                   },
           },
-                                   .clearValueCount = static_cast<uint32_t>(clear_values.size()),
-                                   .pClearValues    = clear_values.data(),
+      .clearValueCount = static_cast<uint32_t>(clear_values.size()),
+      .pClearValues    = clear_values.data(),
   };
+
+  cmd_buff_.setViewport(0, viewport);
   cmd_buff_.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout_, 0, descriptor_set, nullptr);
   cmd_buff_.beginRenderPass(rp_begin, vk::SubpassContents::eInline);
   cmd_buff_.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline_);
@@ -316,6 +327,15 @@ void OffscreenFragmentRenderer::clear(vk::ClearColorValue clear_value) {
   target_img_.transition_layout(cmd, vk::ImageLayout::eGeneral, vk::ImageLayout::eShaderReadOnlyOptimal);
 
   _p_device->end_single_time_commands(cmd);
+}
+
+void OffscreenFragmentRenderer::set_viewport(int x, int y, int width, int height) {
+  viewport = vk::Viewport{
+      .x      = static_cast<float>(x),
+      .y      = static_cast<float>(y),
+      .width  = static_cast<float>(width),
+      .height = static_cast<float>(height),
+  };
 }
 
 }  // namespace eray::vkren

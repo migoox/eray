@@ -5,6 +5,7 @@
 #include <liberay/vkren/image_description.hpp>
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
@@ -23,6 +24,7 @@ struct OffscreenFragmentRenderer {
   vk::raii::PipelineLayout pipeline_layout_ = nullptr;
   vk::raii::Semaphore finished_semaphore_   = nullptr;
   observer_ptr<const Device> _p_device      = nullptr;
+  vk::Viewport viewport;
 
   static Result<OffscreenFragmentRenderer, Error> create(Device& device, const ImageDescription& target_image_desc);
 
@@ -32,6 +34,8 @@ struct OffscreenFragmentRenderer {
 
   vk::Image target_image() const { return target_img_._image._vk_handle; }
   vk::ImageView target_image_view() const { return target_img_view_; }
+
+  void set_viewport(int x, int y, int width, int height);
 
   /**
    * @brief Expects the target image to be in VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL. After execution, this image is in
