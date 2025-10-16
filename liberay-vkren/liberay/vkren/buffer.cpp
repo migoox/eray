@@ -200,12 +200,17 @@ Result<PersistentlyMappedBufferResource, Error> BufferResource::persistently_map
   };
 }
 
-Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_buffer(Device& device,
-                                                                                       vk::DeviceSize size_bytes) {
+Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_storage_buffer(
+    Device& device, vk::DeviceSize size_bytes) {
+  return create_readback_buffer(device, size_bytes, vk::BufferUsageFlagBits::eStorageBuffer);
+}
+
+Result<PersistentlyMappedBufferResource, Error> BufferResource::create_readback_buffer(
+    Device& device, vk::DeviceSize size_bytes, vk::BufferUsageFlags additional_usage_flags) {
   auto buf_create_info = vk::BufferCreateInfo{
       .sType = vk::StructureType::eBufferCreateInfo,
       .size  = size_bytes,
-      .usage = vk::BufferUsageFlagBits::eTransferDst,
+      .usage = vk::BufferUsageFlagBits::eTransferDst | additional_usage_flags,
   };
 
   VmaAllocationCreateInfo alloc_create_info = {};

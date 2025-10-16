@@ -154,6 +154,9 @@ struct BufferResource {
    * @return Result<Buffer, Error>
    */
   [[nodiscard]] static Result<PersistentlyMappedBufferResource, Error> create_readback_buffer(
+      Device& device, vk::DeviceSize size_bytes, vk::BufferUsageFlags usage_flags);
+
+  [[nodiscard]] static Result<PersistentlyMappedBufferResource, Error> create_readback_storage_buffer(
       Device& device, vk::DeviceSize size_bytes);
 
   /**
