@@ -308,8 +308,8 @@ void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk
       .pWaitDstStageMask    = nullptr,
       .commandBufferCount   = 1,
       .pCommandBuffers      = &*cmd_buff_,
-      .signalSemaphoreCount = 1,
-      .pSignalSemaphores    = &*finished_semaphore_,
+      .signalSemaphoreCount = 0,
+      .pSignalSemaphores    = nullptr,
   };
 
   if (blocking) {
@@ -319,6 +319,8 @@ void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk
       ;
     }
   } else {
+    submit_info.pSignalSemaphores    = &*finished_semaphore_;
+    submit_info.signalSemaphoreCount = 1;
     _p_device->graphics_queue().submit(submit_info);
   }
 }
