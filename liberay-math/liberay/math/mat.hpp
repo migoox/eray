@@ -543,8 +543,8 @@ Mat<4, 4, T> orthographic_vk_rh(T left, T right, T bottom, T top, T z_near, T z_
   return Mat<4, 4, T>{
       Vec<4, T>{static_cast<T>(2) / (right - left), 0, 0, 0},
       Vec<4, T>{0, -static_cast<T>(2) / (top - bottom), 0, 0},
-      Vec<4, T>{0, 0, -static_cast<T>(1) / (z_near - z_far), 0},
-      Vec<4, T>{-(right + left) / (right - left), (top + bottom) / (top - bottom), -z_near / (z_far - z_near),
+      Vec<4, T>{0, 0, static_cast<T>(1) / (z_near - z_far), 0},
+      Vec<4, T>{-(right + left) / (right - left), (top + bottom) / (top - bottom), z_near / (z_far - z_near),
                 static_cast<T>(1)},
   };
 }
