@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/offscreen_renderer.hpp>
@@ -8,7 +9,8 @@
 namespace eray::vkren {
 
 Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Device& device,
-                                                                           const ImageDescription& target_image_desc) {
+                                                                           const ImageDescription& target_image_desc,
+                                                                           bool blocking) {
   OffscreenFragmentRenderer off_rend{};
   off_rend._p_device = &device;
   if (auto img_opt = ImageResource::create_attachment_image(device, target_image_desc,
@@ -91,6 +93,9 @@ Result<OffscreenFragmentRenderer, Error> OffscreenFragmentRenderer::create(Devic
   off_rend.framebuffer_        = Result(device->createFramebuffer(fb_info)).or_panic("Framebuffer creation failed");
   off_rend.finished_semaphore_ = Result(device->createSemaphore(vk::SemaphoreCreateInfo{}))
                                      .or_panic("Could not create a semaphore for offscreen rendering");
+  off_rend.finished_fence_ =
+      Result(device->createFence(vk::FenceCreateInfo{})).or_panic("Could not create a fence for offscreen rendering");
+  off_rend.blocking = blocking;
 
   auto command_pool_info = vk::CommandPoolCreateInfo{
       .flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -307,7 +312,15 @@ void OffscreenFragmentRenderer::render_once(vk::DescriptorSet descriptor_set, vk
       .pSignalSemaphores    = &*finished_semaphore_,
   };
 
-  _p_device->graphics_queue().submit(submit_info);
+  if (blocking) {
+    (*_p_device)->resetFences(*finished_fence_);
+    _p_device->graphics_queue().submit(submit_info, *finished_fence_);
+    while (vk::Result::eTimeout == (*_p_device)->waitForFences(*finished_fence_, vk::True, UINT64_MAX)) {
+      ;
+    }
+  } else {
+    _p_device->graphics_queue().submit(submit_info);
+  }
 }
 
 void OffscreenFragmentRenderer::clear(vk::ClearColorValue clear_value) {

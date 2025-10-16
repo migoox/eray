@@ -12,6 +12,7 @@
 #include <liberay/vkren/vma_raii_object.hpp>
 #include <optional>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
