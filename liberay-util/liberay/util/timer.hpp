@@ -41,8 +41,8 @@ struct formatter<eray::util::Timer> : formatter<std::string_view> {
   enum class FormatType { Milliseconds, Seconds } format_type = FormatType::Milliseconds;
 
   constexpr auto parse(format_parse_context& ctx) {
-    const auto* it  = ctx.begin();
-    const auto* end = ctx.end();
+    auto it  = ctx.begin();
+    auto end = ctx.end();
 
     if (it != end) {
       if (*it == 's') {
