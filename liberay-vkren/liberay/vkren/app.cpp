@@ -45,46 +45,50 @@ void VulkanApplication::init_vk() {
 }
 
 void VulkanApplication::main_loop() {
+  auto& imgui_io     = ImGui::GetIO();
   auto previous_time = Clock::now();
   while (!context_.window_->should_close()) {
+    auto current_time = Clock::now();
+    auto delta        = current_time - previous_time;
+    previous_time     = current_time;
+    lag_ += std::chrono::duration_cast<Duration>(delta);
+    second_ += std::chrono::duration_cast<Duration>(delta);
+
+    // == Process Input ================================================================================================
     context_.window_->poll_events();
-    auto& io = ImGui::GetIO();
-    if (!io.WantCaptureMouse && !io.WantCaptureKeyboard) {
+    if (!imgui_io.WantCaptureMouse && !imgui_io.WantCaptureKeyboard) {
       on_input_events_polled(context_);
     }
     context_.window_->process_queued_events();
 
-    if (auto result = os::System::file_dialog().update(); !result) {
-      util::Logger::err("File dialog update failed");
-    }
-
-    auto current_time = Clock::now();
-    auto delta        = current_time - previous_time;
-    previous_time     = current_time;
-
-    lag_ += std::chrono::duration_cast<Duration>(delta);
-    second_ += std::chrono::duration_cast<Duration>(delta);
+    // == Fixed time step update =======================================================================================
     while (lag_ >= tick_time_) {
-      on_physics_update(context_, tick_time_);
+      on_update(context_, tick_time_);
 
       lag_ -= tick_time_;
       time_ += tick_time_;
       ++ticks_;
     }
-
     ++frames_;
+
+    // == File dialog update ===========================================================================================
+    if (auto result = os::System::file_dialog().update(); !result) {
+      util::Logger::err("File dialog update failed");
+    }
+
+    // == Render =======================================================================================================
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     on_imgui(context_);
     ImGui::Render();
     render_frame(delta);
-
-    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+    if (imgui_io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
       ImGui::UpdatePlatformWindows();
       ImGui::RenderPlatformWindowsDefault();
     }
 
+    // == Update FPS and TPS ===========================================================================================
     if (second_ > 1s) {
       uint16_t seconds = static_cast<uint16_t>(std::chrono::duration_cast<std::chrono::seconds>(second_).count());
 
