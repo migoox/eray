@@ -115,12 +115,12 @@ Device::CreateInfo Device::CreateInfo::DesktopProfile::get(
   };
 }
 
-Result<Device, Error> Device::create(vk::raii::Context& ctx, const CreateInfo& info) noexcept {
-  auto device = Device();
-  TRY(device.create_instance(ctx, info));
-  TRY(device.create_debug_messenger(info));
-  if (auto result = info.surface_creator(device.instance())) {
-    device.surface_ = std::move(*result);
+Result<std::unique_ptr<Device>, Error> Device::create(vk::raii::Context& ctx, const CreateInfo& info) noexcept {
+  auto device = std::make_unique<Device>(Device());
+  TRY(device->create_instance(ctx, info));
+  TRY(device->create_debug_messenger(info));
+  if (auto result = info.surface_creator(device->instance())) {
+    device->surface_ = std::move(*result);
   } else {
     util::Logger::err("Failed to create a surface with the injected surface creator.");
     return std::unexpected(Error{
@@ -128,16 +128,16 @@ Result<Device, Error> Device::create(vk::raii::Context& ctx, const CreateInfo& i
         .code = ErrorCode::SurfaceCreationFailure{},
     });
   }
-  TRY(device.pick_physical_device(info));
-  TRY(device.create_logical_device(info));
-  TRY(device.create_command_pool());
+  TRY(device->pick_physical_device(info));
+  TRY(device->create_logical_device(info));
+  TRY(device->create_command_pool());
 
-  auto res = VmaAllocationManager::create(device.physical_device_, device.device_, device.instance_);
+  auto res = VmaAllocationManager::create(device->physical_device_, device->device_, device->instance_);
   if (!res) {
     return std::unexpected(res.error());
   }
 
-  device.vma_alloc_manager_ = std::move(*res);
+  device->vma_alloc_manager_ = std::move(*res);
 
   return device;
 }

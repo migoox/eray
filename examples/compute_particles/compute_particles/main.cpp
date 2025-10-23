@@ -87,12 +87,12 @@ class ComputeParticlesApplication {
 
     // Since draw frame operations are async, when the main loop ends the drawing operations may still be going on.
     // This call is allows for the async operations to finish before cleaning the resources.
-    device_->waitIdle();
+    device_->vk().waitIdle();
   }
 
   void draw_frame() {
     uint32_t image_index = 0;
-    if (auto acquire_opt = swap_chain_.acquire_next_image(UINT64_MAX, nullptr, *in_flight_fences_[current_frame_])) {
+    if (auto acquire_opt = swap_chain_->acquire_next_image(UINT64_MAX, nullptr, *in_flight_fences_[current_frame_])) {
       if (acquire_opt->status != vkren::SwapChain::AcquireResult::Status::Success) {
         return;
       }
@@ -101,9 +101,10 @@ class ComputeParticlesApplication {
       eray::util::panic("Failed to acquire next image!");
     }
 
-    while (vk::Result::eTimeout == device_->waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
+    while (vk::Result::eTimeout ==
+           device_->vk().waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
     }
-    device_->resetFences(*in_flight_fences_[current_frame_]);
+    device_->vk().resetFences(*in_flight_fences_[current_frame_]);
 
     uint64_t compute_wait_value    = timeline_value_;
     uint64_t compute_signal_value  = ++timeline_value_;
@@ -132,7 +133,7 @@ class ComputeParticlesApplication {
                         .signalSemaphoreCount = 1,
                         .pSignalSemaphores    = &*timeline_semaphore_,
       };
-      device_.compute_queue().submit(submit_info, nullptr);
+      device_->compute_queue().submit(submit_info, nullptr);
     }
 
     // == Graphics Submission ==========================================================================================
@@ -158,7 +159,7 @@ class ComputeParticlesApplication {
           .signalSemaphoreCount = 1,
           .pSignalSemaphores    = &*timeline_semaphore_,  //
       };
-      device_.graphics_queue().submit(submit_info, nullptr);
+      device_->graphics_queue().submit(submit_info, nullptr);
 
       auto wait_info = vk::SemaphoreWaitInfo{
           .semaphoreCount = 1,
@@ -167,18 +168,18 @@ class ComputeParticlesApplication {
       };
 
       // Block the CPU until the graphics and compute are ready for presentation
-      while (vk::Result::eTimeout == device_->waitSemaphores(wait_info, UINT64_MAX)) {
+      while (vk::Result::eTimeout == device_->vk().waitSemaphores(wait_info, UINT64_MAX)) {
       }
 
       const auto present_info = vk::PresentInfoKHR{
           .waitSemaphoreCount = 0,
           .pWaitSemaphores    = nullptr,
           .swapchainCount     = 1,
-          .pSwapchains        = &**swap_chain_,
+          .pSwapchains        = &***swap_chain_,
           .pImageIndices      = &image_index,
       };
 
-      if (!swap_chain_.present_image(present_info)) {
+      if (!swap_chain_->present_image(present_info)) {
         eray::util::Logger::err("Failed to present an image!");
       }
     }
@@ -193,10 +194,10 @@ class ComputeParticlesApplication {
     memcpy(uniform_buffers_mapped_[frame_index], &ubo, sizeof(ubo));
   }
 
-  void cleanup() { swap_chain_.destroy(); }
+  void cleanup() { swap_chain_->destroy(); }
 
   void create_swap_chain() {
-    swap_chain_ = vkren::SwapChain::create(device_, window_, device_.max_usable_sample_count())
+    swap_chain_ = vkren::SwapChain::create(*device_, window_, device_->max_usable_sample_count())
                       .or_panic("Could not create a swap chain");
   }
 
@@ -205,18 +206,18 @@ class ComputeParticlesApplication {
         eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
             .or_panic("Could not find main_sh.spv");
     auto main_shader_module =
-        vkren::ShaderModule::create(device_, main_binary).or_panic("Could not create a main shader module");
+        vkren::ShaderModule::create(*device_, main_binary).or_panic("Could not create a main shader module");
 
     auto binding_desc = ParticleSystem::binding_desc();
     auto attribs_desc = ParticleSystem::attribs_desc();
 
-    auto pipeline = vkren::GraphicsPipelineBuilder::create(swap_chain_)
+    auto pipeline = vkren::GraphicsPipelineBuilder::create(*swap_chain_)
                         .with_shaders(main_shader_module.shader_module, main_shader_module.shader_module)
                         .with_polygon_mode(vk::PolygonMode::eFill)
                         .with_cull_mode(vk::CullModeFlagBits::eBack, vk::FrontFace::eClockwise)
                         .with_input_state(binding_desc, attribs_desc)
                         .with_primitive_topology(vk::PrimitiveTopology::ePointList)
-                        .build(device_)
+                        .build(*device_)
                         .or_panic("Could not create a graphics pipeline");
 
     graphics_pipeline_        = std::move(pipeline.pipeline);
@@ -228,12 +229,12 @@ class ComputeParticlesApplication {
         eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "particle.spv")
             .or_panic("Could not find particle compute shader");
     auto particle_shader_module =
-        vkren::ShaderModule::create(device_, particle_binary).or_panic("Could not create a main shader module");
+        vkren::ShaderModule::create(*device_, particle_binary).or_panic("Could not create a main shader module");
 
     auto pipeline = vkren::ComputePipelineBuilder::create()
                         .with_descriptor_set_layout(compute_descriptor_set_layout_)
                         .with_shader(particle_shader_module.shader_module)
-                        .build(device_)
+                        .build(*device_)
                         .or_panic("Could not create a compute pipeline");
 
     compute_pipeline_        = std::move(pipeline.pipeline);
@@ -241,17 +242,17 @@ class ComputeParticlesApplication {
   }
 
   void create_command_pool() {
-    if (device_.graphics_queue_family() != device_.compute_queue_family()) {
+    if (device_->graphics_queue_family() != device_->compute_queue_family()) {
       eray::util::panic("Expected graphics queue and compute queue to be the same");
     }
 
     auto command_pool_info = vk::CommandPoolCreateInfo{
         .flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-        .queueFamilyIndex = device_.graphics_queue_family(),
+        .queueFamilyIndex = device_->graphics_queue_family(),
     };
 
     command_pool_ =
-        vkren::Result(device_->createCommandPool(command_pool_info)).or_panic("Could not create a command pool.");
+        vkren::Result(device_->vk().createCommandPool(command_pool_info)).or_panic("Could not create a command pool.");
   }
 
   void create_buffers() {
@@ -261,10 +262,10 @@ class ComputeParticlesApplication {
     auto region =
         eray::util::MemoryRegion{particle_system.particles.data(), particle_system.particles.size() * sizeof(Particle)};
     auto staging_buff =
-        vkren::BufferResource::create_staging_buffer(device_, region).or_panic("Could not create a Staging Buffer");
+        vkren::BufferResource::create_staging_buffer(*device_, region).or_panic("Could not create a Staging Buffer");
 
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
-      auto temp = vkren::BufferResource::create_gpu_local_buffer(device_, region.size_bytes(),
+      auto temp = vkren::BufferResource::create_gpu_local_buffer(*device_, region.size_bytes(),
                                                                  vk::BufferUsageFlagBits::eVertexBuffer |
                                                                      vk::BufferUsageFlagBits::eStorageBuffer |
                                                                      vk::BufferUsageFlagBits::eTransferDst)
@@ -280,7 +281,7 @@ class ComputeParticlesApplication {
     {
       vk::DeviceSize size_bytes = sizeof(UniformBufferObject);
       for (auto i = 0; i < kMaxFramesInFlight; ++i) {
-        auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(device_, size_bytes).or_panic();
+        auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(*device_, size_bytes).or_panic();
 
         // This technique is called persistent mapping, the buffer stays mapped for the application's whole life-time.
         // It increases performance as the mapping process is not free.
@@ -298,8 +299,8 @@ class ComputeParticlesApplication {
           .commandBufferCount = kMaxFramesInFlight,                //
       };
 
-      graphics_command_buffers_ =
-          vkren::Result(device_->allocateCommandBuffers(alloc_info)).or_panic("Command buffer allocation failure.");
+      graphics_command_buffers_ = vkren::Result(device_->vk().allocateCommandBuffers(alloc_info))
+                                      .or_panic("Command buffer allocation failure.");
     }
 
     {
@@ -309,8 +310,8 @@ class ComputeParticlesApplication {
           .commandBufferCount = kMaxFramesInFlight,                //
       };
 
-      compute_command_buffers_ =
-          vkren::Result(device_->allocateCommandBuffers(alloc_info)).or_panic("Command buffer allocation failure.");
+      compute_command_buffers_ = vkren::Result(device_->vk().allocateCommandBuffers(alloc_info))
+                                     .or_panic("Command buffer allocation failure.");
     }
   }
 
@@ -319,16 +320,17 @@ class ComputeParticlesApplication {
         .semaphoreType = vk::SemaphoreType::eTimeline,
         .initialValue  = 0,
     };
-    timeline_semaphore_ = vkren::Result(device_->createSemaphore(vk::SemaphoreCreateInfo{.pNext = &semaphore_info}))
-                              .or_panic("Could not create a semaphore");
+    timeline_semaphore_ =
+        vkren::Result(device_->vk().createSemaphore(vk::SemaphoreCreateInfo{.pNext = &semaphore_info}))
+            .or_panic("Could not create a semaphore");
     timeline_value_ = 0;
     in_flight_fences_.clear();
     for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
       in_flight_fences_.emplace_back(
-          vkren::Result(device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled}))
+          vkren::Result(device_->vk().createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled}))
               .or_panic("Could not create a fence"));
 
-      device_->resetFences(*in_flight_fences_.back());
+      device_->vk().resetFences(*in_flight_fences_.back());
     }
   }
 
@@ -338,25 +340,25 @@ class ComputeParticlesApplication {
    * @param image_index
    */
   void record_graphics_command_buffer(size_t frame_index, uint32_t image_index) {
-    swap_chain_.begin_rendering(graphics_command_buffers_[frame_index], image_index);
+    swap_chain_->begin_rendering(graphics_command_buffers_[frame_index], image_index);
 
     graphics_command_buffers_[frame_index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
     graphics_command_buffers_[frame_index].setViewport(
         0, vk::Viewport{
                .x      = 0.0F,
                .y      = 0.0F,
-               .width  = static_cast<float>(swap_chain_.extent().width),
-               .height = static_cast<float>(swap_chain_.extent().height),
+               .width  = static_cast<float>(swap_chain_->extent().width),
+               .height = static_cast<float>(swap_chain_->extent().height),
                // Note: min and max depth must be between [0.0F, 1.0F] and min might be higher than max.
                .minDepth = 0.0F,
                .maxDepth = 1.0F  //
            });
     graphics_command_buffers_[frame_index].setScissor(
-        0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_.extent()});
+        0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = swap_chain_->extent()});
     graphics_command_buffers_[frame_index].bindVertexBuffers(0, {ssbuffers_[current_frame_].vk_buffer()}, {0});
     graphics_command_buffers_[frame_index].draw(ParticleSystem::kParticleCount, 1, 0, 0);
 
-    swap_chain_.end_rendering(graphics_command_buffers_[frame_index], image_index);
+    swap_chain_->end_rendering(graphics_command_buffers_[frame_index], image_index);
   }
 
   void record_compute_command_buffer(size_t frame_index) {
@@ -370,9 +372,9 @@ class ComputeParticlesApplication {
   }
 
   void create_descriptors() {
-    dsl_manager_   = vkren::DescriptorSetLayoutManager::create(device_);
+    dsl_manager_   = vkren::DescriptorSetLayoutManager::create(*device_);
     auto ratios    = vkren::DescriptorPoolSizeRatio::create_default();
-    dsl_allocator_ = vkren::DescriptorAllocator::create_and_init(device_, 100, ratios).or_panic();
+    dsl_allocator_ = vkren::DescriptorAllocator::create_and_init(*device_, 100, ratios).or_panic();
     auto result    = vkren::DescriptorSetBuilder::create(dsl_manager_, dsl_allocator_)
                       .with_binding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eCompute)
                       .with_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute)
@@ -383,7 +385,7 @@ class ComputeParticlesApplication {
     compute_descriptor_sets_       = std::move(result.descriptor_sets);
     compute_descriptor_set_layout_ = result.layout;
 
-    auto writer = vkren::DescriptorSetWriter::create(device_);
+    auto writer = vkren::DescriptorSetWriter::create(*device_);
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
       auto last_ind = (i - 1) % kMaxFramesInFlight;
       auto curr_ind = i;
@@ -403,8 +405,8 @@ class ComputeParticlesApplication {
    */
   vk::raii::Context context_;
 
-  vkren::Device device_        = vkren::Device(nullptr);
-  vkren::SwapChain swap_chain_ = vkren::SwapChain(nullptr);
+  std::unique_ptr<vkren::Device> device_        = nullptr;
+  std::unique_ptr<vkren::SwapChain> swap_chain_ = nullptr;
 
   /**
    * @brief Describes the uniform buffers used in shaders.

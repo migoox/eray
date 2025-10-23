@@ -78,14 +78,19 @@ class Window {
   /**
    * @brief Subscribe to event notifications dispatched by window event dispatcher. It's
    * possible to set multiple event callbacks to one event. For each event type, the last added callback will be invoked
-   * first.
+   * last.
    *
    * @tparam TEvent
    * @param callback_fn
    */
   template <CWindowEvent TEvent>
-  void set_event_callback(const EventCallback<TEvent>& callback_fn) {
-    event_dispatcher_.set_event_callback(callback_fn);
+  EventCallbackHandle<TEvent> set_event_callback(const EventCallback<TEvent>& callback_fn) {
+    return event_dispatcher_.set_event_callback(callback_fn);
+  }
+
+  template <CWindowEvent TEvent>
+  void remove_event_callback(const EventCallbackHandle<TEvent>& callback_handle) {
+    event_dispatcher_.remove_event_callback<TEvent>(callback_handle);
   }
 
   /**

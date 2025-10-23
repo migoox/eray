@@ -28,7 +28,7 @@ void VulkanApplication::run() {
   destroy();
 }
 
-Device VulkanApplication::create_device() {
+std::unique_ptr<Device> VulkanApplication::create_device() {
   auto desktop_profile                  = Device::CreateInfo::DesktopProfile{};
   auto device_info                      = desktop_profile.get(*context_.window_);
   device_info.app_info.pApplicationName = create_info_.app_name.c_str();
@@ -102,7 +102,7 @@ void VulkanApplication::main_loop() {
 
   // Since draw frame operations are async, when the main loop ends the drawing operations may still be going on.
   // This call is allows for the async operations to finish before cleaning the resources.
-  context_.device_->waitIdle();
+  context_.device_->vk().waitIdle();
 }
 
 void VulkanApplication::render_frame(Duration delta) {
@@ -114,13 +114,13 @@ void VulkanApplication::render_frame(Duration delta) {
 
   // The solution below is not correct:
   while (vk::Result::eTimeout ==
-         context_.device_->waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
+         context_.device_->vk().waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
     ;
   }
 
   // Get the image from the swap chain. When the image will be ready the present semaphore will be signaled.
   uint32_t image_index{};
-  if (auto acquire_opt = context_.swap_chain_.acquire_next_image(
+  if (auto acquire_opt = context_.swap_chain_->acquire_next_image(
           UINT64_MAX, *present_finished_semaphores_[current_semaphore_], nullptr)) {
     if (acquire_opt->status != SwapChain::AcquireResult::Status::Success) {
       return;
@@ -133,7 +133,7 @@ void VulkanApplication::render_frame(Duration delta) {
 
   on_frame_prepare(context_, current_frame_, delta);
 
-  context_.device_->resetFences(*in_flight_fences_[current_frame_]);
+  context_.device_->vk().resetFences(*in_flight_fences_[current_frame_]);
   graphics_command_buffers_[current_frame_].reset();
   record_graphics_command_buffer(current_frame_, image_index);
 
@@ -164,19 +164,19 @@ void VulkanApplication::render_frame(Duration delta) {
   //
   // When the rendering finishes, the finished render finished semaphore is signaled.
   //
-  context_.device_.graphics_queue().submit(submit_info, *in_flight_fences_[current_frame_]);
+  context_.device_->graphics_queue().submit(submit_info, *in_flight_fences_[current_frame_]);
 
   // The image will not be presented until the render finished semaphore is signaled by the submit call.
   const auto present_info = vk::PresentInfoKHR{
       .waitSemaphoreCount = 1,
       .pWaitSemaphores    = &*render_finished_semaphores_[image_index],
       .swapchainCount     = 1,
-      .pSwapchains        = &**context_.swap_chain_,
+      .pSwapchains        = &***context_.swap_chain_,
       .pImageIndices      = &image_index,
       .pResults           = nullptr,
   };
 
-  if (!context_.swap_chain_.present_image(present_info)) {
+  if (!context_.swap_chain_->present_image(present_info)) {
     eray::util::Logger::err("Failed to present an image!");
   }
 
@@ -188,26 +188,26 @@ void VulkanApplication::render_frame(Duration delta) {
 }
 
 void VulkanApplication::create_dsl() {
-  context_.dsl_manager_   = DescriptorSetLayoutManager::create(context_.device_);
+  context_.dsl_manager_   = DescriptorSetLayoutManager::create(*context_.device_);
   auto ratios             = DescriptorPoolSizeRatio::create_default();
-  context_.dsl_allocator_ = DescriptorAllocator::create_and_init(context_.device_, 100, ratios).or_panic();
+  context_.dsl_allocator_ = DescriptorAllocator::create_and_init(*context_.device_, 100, ratios).or_panic();
 }
 
 void VulkanApplication::destroy() {
   on_destroy();
   deletion_queue_.flush();
-  context_.swap_chain_.destroy();
+  context_.swap_chain_->destroy();
 
   eray::util::Logger::succ("Successfully destroyed the vulkan application");
 }
 
 vk::SampleCountFlagBits VulkanApplication::get_msaa_sample_count(const vk::raii::PhysicalDevice& /*physical_device*/) {
-  return context_.device_.max_usable_sample_count();
+  return context_.device_->max_usable_sample_count();
 }
 
 void VulkanApplication::create_swap_chain() {
   context_.swap_chain_ =
-      SwapChain::create(context_.device_, context_.window_, get_msaa_sample_count(context_.device_.physical_device()),
+      SwapChain::create(*context_.device_, context_.window_, get_msaa_sample_count(context_.device_->physical_device()),
                         create_info_.vsync)
           .or_panic("Could not create a swap chain");
 }
@@ -224,11 +224,11 @@ void VulkanApplication::create_command_pool() {
 
       // Each command pool can only allocate command buffers that are submitted on a single type of queue.
       // We setup commands for drawing, and thus we've chosen the graphics queue family.
-      .queueFamilyIndex = context_.device_.graphics_queue_family(),
+      .queueFamilyIndex = context_.device_->graphics_queue_family(),
   };
 
   command_pool_ =
-      Result(context_.device_->createCommandPool(command_pool_info)).or_panic("Could not create a command pool");
+      Result(context_.device_->vk().createCommandPool(command_pool_info)).or_panic("Could not create a command pool");
 }
 
 void VulkanApplication::create_command_buffers() {
@@ -246,7 +246,7 @@ void VulkanApplication::create_command_buffers() {
   };
 
   auto result =
-      Result(context_.device_->allocateCommandBuffers(alloc_info)).or_panic("Could not allocate a command buffer");
+      Result(context_.device_->vk().allocateCommandBuffers(alloc_info)).or_panic("Could not allocate a command buffer");
   std::ranges::move(result | std::views::take(kMaxFramesInFlight), graphics_command_buffers_.begin());
 }
 
@@ -254,16 +254,16 @@ void VulkanApplication::create_sync_objs() {
   present_finished_semaphores_.clear();
   render_finished_semaphores_.clear();
 
-  for (size_t i = 0; i < context_.swap_chain_.images().size(); ++i) {
-    if (auto result = context_.device_->createSemaphore(vk::SemaphoreCreateInfo{})) {
+  for (size_t i = 0; i < context_.swap_chain_->images().size(); ++i) {
+    if (auto result = context_.device_->vk().createSemaphore(vk::SemaphoreCreateInfo{})) {
       present_finished_semaphores_.emplace_back(std::move(*result));
     } else {
       eray::util::panic("Could not create a semaphore");
     }
   }
 
-  for (size_t i = 0; i < context_.swap_chain_.images().size(); ++i) {
-    if (auto result = context_.device_->createSemaphore(vk::SemaphoreCreateInfo{})) {
+  for (size_t i = 0; i < context_.swap_chain_->images().size(); ++i) {
+    if (auto result = context_.device_->vk().createSemaphore(vk::SemaphoreCreateInfo{})) {
       render_finished_semaphores_.emplace_back(std::move(*result));
     } else {
       eray::util::panic("Could not create a semaphore");
@@ -271,7 +271,8 @@ void VulkanApplication::create_sync_objs() {
   }
 
   for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
-    if (auto result = context_.device_->createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled})) {
+    if (auto result =
+            context_.device_->vk().createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled})) {
       in_flight_fences_[i] = std::move(*result);
     } else {
       eray::util::panic("Could not create a fence");
@@ -283,19 +284,19 @@ void VulkanApplication::record_graphics_command_buffer(size_t frame_index, uint3
   auto clear_color_value         = get_clear_color_value();
   auto clear_depth_stencil_value = get_clear_depth_stencil_value();
 
-  context_.swap_chain_.begin_rendering(graphics_command_buffers_[frame_index], image_index, clear_color_value,
-                                       clear_depth_stencil_value);
+  context_.swap_chain_->begin_rendering(graphics_command_buffers_[frame_index], image_index, clear_color_value,
+                                        clear_depth_stencil_value);
 
   // Scissor rectangle defines in which region pixels will actually be stored. The rasterizer will discard any
   // pixels outside the scissored rectangle. We want to draw to entire framebuffer.
   graphics_command_buffers_[frame_index].setScissor(
-      0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = context_.swap_chain_.extent()});
+      0, vk::Rect2D{.offset = vk::Offset2D{.x = 0, .y = 0}, .extent = context_.swap_chain_->extent()});
   graphics_command_buffers_[frame_index].setViewport(
       0, vk::Viewport{
              .x      = 0.0F,
              .y      = 0.0F,
-             .width  = static_cast<float>(context_.swap_chain_.extent().width),
-             .height = static_cast<float>(context_.swap_chain_.extent().height),
+             .width  = static_cast<float>(context_.swap_chain_->extent().width),
+             .height = static_cast<float>(context_.swap_chain_->extent().height),
              // Note: min and max depth must be between [0.0F, 1.0F] and min might be higher than max.
              .minDepth = 0.0F,
              .maxDepth = 1.0F  //
@@ -307,7 +308,7 @@ void VulkanApplication::record_graphics_command_buffer(size_t frame_index, uint3
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(buff));
   }
 
-  context_.swap_chain_.end_rendering(graphics_command_buffers_[frame_index], image_index);
+  context_.swap_chain_->end_rendering(graphics_command_buffers_[frame_index], image_index);
 }
 
 static void check_vk_result(VkResult err) {
@@ -342,7 +343,7 @@ void VulkanApplication::init_imgui() {
       .pPoolSizes    = pool_sizes,
   };
 
-  imgui_descriptor_pool_ = Result(context_.device_->createDescriptorPool(pool_info))
+  imgui_descriptor_pool_ = Result(context_.device_->vk().createDescriptorPool(pool_info))
                                .or_panic("Could not create a descriptor pool for ImGui");
 
   // 2: initialize imgui library
@@ -357,26 +358,26 @@ void VulkanApplication::init_imgui() {
   ImGui_ImplGlfw_InitForVulkan(reinterpret_cast<GLFWwindow*>(context_.window_->win_handle()), true);
 
   // this initializes imgui for Vulkan
-  vk::Instance instance                    = context_.device_.instance();
-  vk::PhysicalDevice physical_device       = context_.device_.physical_device();
-  vk::Device device                        = *context_.device_;
-  vk::Queue graphics_queue                 = context_.device_.graphics_queue();
+  vk::Instance instance                    = context_.device_->instance();
+  vk::PhysicalDevice physical_device       = context_.device_->physical_device();
+  vk::Device device                        = **context_.device_;
+  vk::Queue graphics_queue                 = context_.device_->graphics_queue();
   vk::DescriptorPool imgui_descriptor_pool = imgui_descriptor_pool_;
 
-  auto color_format         = static_cast<VkFormat>(context_.swap_chain_.color_attachment_format());
-  auto depth_stencil_format = static_cast<VkFormat>(context_.swap_chain_.depth_stencil_attachment_format());
+  auto color_format         = static_cast<VkFormat>(context_.swap_chain_->color_attachment_format());
+  auto depth_stencil_format = static_cast<VkFormat>(context_.swap_chain_->depth_stencil_attachment_format());
 
   ImGui_ImplVulkan_InitInfo init_info{};
   init_info.Instance                    = static_cast<VkInstance>(instance);
   init_info.PhysicalDevice              = static_cast<VkPhysicalDevice>(physical_device);
   init_info.Device                      = static_cast<VkDevice>(device);
-  init_info.QueueFamily                 = context_.device_.graphics_queue_family();
+  init_info.QueueFamily                 = context_.device_->graphics_queue_family();
   init_info.Queue                       = static_cast<VkQueue>(graphics_queue);
   init_info.DescriptorPool              = static_cast<VkDescriptorPool>(imgui_descriptor_pool);
   init_info.RenderPass                  = VK_NULL_HANDLE;
-  init_info.MinImageCount               = context_.swap_chain_.min_image_count();
-  init_info.ImageCount                  = static_cast<uint32_t>(context_.swap_chain_.images().size());
-  init_info.MSAASamples                 = static_cast<VkSampleCountFlagBits>(context_.swap_chain_.msaa_sample_count());
+  init_info.MinImageCount               = context_.swap_chain_->min_image_count();
+  init_info.ImageCount                  = static_cast<uint32_t>(context_.swap_chain_->images().size());
+  init_info.MSAASamples                 = static_cast<VkSampleCountFlagBits>(context_.swap_chain_->msaa_sample_count());
   init_info.PipelineCache               = VK_NULL_HANDLE;
   init_info.Subpass                     = 0;
   init_info.UseDynamicRendering         = true;

@@ -27,16 +27,6 @@ namespace eray::vkren {
  */
 class Device {
  public:
-  /**
-   * @brief Creates uninitialized empty Device. Useful for postponed creation, usually when the Device is a class
-   * member.
-   *
-   * @warning This constructor is unsafe. It's programmer responsibility to overwrite the empty device with proper
-   * initialized one.
-   *
-   */
-  explicit Device(std::nullptr_t) {}
-
   ~Device();
 
   ERAY_DELETE_COPY(Device)
@@ -121,13 +111,16 @@ class Device {
     };
   };
 
-  static Result<Device, Error> create(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
+  static Result<std::unique_ptr<Device>, Error> create(vk::raii::Context& ctx, const CreateInfo& info) noexcept;
 
   vk::raii::Instance& instance() noexcept { return instance_; }
   const vk::raii::Instance& instance() const noexcept { return instance_; }
 
   vk::raii::PhysicalDevice& physical_device() noexcept { return physical_device_; }
   const vk::raii::PhysicalDevice& physical_device() const noexcept { return physical_device_; }
+
+  vk::raii::Device& vk() noexcept { return device_; }
+  const vk::raii::Device& vk() const noexcept { return device_; }
 
   vk::raii::Device* operator->() noexcept { return &device_; }
   const vk::raii::Device* operator->() const noexcept { return &device_; }

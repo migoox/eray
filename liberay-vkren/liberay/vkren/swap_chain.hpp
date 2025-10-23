@@ -2,11 +2,11 @@
 
 #include <vulkan/vulkan_core.h>
 
-#include <cstddef>
 #include <liberay/os/window/window.hpp>
 #include <liberay/util/ruleof.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
+#include <liberay/vkren/deletion_queue.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/image.hpp>
 #include <memory>
@@ -16,24 +16,14 @@ namespace eray::vkren {
 
 class SwapChain {
  public:
-  /**
-   * @brief Creates uninitialized empty SwapChain. Useful for postponed creation, usually when the SwapChain is a class
-   * member.
-   *
-   * @warning This constructor is unsafe. It's programmer responsibility to overwrite the empty swap chain with proper
-   * initialized one.
-   *
-   */
-  explicit SwapChain(std::nullptr_t);
-
   SwapChain(const SwapChain&)                = delete;
   SwapChain(SwapChain&&) noexcept            = default;
   SwapChain& operator=(const SwapChain&)     = delete;
   SwapChain& operator=(SwapChain&&) noexcept = default;
 
-  static Result<SwapChain, Error> create(Device& device, std::shared_ptr<os::Window>,
-                                         vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1,
-                                         bool vsync                           = true) noexcept;
+  static Result<std::unique_ptr<SwapChain>, Error> create(
+      Device& device, std::shared_ptr<os::Window>, vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1,
+      bool vsync = true) noexcept;
 
   vk::raii::SwapchainKHR* operator->() noexcept { return &swap_chain_; }
   const vk::raii::SwapchainKHR* operator->() const noexcept { return &swap_chain_; }
@@ -82,6 +72,8 @@ class SwapChain {
    * @param clear_depth_stencil
    */
   void end_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index);
+
+  void clear();
 
   /**
    * @brief Allows to destroy the swap chain explicitly. Example use case: Swap chain must be destroyed before
@@ -152,6 +144,7 @@ class SwapChain {
  private:
   SwapChain() = default;
 
+  void register_callbacks() noexcept;
   Result<void, Error> create_swap_chain(vkren::Device& device, uint32_t width, uint32_t height) noexcept;
   Result<void, Error> create_image_views(vkren::Device& device) noexcept;
   Result<void, Error> create_color_attachment_image(vkren::Device& device) noexcept;
@@ -221,9 +214,10 @@ class SwapChain {
 
   vk::SampleCountFlagBits msaa_sample_count_ = vk::SampleCountFlagBits::e1;
 
-  std::shared_ptr<const os::Window> window_;
+  std::shared_ptr<os::Window> window_;
 
   bool framebuffer_resized_{};
+  DeletionQueue deletion_queue_;
 };
 
 }  // namespace eray::vkren

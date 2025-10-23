@@ -27,8 +27,8 @@ struct VulkanApplicationContext {
    *
    */
   vk::raii::Context vk_context_;
-  Device device_                            = Device(nullptr);
-  SwapChain swap_chain_                     = SwapChain(nullptr);
+  std::unique_ptr<Device> device_           = nullptr;
+  std::unique_ptr<SwapChain> swap_chain_    = nullptr;
   DescriptorSetLayoutManager dsl_manager_   = DescriptorSetLayoutManager(nullptr);
   DescriptorAllocator dsl_allocator_        = DescriptorAllocator(nullptr);
   std::shared_ptr<eray::os::Window> window_ = nullptr;
@@ -78,7 +78,7 @@ class VulkanApplication {
    * @brief Allows for custom Vulkan Device creation. Useful when you want to set non default profiles.
    *
    */
-  virtual Device create_device();
+  virtual std::unique_ptr<Device> create_device();
 
   /**
    * @brief If not provided and the `enable_msaa` is set to `true`,

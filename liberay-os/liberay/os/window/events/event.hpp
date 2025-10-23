@@ -3,7 +3,6 @@
 #include <functional>
 #include <liberay/os/window/input_codes.hpp>
 #include <liberay/util/enum_mapper.hpp>
-#include <ranges>
 #include <utility>
 #include <variant>
 
@@ -197,6 +196,11 @@ static constexpr auto class_method_as_event_callback(TClass* obj, TMethod TClass
   return [obj, method](auto&& arg) -> bool { return (obj->*method)(std::forward<decltype(arg)>(arg)); };
 }
 
+template <CWindowEvent TEvent>
+struct EventCallbackHandle {
+  uint32_t index;
+};
+
 /**
  * @brief This class allows for subscribing/dispatching window events that are specified in the pack.
  * The dispatcher instance is owned by `Window` class.
@@ -211,14 +215,28 @@ class WindowEventDispatcherBase {
 
   /**
    * @brief Subscribe to event notifications dispatched by window event dispatcher. It's
-   * possible to set multiple event callbacks to one event. The last added callback will be invoked first.
+   * possible to set multiple event callbacks to one event. The last added callback will be invoked the last.
    *
    * @tparam TEvent
    * @param callback_fn
+   * @return CallbackHandle<TEvent>, it allows to call remove_event_callback later
    */
   template <CWindowEvent TEvent>
-  void set_event_callback(const EventCallback<TEvent>& callback_fn) {
-    std::get<CallbacksFor<TEvent>>(subscribers_).push_back(callback_fn);
+  EventCallbackHandle<TEvent> set_event_callback(const EventCallback<TEvent>& callback_fn) {
+    auto& vec   = std::get<CallbacksFor<TEvent>>(subscribers_);
+    auto handle = EventCallbackHandle<TEvent>{
+        .index = static_cast<uint32_t>(vec.size()),
+    };
+    vec.push_back(callback_fn);
+    return handle;
+  }
+
+  template <CWindowEvent TEvent>
+  void remove_event_callback(EventCallbackHandle<TEvent> callback_handle) {
+    auto& vec = std::get<CallbacksFor<TEvent>>(subscribers_);
+    if (callback_handle.index < vec.size()) {
+      vec[callback_handle.index] = {};
+    }
   }
 
   /**
@@ -234,7 +252,7 @@ class WindowEventDispatcherBase {
   }
 
   /**
-   * @brief Deferrs event dispatching to the moment when `flush_deferred_events` is called (non-blocking).
+   * @brief Deferrs event dispatching to the moment when `process_queued_events` is called (non-blocking).
    *
    * @param event
    */
@@ -252,8 +270,10 @@ class WindowEventDispatcherBase {
   template <CWindowEvent TEvent>
   void dispatch_event(const TEvent& event) {
     auto& callbacks = std::get<CallbacksFor<TEvent>>(subscribers_);
-    for (auto& subscriber : callbacks | std::ranges::views::reverse) {
-      subscriber(event);
+    for (auto& subscriber : callbacks) {
+      if (subscriber) {  // TODO(migoox): Improve callback removal system.
+        subscriber(event);
+      }
     }
   }
 

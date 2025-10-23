@@ -10,6 +10,7 @@
 #include <liberay/util/platform.hpp>
 #include <liberay/util/zstring_view.hpp>
 #include <memory>
+#include <ranges>
 
 #ifdef IS_WINDOWS
 #include <windows.h>

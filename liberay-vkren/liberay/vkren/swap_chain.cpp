@@ -18,27 +18,35 @@
 
 namespace eray::vkren {
 
-Result<SwapChain, Error> SwapChain::create(Device& device, std::shared_ptr<os::Window> window,
-                                           vk::SampleCountFlagBits sample_count, bool vsync) noexcept {
-  auto swap_chain = SwapChain();
+Result<std::unique_ptr<SwapChain>, Error> SwapChain::create(Device& device, std::shared_ptr<os::Window> window,
+                                                            vk::SampleCountFlagBits sample_count, bool vsync) noexcept {
+  auto swap_chain = std::make_unique<SwapChain>(SwapChain());
 
-  window->set_event_callback<eray::os::FramebufferResizedEvent>([&swap_chain](const auto&) -> bool {
-    swap_chain.framebuffer_resized_ = true;
+  swap_chain->p_device_          = &device;
+  auto framebuffer_size          = window->framebuffer_size();
+  swap_chain->window_            = std::move(window);
+  swap_chain->msaa_sample_count_ = sample_count;
+  swap_chain->vsync_             = vsync;
+
+  swap_chain->register_callbacks();
+  TRY(swap_chain->create_swap_chain(device, framebuffer_size.width, framebuffer_size.height));
+  TRY(swap_chain->create_image_views(device));
+  TRY(swap_chain->create_color_attachment_image(device));
+  TRY(swap_chain->create_depth_stencil_attachment_image(device));
+
+  return std::move(swap_chain);
+}
+
+void SwapChain::register_callbacks() noexcept {
+  auto handle = window_->set_event_callback<eray::os::FramebufferResizedEvent>([this](const auto&) -> bool {
+    this->framebuffer_resized_ = true;
     return true;
   });
-
-  swap_chain.p_device_          = &device;
-  auto framebuffer_size         = window->framebuffer_size();
-  swap_chain.window_            = std::move(window);
-  swap_chain.msaa_sample_count_ = sample_count;
-  swap_chain.vsync_             = vsync;
-
-  TRY(swap_chain.create_swap_chain(device, framebuffer_size.width, framebuffer_size.height));
-  TRY(swap_chain.create_image_views(device));
-  TRY(swap_chain.create_color_attachment_image(device));
-  TRY(swap_chain.create_depth_stencil_attachment_image(device));
-
-  return swap_chain;
+  deletion_queue_.push_deletor([this, handle]() {
+    util::Logger::info("SwapChain 'this' = {}", static_cast<const void*>(this));
+    util::Logger::info("{}", window_->title());
+    this->window_->remove_event_callback(handle);
+  });
 }
 
 Result<void, Error> SwapChain::create_swap_chain(Device& device, uint32_t width, uint32_t height) noexcept {
@@ -342,7 +350,7 @@ vk::PresentModeKHR SwapChain::choose_swap_present_mode(const std::vector<vk::Pre
 Result<void, Error> SwapChain::recreate() {
   (*p_device_)->waitIdle();
 
-  destroy();
+  clear();
 
   auto framebuffer_size = window_->framebuffer_size();
   if (auto result = create_swap_chain(*p_device_, framebuffer_size.width, framebuffer_size.height); !result) {
@@ -368,9 +376,15 @@ Result<void, Error> SwapChain::recreate() {
   return {};
 }
 
-void SwapChain::destroy() {
+void SwapChain::clear() {
   image_views_.clear();
   swap_chain_ = nullptr;
+}
+
+void SwapChain::destroy() {
+  util::Logger::info("SwapChain 'this' = {}", static_cast<const void*>(this));
+  deletion_queue_.flush();
+  clear();
 }
 
 void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index,
@@ -565,8 +579,6 @@ Result<SwapChain::AcquireResult, Error> SwapChain::acquire_next_image(uint64_t t
   };
   ;
 }
-
-SwapChain::SwapChain(std::nullptr_t) {}
 
 Result<void, Error> SwapChain::present_image(vk::PresentInfoKHR present_info) {
   // When vk::Result::eErrorOutOfDateKHR is encountered the p_device_->presentation_queue().presentKHR(present_info);
