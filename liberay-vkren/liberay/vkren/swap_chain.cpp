@@ -42,11 +42,7 @@ void SwapChain::register_callbacks() noexcept {
     this->framebuffer_resized_ = true;
     return true;
   });
-  deletion_queue_.push_deletor([this, handle]() {
-    util::Logger::info("SwapChain 'this' = {}", static_cast<const void*>(this));
-    util::Logger::info("{}", window_->title());
-    this->window_->remove_event_callback(handle);
-  });
+  deletion_queue_.push_deletor([this, handle]() { this->window_->remove_event_callback(handle); });
 }
 
 Result<void, Error> SwapChain::create_swap_chain(Device& device, uint32_t width, uint32_t height) noexcept {
@@ -382,7 +378,6 @@ void SwapChain::clear() {
 }
 
 void SwapChain::destroy() {
-  util::Logger::info("SwapChain 'this' = {}", static_cast<const void*>(this));
   deletion_queue_.flush();
   clear();
 }

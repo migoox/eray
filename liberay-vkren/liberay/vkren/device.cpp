@@ -1,5 +1,7 @@
 #include <GLFW/glfw3.h>
 
+#include <vulkan/vulkan_hpp_macros.hpp>
+
 #define VMA_IMPLEMENTATION
 #include <vma/vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
@@ -117,7 +119,12 @@ Device::CreateInfo Device::CreateInfo::DesktopProfile::get(
 
 Result<std::unique_ptr<Device>, Error> Device::create(vk::raii::Context& ctx, const CreateInfo& info) noexcept {
   auto device = std::make_unique<Device>(Device());
+  VULKAN_HPP_DEFAULT_DISPATCHER.init();
+
   TRY(device->create_instance(ctx, info));
+
+  VULKAN_HPP_DEFAULT_DISPATCHER.init(vk::Instance{device->instance()});
+
   TRY(device->create_debug_messenger(info));
   if (auto result = info.surface_creator(device->instance())) {
     device->surface_ = std::move(*result);
@@ -131,6 +138,8 @@ Result<std::unique_ptr<Device>, Error> Device::create(vk::raii::Context& ctx, co
   TRY(device->pick_physical_device(info));
   TRY(device->create_logical_device(info));
   TRY(device->create_command_pool());
+
+  VULKAN_HPP_DEFAULT_DISPATCHER.init(vk::Device{device->device_});
 
   auto res = VmaAllocationManager::create(device->physical_device_, device->device_, device->instance_);
   if (!res) {
