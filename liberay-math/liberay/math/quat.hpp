@@ -13,18 +13,17 @@ struct Quat {
  public:
   T w, x, y, z;
 
-  // CONSTRUCTORS ////////////////////////////////////////////////////////////////////////////////////
+  // == Constructors ===================================================================================================
 
-  constexpr explicit Quat(const Vec<4, T>& vec) : w(vec.w), x(vec.x), y(vec.y), z(vec.z) {}
+  constexpr explicit Quat(const Vec<4, T>& vec) : w(vec.w()), x(vec.x()), y(vec.y()), z(vec.z()) {}
   constexpr explicit Quat(T real, const Vec<3, T>& imaginary)
-      : w(real), x(imaginary.x), y(imaginary.y), z(imaginary.z) {}
+      : w(real), x(imaginary.x()), y(imaginary.y()), z(imaginary.z()) {}
   constexpr explicit Quat(const Vec<3, T>& imaginary)
-      : w(static_cast<T>(1)), x(imaginary.x()), y(imaginary.y()), z(imaginary.z()) {}
-  constexpr explicit Quat(T val) : w(val), x(val), y(val), z(val) {}
+      : w(static_cast<T>(0)), x(imaginary.x()), y(imaginary.y()), z(imaginary.z()) {}
   constexpr explicit Quat(T _w, T _x, T _y, T _z) : w(_w), x(_x), y(_y), z(_z) {}
   constexpr explicit Quat() : w(static_cast<T>(1)), x(static_cast<T>(0)), y(static_cast<T>(0)), z(static_cast<T>(0)) {}
 
-  // FACTORY METHODS //////////////////////////////////////////////////////////////////////////////////
+  // == Factory methods ================================================================================================
 
   /**
    * @brief Creates an unit quaternion that represents a rotation around `axis` by `rad_angle` in radians. It is
@@ -139,7 +138,7 @@ struct Quat {
    * @return constexpr Quat
    */
   constexpr static Quat from_euler_xyz(const Vec<3, T>& angles) {
-    return (rotation_z(angles.z()) * rotation_y(angles.y()) * rotation_x(angles.x())).normalize();
+    return (rotation_z(angles.z()) * rotation_y(angles.y()) * rotation_x(angles.x())).normalized();
   }
 
   /**
@@ -150,7 +149,7 @@ struct Quat {
    * @return constexpr Quat
    */
   constexpr static Quat point(const Vec<4, T>& point) {
-    return Quat{static_cast<float>(0), point.x / point.w, point.y / point.w, point.z / point.w};
+    return Quat{static_cast<T>(0), point.x() / point.w(), point.y() / point.w(), point.z() / point.w()};
   }
 
   /**
@@ -175,7 +174,7 @@ struct Quat {
    * @param imaginary
    * @return constexpr Quat
    */
-  constexpr static Quat real(T real) { return Quat(real); }
+  constexpr static Quat real(T real) { return Quat{real, 0, 0, 0}; }
 
   /**
    * @brief Creates a quaternion from real and imaginary part.
@@ -187,11 +186,19 @@ struct Quat {
   constexpr static Quat from_parts(T real, const Vec<3, T>& imaginary) { return Quat(real, imaginary); }
 
   /**
+   * @brief Returns a quaternion with w=x=y=z=value.
+   *
+   * @param value
+   * @return constexpr Quat
+   */
+  constexpr static Quat filled(T value) { return Quat(value, value, value, value); }
+
+  /**
    * @brief Creates a quaternion consisting of zeros only.
    *
    * @return constexpr Quat
    */
-  constexpr static Quat zero() { return Quat(0); }
+  constexpr static Quat zero() { return Quat{0, 0, 0, 0}; }
 
   /**
    * @brief Creates a quaternion with the real part 1 and the imaginary part (0, 0, 0).
@@ -200,7 +207,7 @@ struct Quat {
    */
   constexpr static Quat one() { return Quat(); }
 
-  // OPERATOR - and -= ///////////////////////////////////////////////////////////////////////////////
+  // == "-" operators ==================================================================================================
 
   [[nodiscard]] constexpr friend Quat operator-(Quat lhs, const Quat& rhs) {
     return Quat{
@@ -211,19 +218,9 @@ struct Quat {
     };
   }
 
-  [[nodiscard]] constexpr friend Quat operator-(Quat lhs, T rhs) {
-    rhs.w -= lhs;
-    return rhs;
-  }
+  [[nodiscard]] constexpr Quat operator-() const { return Quat{-w, -x, -y, -z}; }
 
-  [[nodiscard]] constexpr Quat& operator-=(T rhs) {
-    w += rhs;
-    return *this;
-  }
-
-  [[nodiscard]] constexpr Quat& operator-() { return *this; }
-
-  // OPERATOR + and += ///////////////////////////////////////////////////////////////////////////////
+  // == "+" operators ==================================================================================================
 
   [[nodiscard]] constexpr friend Quat operator+(Quat lhs, const Quat& rhs) {
     return Quat{
@@ -234,23 +231,11 @@ struct Quat {
     };
   }
 
-  [[nodiscard]] constexpr friend Quat operator+(Quat lhs, T rhs) {
-    rhs.w += lhs;
-    return rhs;
-  }
-
-  [[nodiscard]] constexpr friend Quat operator+(T lhs, Quat rhs) { return rhs / lhs; }
-
-  [[nodiscard]] constexpr Quat& operator+=(T rhs) {
-    w += rhs;
-    return *this;
-  }
-
-  // OPERATOR * and *= ///////////////////////////////////////////////////////////////////////////////
+  // == "*" operators ==================================================================================================
 
   [[nodiscard]] constexpr friend Vec<3, T> operator*(Quat lhs, const Vec<3, T>& rhs) {
     // TODO(migoox): make it more efficient
-    return (lhs * pure(rhs) * lhs.conjugate()).imaginary();
+    return (lhs * pure(rhs) * lhs.conjugated()).imaginary();
   }
 
   [[nodiscard]] constexpr friend Quat operator*(Quat lhs, const Quat& rhs) {
@@ -263,14 +248,14 @@ struct Quat {
   }
 
   [[nodiscard]] constexpr friend Quat operator*(Quat lhs, T rhs) {
-    rhs.w *= lhs;
-    rhs.x *= lhs;
-    rhs.y *= lhs;
-    rhs.z *= lhs;
-    return rhs;
+    lhs.w *= rhs;
+    lhs.x *= rhs;
+    lhs.y *= rhs;
+    lhs.z *= rhs;
+    return lhs;
   }
 
-  [[nodiscard]] constexpr friend Quat operator*(T lhs, Quat rhs) { return rhs / lhs; }
+  [[nodiscard]] constexpr friend Quat operator*(T lhs, Quat rhs) { return rhs * lhs; }
 
   [[nodiscard]] constexpr Quat& operator*=(T rhs) {
     w *= rhs;
@@ -280,7 +265,7 @@ struct Quat {
     return *this;
   }
 
-  // OPERATOR / and /= ///////////////////////////////////////////////////////////////////////////////
+  // == "/" operators ==================================================================================================
 
   [[nodiscard]] constexpr friend Quat operator/(Quat lhs, T rhs) {
     lhs.w /= rhs;
@@ -300,7 +285,7 @@ struct Quat {
     return *this;
   }
 
-  // GETTERS //////////////////////////////////////////////////////////////////////////////////////////
+  // == Getters ========================================================================================================
 
   /**
    * @brief Returns a real part of the quaternion.
@@ -324,12 +309,19 @@ struct Quat {
   [[nodiscard]] constexpr T norm() const { return std::sqrt(w * w + x * x + y * y + z * z); }
 
   /**
+   * @brief Computes quaternion norm.
+   *
+   * @return constexpr T
+   */
+  [[nodiscard]] constexpr T norm_sq() const { return w * w + x * x + y * y + z * z; }
+
+  /**
    * @brief Computes conjugate of the quaternion. For unit quaternions (e.g. a rotation quaternions) it's faster
    * equivalent of inverse().
    *
    * @return constexpr Quat
    */
-  [[nodiscard]] constexpr Quat conjugate() const { return Quat{w, -x, -y, -z}; }
+  [[nodiscard]] constexpr Quat conjugated() const { return Quat{w, -x, -y, -z}; }
 
   /**
    * @brief Computes an inverse of the quaternion. Note that if the quaternion is an unit quaternion (e.g. a rotation
@@ -337,9 +329,9 @@ struct Quat {
    *
    * @return constexpr Quat
    */
-  [[nodiscard]] constexpr Quat inverse() const { return conjugate() / norm(); }
+  [[nodiscard]] constexpr Quat inversed() const { return conjugated() / norm_sq(); }
 
-  [[nodiscard]] constexpr Quat normalize() const { return *this / norm(); }
+  [[nodiscard]] constexpr Quat normalized() const { return *this / norm(); }
 
   /**
    * @brief Returns an affine 3D rotation matrix created from unit quaternion.
@@ -429,7 +421,7 @@ template <CFloatingPoint T>
  */
 template <CFloatingPoint T>
 [[nodiscard]] constexpr Quat<T> conjugate(const Quat<T>& quat) {
-  return quat.conjugate();
+  return quat.conjugated();
 }
 
 /**
@@ -440,12 +432,12 @@ template <CFloatingPoint T>
  */
 template <CFloatingPoint T>
 [[nodiscard]] constexpr Quat<T> inverse(const Quat<T>& unit_quat) {
-  return unit_quat.inverse();
+  return unit_quat.inversed();
 }
 
 template <CFloatingPoint T>
 [[nodiscard]] constexpr Quat<T> normalize(const Quat<T>& quat) {
-  return quat.normalize();
+  return quat.normalized();
 }
 
 /**

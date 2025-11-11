@@ -132,7 +132,7 @@ struct Transform3 final {
     }
 
     auto new_pos   = pos() - parent.pos();
-    auto new_rot   = math::normalize(parent.rot().conjugate() * rot());
+    auto new_rot   = math::normalize(parent.rot().conjugated() * rot());
     auto new_scale = 1.F / parent.scale() * scale();
     parent_        = parent;
     parent_->get().children_.emplace_back(*this);

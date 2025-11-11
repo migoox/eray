@@ -730,20 +730,20 @@ template <CFloatingPoint T, std::size_t N>
   requires(N == 3 || N == 4)
 {
   auto eulers = Vec<3, T>();
-  if (internal::is_zero(static_cast<T>(1) - std::abs(eulers.y))) {
-    eulers.z = static_cast<T>(0);
+  if (internal::is_zero(static_cast<T>(1) - std::abs(eulers.y()))) {
+    eulers.z(static_cast<T>(0));
     if (internal::is_zero(mat[0][2] + static_cast<T>(1))) {
-      eulers.y = std::numbers::pi / static_cast<T>(2);
-      eulers.x = std::atan2(mat[1][0], mat[0][2]);
+      eulers.y(std::numbers::pi / static_cast<T>(2));
+      eulers.x(std::atan2(mat[1][0], mat[0][2]));
     } else {
-      eulers.y = -std::numbers::pi / static_cast<T>(2);
-      eulers.x = std::atan2(-mat[1][0], -mat[0][2]);
+      eulers.y(-std::numbers::pi / static_cast<T>(2));
+      eulers.x(std::atan2(-mat[1][0], -mat[0][2]));
     }
   } else {
-    auto k   = std::cos(eulers.y);
-    eulers.y = -std::asin(mat[0][2]);
-    eulers.x = std::atan2(mat[1][2] / k, mat[2][2] / k);
-    eulers.z = std::atan2(mat[0][1] / k, mat[0][0] / k);
+    auto k = std::cos(eulers.y());
+    eulers.y(-std::asin(mat[0][2]));
+    eulers.x(std::atan2(mat[1][2] / k, mat[2][2] / k));
+    eulers.z(std::atan2(mat[0][1] / k, mat[0][0] / k));
   }
   return eulers;
 }
