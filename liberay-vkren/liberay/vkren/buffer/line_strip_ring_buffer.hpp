@@ -85,6 +85,20 @@ struct LineStripRingBuffer {
     }
   }
 
+  void emplace_vertex(TVertex&& point) {
+    points[_pivot] = std::move(point);
+    ++_pivot;
+    if (_pivot >= max_size) {
+      points[0] = std::move(point);
+      _pivot    = 1;
+      _rounded  = true;
+    }
+
+    for (auto& fd : frame_data) {
+      fd.dirty = true;
+    }
+  }
+
   void update(std::uint32_t image_index) {
     if (frame_data[image_index].dirty) {
       memcpy(frame_data[image_index].staging_buffer_mapping, points.data(), size_bytes());
