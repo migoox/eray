@@ -64,6 +64,11 @@ struct LineStripRingBuffer {
     };
   }
 
+  void clear() {
+    _pivot   = 1;
+    _rounded = false;
+  }
+
   //   void resize(std::uint32_t max_size_); // TODO(migoox): implement this
 
   void push_vertex(const TVertex& point) {
