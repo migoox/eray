@@ -73,6 +73,10 @@ class VulkanApplication {
 
   void run();
 
+  // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
+  // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
+  static constexpr int kMaxFramesInFlight = 2;
+
  protected:
   /**
    * @brief Allows for custom Vulkan Device creation. Useful when you want to set non default profiles.
@@ -148,10 +152,6 @@ class VulkanApplication {
   void set_tick_time(Duration tick_time) { tick_time_ = tick_time; }
 
   os::FileDialog& file_dialog() { return os::System::file_dialog(); }
-
-  // Multiple frames are created in flight at once. Rendering of one frame does not interfere with the recording of
-  // the other. We choose the number 2, because we don't want the CPU to go to far ahead of the GPU.
-  static constexpr int kMaxFramesInFlight = 2;
 
   VulkanApplication() = default;
 
