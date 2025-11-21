@@ -499,6 +499,7 @@ void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_
       .colorAttachmentCount = 1,
       .pColorAttachments    = &color_attachment_info,
       .pDepthAttachment     = &depth_stencil_attachment_info,
+      .pStencilAttachment   = &depth_stencil_attachment_info,
   });
 }
 

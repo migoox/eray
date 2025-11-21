@@ -122,7 +122,7 @@ class VulkanApplication {
    * @brief Called after a new image is acquired, before recording the graphics command buffer.
    * Useful for updating UBOs.
    */
-  virtual void on_frame_prepare(VulkanApplicationContext& /*ctx*/, uint32_t /*image_index*/, Duration /*delta*/) {}
+  virtual void on_frame_prepare(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
 
   /**
    * @brief Called right after ImGui is prepared for drawing a new frame.
@@ -211,7 +211,7 @@ class VulkanApplication {
    * @brief Semaphores are used to assert on GPU that a process e.g. rendering is finished.
    *
    */
-  std::vector<vk::raii::Semaphore> present_finished_semaphores_;
+  std::vector<vk::raii::Semaphore> acquire_image_semaphores_;
   std::vector<vk::raii::Semaphore> render_finished_semaphores_;
 
   std::vector<vk::Semaphore> external_submit_semaphores_;
@@ -221,7 +221,7 @@ class VulkanApplication {
    * @brief Fences are used to block GPU until the frame is presented.
    *
    */
-  std::array<vk::raii::Fence, kMaxFramesInFlight> in_flight_fences_ = {nullptr, nullptr};
+  std::array<vk::raii::Fence, kMaxFramesInFlight> record_fences_ = {nullptr, nullptr};
 
   vk::DescriptorSetLayout dsl_;
   vk::raii::DescriptorPool imgui_descriptor_pool_ = nullptr;

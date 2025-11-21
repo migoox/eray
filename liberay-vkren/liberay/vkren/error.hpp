@@ -27,6 +27,8 @@ class ErrorCode {
   struct NotATransferDestination {};
   struct SwapChainImageAcquireFailure {};
   struct PresentationFailure {};
+  struct InvalidRenderPass {};
+  struct InvalidRenderGraph {};
 
   using Enum = std::variant<         //
       VulkanObjectCreationFailure,   //
@@ -40,7 +42,9 @@ class ErrorCode {
       MemoryMappingFailure,          //
       MemoryMappingNotSupported,     //
       SwapChainImageAcquireFailure,  //
-      PresentationFailure            //
+      PresentationFailure,           //
+      InvalidRenderPass,             //
+      InvalidRenderGraph             //
       >;
 };
 
