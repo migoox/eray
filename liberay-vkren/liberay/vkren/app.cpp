@@ -82,6 +82,7 @@ void VulkanApplication::main_loop() {
     ImGui::NewFrame();
     on_imgui(context_);
     ImGui::Render();
+    on_render_begin(context_, delta);
     render_frame(delta);
     if (imgui_io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
       ImGui::UpdatePlatformWindows();
@@ -126,8 +127,8 @@ void VulkanApplication::render_frame(Duration delta) {
     eray::util::panic("Failed to acquire next image!");
     return;
   }
-  on_frame_prepare(context_, delta);
   record_graphics_command_buffer(current_frame_, image_index);
+  on_frame_prepare(context_, current_frame_, delta);
 
   auto wait_dst_stage_mask = vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput);
   auto submit_info         = vk::SubmitInfo{
@@ -140,6 +141,15 @@ void VulkanApplication::render_frame(Duration delta) {
               .pSignalSemaphores    = &*render_finished_semaphores_[image_index],
   };
 
+  if (frame_data_dirty_) {
+    auto prev_frame = (kMaxFramesInFlight + current_frame_ - 1) % kMaxFramesInFlight;
+    while (vk::Result::eTimeout ==
+           context_.device_->vk().waitForFences(*record_fences_[prev_frame], vk::True, UINT64_MAX)) {
+      ;
+    }
+    on_frame_prepare_sync(context_, delta);
+    frame_data_dirty_ = false;
+  }
   context_.device_->graphics_queue().submit(submit_info, *record_fences_[current_frame_]);
 
   // The image will not be presented until the render finished semaphore is signaled by the submit call.
@@ -373,11 +383,6 @@ void VulkanApplication::init_imgui() {
   deletion_queue_.push_deletor([]() { ImGui_ImplVulkan_Shutdown(); });
 
   util::Logger::succ("Successfully initialized ImGui");
-}
-
-void VulkanApplication::wait_semaphore_on_submit_once(vk::Semaphore semaphore, vk::PipelineStageFlags stage_mask) {
-  external_submit_semaphores_.push_back(semaphore);
-  submit_stage_masks_.push_back(stage_mask);
 }
 
 }  // namespace eray::vkren

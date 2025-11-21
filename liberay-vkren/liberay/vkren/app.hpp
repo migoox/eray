@@ -119,10 +119,24 @@ class VulkanApplication {
   virtual void on_update(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
 
   /**
-   * @brief Called after a new image is acquired, before recording the graphics command buffer.
-   * Useful for updating UBOs.
+   * @brief Called after `on_imgui()` finishes before the rendering begins.
+   *
    */
-  virtual void on_frame_prepare(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
+  virtual void on_render_begin(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
+
+  /**
+   * @brief Designed to update dynamic GPU resources, e.g. UBOs that are updated per frames. The method execution
+   * happens simultaneously with previous frame GPU rendering, which means that it requires to create resource per frame
+   * in flight.
+   */
+  virtual void on_frame_prepare(VulkanApplicationContext& /*ctx*/, uint32_t /*current_frame*/, Duration /*delta*/) {}
+
+  /**
+   * @brief Designed to update dynamic GPU resources, e.g. UBOs that are updated per frames. The GPU execution never
+   * overlaps with this method execution, so there is no need to create a resource per frame in flight. This function
+   * is called only if frame data is marked dirty, see `mark_frame_data_dirty()`.
+   */
+  virtual void on_frame_prepare_sync(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
 
   /**
    * @brief Called right after ImGui is prepared for drawing a new frame.
@@ -133,18 +147,14 @@ class VulkanApplication {
    * @brief Invoked when the graphics command buffer gets recorded.
    */
   virtual void on_record_graphics(VulkanApplicationContext& /*ctx*/,
-                                  vk::raii::CommandBuffer& /*graphics_command_buffer*/, uint32_t /*image_index*/) {}
+                                  vk::raii::CommandBuffer& /*graphics_command_buffer*/, uint32_t /*current_frame*/) {}
 
   /**
    * @brief Called after the main loop exits, before destruction.
    */
   virtual void on_destroy() {}
 
-  /**
-   * @brief Allows to inject a semaphore to VkSubmitInfo for the next frame.
-   *
-   */
-  void wait_semaphore_on_submit_once(vk::Semaphore semaphore, vk::PipelineStageFlags stage_mask);
+  void mark_frame_data_dirty() { frame_data_dirty_ = true; }
 
   std::uint16_t fps() const { return fps_; }
   std::uint16_t tps() const { return tps_; }
@@ -214,7 +224,6 @@ class VulkanApplication {
   std::vector<vk::raii::Semaphore> acquire_image_semaphores_;
   std::vector<vk::raii::Semaphore> render_finished_semaphores_;
 
-  std::vector<vk::Semaphore> external_submit_semaphores_;
   std::vector<vk::PipelineStageFlags> submit_stage_masks_;
 
   /**
@@ -229,6 +238,8 @@ class VulkanApplication {
   VulkanApplicationCreateInfo create_info_;
 
   DeletionQueue deletion_queue_;
+
+  bool frame_data_dirty_ = true;
 };
 
 }  // namespace eray::vkren

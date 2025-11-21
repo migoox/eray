@@ -100,10 +100,18 @@ struct VertexBuffer {
                 Vertex{.pos = Vec3{-0.5F, 0.5F, 0.5F}, .color = Vec3{1.0F, 0.0F, 1.0F}, .tex_coord = Vec2{0.F, 1.F}}},
         .indices =
             std::vector<uint16_t>{
-                4, 5, 6,  //
-                6, 7, 4,  //
-                0, 1, 2,  //
-                2, 3, 0,  //
+                4,
+                5,
+                6,  //
+                6,
+                7,
+                4,  //
+                0,
+                1,
+                2,  //
+                2,
+                3,
+                0,  //
             },
     };
   }
@@ -149,8 +157,8 @@ class DepthBufferApplication : public vkren::VulkanApplication {
   vk::raii::ImageView txt_view_  = nullptr;
   vk::raii::Sampler txt_sampler_ = nullptr;
 
-  std::vector<void*> uniform_buffers_mapped_;
-  std::vector<vkren::BufferResource> uniform_buffers_;
+  void* uniform_buffer_mapped_;
+  vkren::BufferResource uniform_buffer_;
   std::vector<vk::DescriptorSet> descriptor_sets_;
   vk::DescriptorSetLayout dsl_;
 
@@ -164,12 +172,12 @@ class DepthBufferApplication : public vkren::VulkanApplication {
       auto vb = VertexBuffer::create();
 
       auto vertices_region = eray::util::MemoryRegion{vb.vertices.data(), vb.vertices_size_bytes()};
-      vert_buffer_         = vkren::BufferResource::create_vertex_buffer(ctx.device_, vertices_region.size_bytes())
+      vert_buffer_         = vkren::BufferResource::create_vertex_buffer(*ctx.device_, vertices_region.size_bytes())
                          .or_panic("Could not create the vertex buffer");
       vert_buffer_.write(vertices_region).or_panic("Could not fill the vertex buffer");
 
       auto indices_region = eray::util::MemoryRegion{vb.indices.data(), vb.indices_size_bytes()};
-      ind_buffer_         = vkren::BufferResource::create_index_buffer(ctx.device_, indices_region.size_bytes())
+      ind_buffer_         = vkren::BufferResource::create_index_buffer(*ctx.device_, indices_region.size_bytes())
                         .or_panic("Could not create a Vertex Buffer");
       ind_buffer_.write(indices_region).or_panic("Could not fill the index buffer");
 
@@ -177,29 +185,25 @@ class DepthBufferApplication : public vkren::VulkanApplication {
       // we don’t want to update the buffer in preparation of the next frame while a previous one is still
       // reading from it!
 
-      uniform_buffers_.clear();
-      uniform_buffers_mapped_.clear();
       vk::DeviceSize size_bytes = sizeof(UniformBufferObject);
-      for (auto i = 0; i < kMaxFramesInFlight; ++i) {
-        auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(ctx.device_, size_bytes)
-                       .or_panic("Could not create the uniform buffer");
-        uniform_buffers_.emplace_back(std::move(ubo.buffer));
+      auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(*ctx.device_, size_bytes)
+                     .or_panic("Could not create the uniform buffer");
+      uniform_buffer_ = std::move(ubo.buffer);
 
-        // Copying to uniform buffer each frame means that staging buffer makes no sense.
-        uniform_buffers_mapped_.emplace_back(ubo.mapped_data);
-      }
+      // Copying to uniform buffer each frame means that staging buffer makes no sense.
+      uniform_buffer_mapped_ = ubo.mapped_data;
     }
 
     // == Images setup =================================================================================================
     {
       auto img = eray::res::Image::load_from_path(eray::os::System::executable_dir() / "assets" / "cad.jpeg")
                      .or_panic("cad is not there :(");
-      txt_image_ = vkren::ImageResource::create_texture(ctx.device_, vkren::ImageDescription::from(img))
+      txt_image_ = vkren::ImageResource::create_texture(*ctx.device_, vkren::ImageDescription::from(img))
                        .or_panic("Could not create a texture image");
       txt_image_.upload(img.memory_region()).or_panic("Could not upload the image");
       txt_view_ = txt_image_.create_image_view().or_panic("Could not create the image view");
 
-      auto pdev_props   = ctx.device_.physical_device().getProperties();
+      auto pdev_props   = ctx.device_->physical_device().getProperties();
       auto sampler_info = vk::SamplerCreateInfo{
           .magFilter        = vk::Filter::eLinear,
           .minFilter        = vk::Filter::eLinear,
@@ -215,7 +219,8 @@ class DepthBufferApplication : public vkren::VulkanApplication {
           .minLod           = 0.F,
           .maxLod           = vk::LodClampNone,
       };
-      txt_sampler_ = vkren::Result(ctx.device_->createSampler(sampler_info)).or_panic("Could not create the sampler");
+      txt_sampler_ =
+          vkren::Result(ctx.device_->vk().createSampler(sampler_info)).or_panic("Could not create the sampler");
     }
 
     // == Descriptors setup ============================================================================================
@@ -229,9 +234,9 @@ class DepthBufferApplication : public vkren::VulkanApplication {
       descriptor_sets_ = result.descriptor_sets;
       dsl_             = result.layout;
 
-      auto writer = vkren::DescriptorSetWriter::create(ctx.device_);
+      auto writer = vkren::DescriptorSetWriter::create(*ctx.device_);
       for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
-        writer.write_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
+        writer.write_buffer(0, uniform_buffer_.desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
         writer.write_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
         writer.write_to_set(descriptor_sets_[i]);
         writer.clear();
@@ -244,18 +249,18 @@ class DepthBufferApplication : public vkren::VulkanApplication {
           eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
               .or_panic("Could not find main_sh.spv");
       auto main_shader_module =
-          vkren::ShaderModule::create(ctx.device_, main_binary).or_panic("Could not create a main shader module");
+          vkren::ShaderModule::create(*ctx.device_, main_binary).or_panic("Could not create a main shader module");
 
       auto binding_desc = Vertex::binding_desc();
       auto attribs_desc = Vertex::attribs_desc();
 
-      auto pipeline = vkren::GraphicsPipelineBuilder::create(ctx.swap_chain_)
+      auto pipeline = vkren::GraphicsPipelineBuilder::create(*ctx.swap_chain_)
                           .with_shaders(main_shader_module.shader_module, main_shader_module.shader_module)
                           .with_input_state(binding_desc, attribs_desc)
                           .with_descriptor_set_layout(dsl_)
                           .with_depth_test()
                           .with_blending()
-                          .build(ctx.device_)
+                          .build(*ctx.device_)
                           .or_panic("Could not create a graphics pipeline");
 
       graphics_pipeline_        = std::move(pipeline.pipeline);
@@ -263,7 +268,7 @@ class DepthBufferApplication : public vkren::VulkanApplication {
     }
   }
 
-  void on_frame_prepare(vkren::VulkanApplicationContext& ctx, uint32_t image_index, Duration /*delta*/) override {
+  void on_frame_prepare_sync(vkren::VulkanApplicationContext& ctx, Duration /*delta*/) override {
     auto window_size = ctx.window_->window_size();
 
     auto t = std::chrono::duration<float>(time()).count();
@@ -276,7 +281,11 @@ class DepthBufferApplication : public vkren::VulkanApplication {
         eray::math::radians(80.0F), static_cast<float>(window_size.width) / static_cast<float>(window_size.height),
         0.01F, 10.F);
 
-    memcpy(uniform_buffers_mapped_[image_index], &ubo, sizeof(ubo));
+    memcpy(uniform_buffer_mapped_, &ubo, sizeof(ubo));
+  }
+
+  void on_render_begin(vkren::VulkanApplicationContext& /*ctx*/, Duration /*delta*/) override {
+    mark_frame_data_dirty();
   }
 
   void on_record_graphics(vkren::VulkanApplicationContext& ctx, vk::raii::CommandBuffer& graphics_command_buffer,
@@ -291,8 +300,8 @@ class DepthBufferApplication : public vkren::VulkanApplication {
         0, vk::Viewport{
                .x      = 0.0F,
                .y      = 0.0F,
-               .width  = static_cast<float>(ctx.swap_chain_.extent().width),
-               .height = static_cast<float>(ctx.swap_chain_.extent().height),
+               .width  = static_cast<float>(ctx.swap_chain_->extent().width),
+               .height = static_cast<float>(ctx.swap_chain_->extent().height),
                // Note: min and max depth must be between [0.0F, 1.0F] and min might be higher than max.
                .minDepth = 0.0F,
                .maxDepth = 1.0F  //
