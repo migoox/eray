@@ -124,18 +124,21 @@ class RenderGraph {
   static RenderGraph create() { return RenderGraph(); }
 
   RenderPassAttachmentHandle create_color_attachment(Device& device, uint32_t width, uint32_t height,
+                                                     bool readable                   = false,
                                                      vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
                                                      vk::Format format               = vk::Format::eB8G8R8A8Srgb);
 
   RenderPassAttachmentHandle create_depth_stencil_attachment(
-      Device& device, uint32_t width, uint32_t height, vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
-      std::optional<vk::Format> format = std::nullopt);
+      Device& device, uint32_t width, uint32_t height, bool readable = false,
+      vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1, std::optional<vk::Format> format = std::nullopt);
 
   RenderPassAttachmentHandle create_depth_attachment(Device& device, uint32_t width, uint32_t height,
+                                                     bool readable                    = false,
                                                      vk::SampleCountFlagBits samples  = vk::SampleCountFlagBits::e1,
                                                      std::optional<vk::Format> format = std::nullopt);
 
   RenderPassAttachmentHandle create_stencil_attachment(Device& device, uint32_t width, uint32_t height,
+                                                       bool readable                   = false,
                                                        vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1);
 
   RenderPassAttachmentHandle emplace_attachment(ImageResource&& attachment, ImageAttachmentType type);
@@ -152,6 +155,7 @@ class RenderGraph {
 
   void emit(Device& device, vk::CommandBuffer& cmd_buff);
   const RenderPassAttachmentImage& attachment(RenderPassAttachmentHandle handle) const;
+  RenderPassAttachmentImage& attachment(RenderPassAttachmentHandle handle);
   const RenderPass& render_pass(RenderPassHandle handle) const;
 
  private:
@@ -159,7 +163,6 @@ class RenderGraph {
 
   void for_each_attachment(const std::function<void(RenderPassAttachmentImage& attachment_image)>& action);
   void for_each_depth_or_stencil(const std::function<void(RenderPassAttachmentImage& attachment_image)>& action);
-  RenderPassAttachmentImage& attachment(RenderPassAttachmentHandle handle);
 
  private:
   std::vector<RenderPassAttachmentImage> color_attachments_;

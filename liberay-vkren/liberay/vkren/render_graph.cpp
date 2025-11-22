@@ -163,14 +163,24 @@ Result<RenderPassHandle, Error> RenderPassBuilder::build(uint32_t width, uint32_
 }
 
 RenderPassAttachmentHandle RenderGraph::create_color_attachment(Device& device, uint32_t width, uint32_t height,
-                                                                vk::SampleCountFlagBits samples, vk::Format format) {
+                                                                bool readable, vk::SampleCountFlagBits samples,
+                                                                vk::Format format) {
+  vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eColorAttachment;
+  if (readable) {
+    usage |= vk::ImageUsageFlagBits::eSampled;
+  } else {
+    usage |= vk::ImageUsageFlagBits::eTransientAttachment;
+  }
+  auto aspect = vk::ImageAspectFlagBits::eColor;
+
   if (!device.is_format_supported(format, vk::FormatFeatureFlagBits::eColorAttachment)) {
     util::Logger::err("Requested format {} is not supported. Using default format", vk::to_string(format));
   }
   format   = vk::Format::eB8G8R8A8Srgb;
-  auto img = ImageResource::create_color_attachment_image(device, ImageDescription::image2d_desc(format, width, height),
-                                                          samples)
+  auto img = ImageResource::create_attachment_image(device, ImageDescription::image2d_desc(format, width, height),
+                                                    usage, aspect, samples)
                  .or_panic("Could not create image attachment");
+
   auto view = img.create_image_view().or_panic("Could not create image view");
 
   color_attachments_.emplace_back(RenderPassAttachmentImage{
@@ -186,8 +196,16 @@ RenderPassAttachmentHandle RenderGraph::create_color_attachment(Device& device, 
 }
 
 RenderPassAttachmentHandle RenderGraph::create_depth_stencil_attachment(Device& device, uint32_t width, uint32_t height,
-                                                                        vk::SampleCountFlagBits samples,
+                                                                        bool readable, vk::SampleCountFlagBits samples,
                                                                         std::optional<vk::Format> format) {
+  vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
+  if (readable) {
+    usage |= vk::ImageUsageFlagBits::eSampled;
+  } else {
+    usage |= vk::ImageUsageFlagBits::eTransientAttachment;
+  }
+  auto aspect = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
+
   vk::FormatFeatureFlags features = vk::FormatFeatureFlagBits::eDepthStencilAttachment;
 
   std::array formats = {
@@ -208,8 +226,8 @@ RenderPassAttachmentHandle RenderGraph::create_depth_stencil_attachment(Device& 
                       vk::to_string(*format));
   }
 
-  auto img = ImageResource::create_depth_stencil_attachment_image(
-                 device, ImageDescription::image2d_desc(*final_format, width, height), samples)
+  auto img = ImageResource::create_attachment_image(
+                 device, ImageDescription::image2d_desc(*final_format, width, height), usage, aspect, samples)
                  .or_panic("Could not create attachment image");
   auto view = img.create_image_view().or_panic("Could not create image view");
   depth_stencil_attachments_.emplace_back(RenderPassAttachmentImage{
@@ -225,8 +243,16 @@ RenderPassAttachmentHandle RenderGraph::create_depth_stencil_attachment(Device& 
 }
 
 RenderPassAttachmentHandle RenderGraph::create_depth_attachment(Device& device, uint32_t width, uint32_t height,
-                                                                vk::SampleCountFlagBits samples,
+                                                                bool readable, vk::SampleCountFlagBits samples,
                                                                 std::optional<vk::Format> format) {
+  vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
+  if (readable) {
+    usage |= vk::ImageUsageFlagBits::eSampled;
+  } else {
+    usage |= vk::ImageUsageFlagBits::eTransientAttachment;
+  }
+  auto aspect = vk::ImageAspectFlagBits::eDepth;
+
   vk::FormatFeatureFlags features = vk::FormatFeatureFlagBits::eDepthStencilAttachment;
 
   std::array formats = {
@@ -247,8 +273,8 @@ RenderPassAttachmentHandle RenderGraph::create_depth_attachment(Device& device, 
                       vk::to_string(*format));
   }
 
-  auto img = ImageResource::create_depth_attachment_image(
-                 device, ImageDescription::image2d_desc(*final_format, width, height), samples)
+  auto img = ImageResource::create_attachment_image(
+                 device, ImageDescription::image2d_desc(*final_format, width, height), usage, aspect, samples)
                  .or_panic("Could not create attachment image");
   auto view = img.create_image_view().or_panic("Could not create image view");
   depth_attachments_.emplace_back(RenderPassAttachmentImage{
@@ -264,10 +290,19 @@ RenderPassAttachmentHandle RenderGraph::create_depth_attachment(Device& device, 
 }
 
 RenderPassAttachmentHandle RenderGraph::create_stencil_attachment(Device& device, uint32_t width, uint32_t height,
-                                                                  vk::SampleCountFlagBits samples) {
-  ImageResource img = ImageResource::create_stencil_attachment_image(
-                          device, ImageDescription::image2d_desc(vk::Format::eS8Uint, width, height), samples)
-                          .or_panic("Could not create attachment image");
+                                                                  bool readable, vk::SampleCountFlagBits samples) {
+  vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
+  if (readable) {
+    usage |= vk::ImageUsageFlagBits::eSampled;
+  } else {
+    usage |= vk::ImageUsageFlagBits::eTransientAttachment;
+  }
+  auto aspect = vk::ImageAspectFlagBits::eStencil;
+
+  ImageResource img =
+      ImageResource::create_attachment_image(device, ImageDescription::image2d_desc(vk::Format::eS8Uint, width, height),
+                                             usage, aspect, samples)
+          .or_panic("Could not create attachment image");
   auto view = img.create_image_view().or_panic("Could not create image view");
   stencil_attachments_.emplace_back(RenderPassAttachmentImage{
       .img     = std::move(img),
