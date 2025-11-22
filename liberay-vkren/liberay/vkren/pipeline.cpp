@@ -1,5 +1,6 @@
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/pipeline.hpp>
+#include <liberay/vkren/render_graph.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
@@ -8,7 +9,72 @@
 
 namespace eray::vkren {
 
+GraphicsPipelineBuilder::GraphicsPipelineBuilder(const RenderGraph& render_graph, RenderPassHandle rp_handle) {
+  init();
+
+  const auto& rp = render_graph.render_pass(rp_handle);
+
+  if (rp.samples != vk::SampleCountFlagBits::e1) {
+    _multisampling.sampleShadingEnable  = vk::True;
+    _multisampling.rasterizationSamples = rp.samples;
+  }
+
+  _color_attachment_formats.reserve(rp.color_attachments.size());
+  for (const auto& ca : rp.color_attachments) {
+    _color_attachment_formats.push_back(render_graph.attachment(ca.handle).img.description.format);
+    _rg_attachment_handle_to_rp_attachment_ind.emplace(ca.handle.index,
+                                                       static_cast<uint32_t>(_color_attachment_formats.size() - 1));
+    _color_blends.emplace_back(vk::PipelineColorBlendAttachmentState{
+        .blendEnable         = vk::False,
+        .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
+        .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+        .colorBlendOp        = vk::BlendOp::eAdd,
+        .srcAlphaBlendFactor = vk::BlendFactor::eOne,
+        .dstAlphaBlendFactor = vk::BlendFactor::eZero,
+        .alphaBlendOp        = vk::BlendOp::eAdd,
+        .colorWriteMask      = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
+    });
+  }
+
+  if (rp.depth_attachment) {
+    _depth_format = render_graph.attachment(rp.depth_attachment->handle).img.description.format;
+  }
+  if (rp.stencil_attachment) {
+    _stencil_format = render_graph.attachment(rp.stencil_attachment->handle).img.description.format;
+  }
+  if (rp.depth_stencil_attachment) {
+    _depth_format   = render_graph.attachment(rp.depth_stencil_attachment->handle).img.description.format;
+    _stencil_format = render_graph.attachment(rp.depth_stencil_attachment->handle).img.description.format;
+  }
+}
+
 GraphicsPipelineBuilder::GraphicsPipelineBuilder(const SwapChain& swap_chain) {
+  init();
+
+  if (swap_chain.msaa_enabled()) {
+    _multisampling.sampleShadingEnable  = vk::True;
+    _multisampling.rasterizationSamples = swap_chain.msaa_sample_count();
+  }
+
+  _color_attachment_formats.emplace_back(swap_chain.color_attachment_format());
+  _color_blends.emplace_back(vk::PipelineColorBlendAttachmentState{
+      .blendEnable         = vk::False,
+      .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
+      .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+      .colorBlendOp        = vk::BlendOp::eAdd,
+      .srcAlphaBlendFactor = vk::BlendFactor::eOne,
+      .dstAlphaBlendFactor = vk::BlendFactor::eZero,
+      .alphaBlendOp        = vk::BlendOp::eAdd,
+      .colorWriteMask      = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                        vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
+  });
+
+  _stencil_format = swap_chain.depth_stencil_attachment_format();
+  _depth_format   = swap_chain.depth_stencil_attachment_format();
+}
+
+void GraphicsPipelineBuilder::init() {
   // == Dynamic States =================================================================================================
   _dynamic_states = std::vector{
       vk::DynamicState::eViewport,
@@ -46,14 +112,9 @@ GraphicsPipelineBuilder::GraphicsPipelineBuilder(const SwapChain& swap_chain) {
   _rasterizer.depthBiasSlopeFactor = 1.0F;
 
   // == Multisampling ==================================================================================================
-  if (swap_chain.msaa_enabled()) {
-    _multisampling.sampleShadingEnable  = vk::True;
-    _multisampling.rasterizationSamples = swap_chain.msaa_sample_count();
-  } else {
-    _multisampling.sampleShadingEnable  = vk::False;
-    _multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-  }
 
+  _multisampling.sampleShadingEnable  = vk::False;
+  _multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
   // TODO(migoox): Fill the rest of the multisampling fields
 
   // == Depth and Stencil Testing ======================================================================================
@@ -64,21 +125,6 @@ GraphicsPipelineBuilder::GraphicsPipelineBuilder(const SwapChain& swap_chain) {
   _depth_stencil.stencilTestEnable     = vk::False;
 
   // == Color blending =================================================================================================
-  _color_blend.blendEnable = vk::False;
-
-  _color_blend.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
-  _color_blend.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
-  _color_blend.colorBlendOp        = vk::BlendOp::eAdd;
-
-  _color_blend.srcAlphaBlendFactor = vk::BlendFactor::eOne;
-  _color_blend.dstAlphaBlendFactor = vk::BlendFactor::eZero;
-  _color_blend.alphaBlendOp        = vk::BlendOp::eAdd;
-
-  _color_blend.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-                                vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-
-  _color_attachment_format = swap_chain.color_attachment_format();
-  _depth_stencil_format    = swap_chain.depth_stencil_attachment_format();
 
   // == Pipeline layouts ===============================================================================================
   _pipeline_layout.setLayoutCount         = 0;
@@ -87,6 +133,10 @@ GraphicsPipelineBuilder::GraphicsPipelineBuilder(const SwapChain& swap_chain) {
 
 GraphicsPipelineBuilder GraphicsPipelineBuilder::create(const SwapChain& swap_chain) {
   return GraphicsPipelineBuilder(swap_chain);
+}
+
+GraphicsPipelineBuilder GraphicsPipelineBuilder::create(const RenderGraph& render_pass, RenderPassHandle rp_handle) {
+  return GraphicsPipelineBuilder(render_pass, rp_handle);
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_shaders(vk::ShaderModule vertex_shader,
@@ -162,19 +212,22 @@ Result<Pipeline, Error> GraphicsPipelineBuilder::build(const Device& device) {
   // With dynamic state only the count is necessary.
 
   // == Input assembly =================================================================================================
-  // TODO(migoox): Add multiple color attachments support
   vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
-      .colorAttachmentCount    = 1,
-      .pColorAttachmentFormats = &_color_attachment_format,
-      .depthAttachmentFormat   = _depth_stencil_format,
+      .colorAttachmentCount    = static_cast<uint32_t>(_color_attachment_formats.size()),
+      .pColorAttachmentFormats = _color_attachment_formats.data(),
   };
+  if (_depth_format) {
+    pipeline_rendering_create_info.depthAttachmentFormat = *_depth_format;
+  }
+  if (_stencil_format) {
+    pipeline_rendering_create_info.stencilAttachmentFormat = *_stencil_format;
+  }
 
-  // TODO(migoox): Add multiple color attachments support
   auto color_blending_info = vk::PipelineColorBlendStateCreateInfo{
       .logicOpEnable   = vk::False,
       .logicOp         = vk::LogicOp::eCopy,
-      .attachmentCount = 1,
-      .pAttachments    = &_color_blend,  //
+      .attachmentCount = static_cast<uint32_t>(_color_blends.size()),
+      .pAttachments    = _color_blends.data(),
   };
 
   return device->createPipelineLayout(_pipeline_layout)
@@ -233,26 +286,29 @@ Result<vk::raii::Pipeline, Error> GraphicsPipelineBuilder::build(const Device& d
   };
 
   auto dynamic_state = vk::PipelineDynamicStateCreateInfo{
-      .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),  //
-      .pDynamicStates    = dynamic_states.data(),                         //
+      .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),
+      .pDynamicStates    = dynamic_states.data(),
   };
 
   // With dynamic state only the count is necessary.
 
   // == Input assembly =================================================================================================
-  // TODO(migoox): Add multiple color attachments support
   vk::PipelineRenderingCreateInfo pipeline_rendering_create_info{
-      .colorAttachmentCount    = 1,
-      .pColorAttachmentFormats = &_color_attachment_format,
-      .depthAttachmentFormat   = _depth_stencil_format,
+      .colorAttachmentCount    = static_cast<uint32_t>(_color_attachment_formats.size()),
+      .pColorAttachmentFormats = _color_attachment_formats.data(),
   };
+  if (_depth_format) {
+    pipeline_rendering_create_info.depthAttachmentFormat = *_depth_format;
+  }
+  if (_stencil_format) {
+    pipeline_rendering_create_info.stencilAttachmentFormat = *_stencil_format;
+  }
 
-  // TODO(migoox): Add multiple color attachments support
   auto color_blending_info = vk::PipelineColorBlendStateCreateInfo{
       .logicOpEnable   = vk::False,
       .logicOp         = vk::LogicOp::eCopy,
-      .attachmentCount = 1,
-      .pAttachments    = &_color_blend,  //
+      .attachmentCount = static_cast<uint32_t>(_color_blends.size()),
+      .pAttachments    = _color_blends.data(),  //
   };
 
   auto pipeline_info = vk::GraphicsPipelineCreateInfo{
@@ -324,32 +380,81 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_sample_shading(float min_
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_src_blend_factors(vk::BlendFactor color_blend_factor,
                                                                          vk::BlendFactor alpha_blend_factor) {
-  _color_blend.srcColorBlendFactor = color_blend_factor;
-  _color_blend.srcAlphaBlendFactor = alpha_blend_factor;
+  for (auto& color_blend : _color_blends) {
+    color_blend.srcColorBlendFactor = color_blend_factor;
+    color_blend.srcAlphaBlendFactor = alpha_blend_factor;
+  }
   return *this;
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_dst_blend_factors(vk::BlendFactor color_blend_factor,
                                                                          vk::BlendFactor alpha_blend_factor) {
-  _color_blend.dstColorBlendFactor = color_blend_factor;
-  _color_blend.dstAlphaBlendFactor = alpha_blend_factor;
+  for (auto& color_blend : _color_blends) {
+    color_blend.dstColorBlendFactor = color_blend_factor;
+    color_blend.dstAlphaBlendFactor = alpha_blend_factor;
+  }
   return *this;
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_blend_ops(vk::BlendOp color_blend_op,
                                                                  vk::BlendOp alpha_blend_op) {
-  _color_blend.colorBlendOp = color_blend_op;
-  _color_blend.alphaBlendOp = alpha_blend_op;
+  for (auto& color_blend : _color_blends) {
+    color_blend.colorBlendOp = color_blend_op;
+    color_blend.alphaBlendOp = alpha_blend_op;
+  }
   return *this;
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_blending() {
-  _color_blend.blendEnable = vk::True;
+  for (auto& color_blend : _color_blends) {
+    color_blend.blendEnable = vk::True;
+  }
   return *this;
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_color_write_mask(vk::ColorComponentFlags flags) {
-  _color_blend.colorWriteMask = flags;
+  for (auto& color_blend : _color_blends) {
+    color_blend.colorWriteMask = flags;
+  }
+  return *this;
+}
+GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_src_blend_factors(RenderPassAttachmentHandle handle,
+                                                                          vk::BlendFactor color_blend_factor,
+                                                                          vk::BlendFactor alpha_blend_factor) {
+  auto& color_blend               = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index]];
+  color_blend.srcColorBlendFactor = color_blend_factor;
+  color_blend.srcAlphaBlendFactor = alpha_blend_factor;
+  return *this;
+}
+
+GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_dst_blend_factors(RenderPassAttachmentHandle handle,
+                                                                          vk::BlendFactor color_blend_factor,
+                                                                          vk::BlendFactor alpha_blend_factor) {
+  auto& color_blend               = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index]];
+  color_blend.dstColorBlendFactor = color_blend_factor;
+  color_blend.dstAlphaBlendFactor = alpha_blend_factor;
+  return *this;
+}
+
+GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_blend_ops(RenderPassAttachmentHandle handle,
+                                                                  vk::BlendOp color_blend_op,
+                                                                  vk::BlendOp alpha_blend_op) {
+  auto& color_blend        = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index]];
+  color_blend.colorBlendOp = color_blend_op;
+  color_blend.alphaBlendOp = alpha_blend_op;
+  return *this;
+}
+
+GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_color_write_mask(RenderPassAttachmentHandle handle,
+                                                                         vk::ColorComponentFlags flags) {
+  auto& color_blend          = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index]];
+  color_blend.colorWriteMask = flags;
+  return *this;
+}
+
+GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_blending(RenderPassAttachmentHandle handle) {
+  auto& color_blend       = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index]];
+  color_blend.blendEnable = vk::True;
   return *this;
 }
 

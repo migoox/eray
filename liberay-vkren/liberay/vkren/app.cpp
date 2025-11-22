@@ -270,7 +270,7 @@ void VulkanApplication::record_graphics_command_buffer(size_t frame_index, uint3
   graphics_command_buffers_[frame_index].begin({});
   {
     auto cmd_buff = vk::CommandBuffer{graphics_command_buffers_[frame_index]};
-    context_.render_graph.emit(*context_.device_, cmd_buff);
+    context_.render_graph_.emit(*context_.device_, cmd_buff);
   }
   context_.swap_chain_->begin_rendering(graphics_command_buffers_[frame_index], image_index, clear_color_value,
                                         clear_depth_stencil_value);

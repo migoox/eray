@@ -33,7 +33,7 @@ struct VulkanApplicationContext {
   DescriptorSetLayoutManager dsl_manager_   = DescriptorSetLayoutManager(nullptr);
   DescriptorAllocator dsl_allocator_        = DescriptorAllocator(nullptr);
   std::shared_ptr<eray::os::Window> window_ = nullptr;
-  RenderGraph render_graph;
+  RenderGraph render_graph_;
 };
 
 struct VulkanApplicationCreateInfo {

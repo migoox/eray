@@ -42,7 +42,7 @@ RenderPassBuilder& RenderPassBuilder::with_color_attachment(RenderPassAttachment
 
 RenderPassBuilder& RenderPassBuilder::with_msaa_color_attachment(RenderPassAttachmentHandle image_handle,
                                                                  RenderPassAttachmentHandle resolve_image_handle,
-                                                                 vk::SampleCountFlags samples,
+                                                                 vk::SampleCountFlagBits samples,
                                                                  vk::AttachmentLoadOp load_op,
                                                                  vk::AttachmentStoreOp store_op) {
   render_pass_.color_attachments.emplace_back(RenderPassAttachmentImageInfo{
@@ -52,6 +52,11 @@ RenderPassBuilder& RenderPassBuilder::with_msaa_color_attachment(RenderPassAttac
       .store_op       = store_op,
       .sample_count   = samples,
   });
+
+  if (render_pass_.samples != vk::SampleCountFlagBits::e1 && render_pass_.samples != samples) {
+    util::panic("MSAA attachments must have equal number of samples");
+  }
+  render_pass_.samples = samples;
   return *this;
 }
 
@@ -511,7 +516,7 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
           vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead;
       auto dst_layout = vk::ImageLayout::eDepthAttachmentOptimal;
 
-      auto range       = stencil_attachments_[a->handle.index].img.full_resource_range();
+      auto range       = depth_attachments_[a->handle.index].img.full_resource_range();
       range.aspectMask = vk::ImageAspectFlagBits::eDepth;
 
       auto barrier = vk::ImageMemoryBarrier2{
@@ -589,7 +594,7 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
           vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead;
       auto dst_layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
-      auto range       = stencil_attachments_[a->handle.index].img.full_resource_range();
+      auto range       = depth_stencil_attachments_[a->handle.index].img.full_resource_range();
       range.aspectMask = vk::ImageAspectFlagBits::eStencil | vk::ImageAspectFlagBits::eDepth;
 
       auto barrier = vk::ImageMemoryBarrier2{
@@ -601,7 +606,7 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
           .newLayout           = dst_layout,
           .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
           .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image               = stencil_attachments_[a->handle.index].img.vk_image(),
+          .image               = depth_stencil_attachments_[a->handle.index].img.vk_image(),
           .subresourceRange    = range,
       };
       img_info.src_stage_mask  = dst_stage_mask;
@@ -678,5 +683,7 @@ void RenderGraph::emplace_final_pass_dependency(RenderPassAttachmentHandle handl
       .layout      = layout,
   });
 }
+
+const RenderPass& RenderGraph::render_pass(RenderPassHandle handle) const { return render_passes_[handle.index]; }
 
 }  // namespace eray::vkren

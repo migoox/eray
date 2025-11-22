@@ -45,6 +45,7 @@ struct RenderPass {
   vk::Extent2D extent;
   std::vector<RenderPassAttachmentDependency> attachment_dependencies;
   std::vector<RenderPassAttachmentImageInfo> color_attachments;
+  vk::SampleCountFlagBits samples                                                   = vk::SampleCountFlagBits::e1;
   std::optional<RenderPassAttachmentImageInfo> depth_stencil_attachment             = std::nullopt;
   std::optional<RenderPassAttachmentImageInfo> depth_attachment                     = std::nullopt;
   std::optional<RenderPassAttachmentImageInfo> stencil_attachment                   = std::nullopt;
@@ -62,7 +63,7 @@ class RenderPassBuilder {
                                            vk::AttachmentStoreOp store_op = vk::AttachmentStoreOp::eStore);
   RenderPassBuilder& with_msaa_color_attachment(RenderPassAttachmentHandle image_handle,
                                                 RenderPassAttachmentHandle resolve_image_handle,
-                                                vk::SampleCountFlags samples,
+                                                vk::SampleCountFlagBits samples,
                                                 vk::AttachmentLoadOp load_op   = vk::AttachmentLoadOp::eClear,
                                                 vk::AttachmentStoreOp store_op = vk::AttachmentStoreOp::eStore);
   RenderPassBuilder& with_depth_stencil_attachment(RenderPassAttachmentHandle handle,
@@ -84,7 +85,7 @@ class RenderPassBuilder {
    * @return Result<RenderPass, Error>
    * @warning After build is invoked it returns to default state (it does not preserve the current state).
    */
-  Result<RenderPass, Error> build(uint32_t width, uint32_t height);  // TODO(migoox): handle resize
+  [[nodiscard]] Result<RenderPass, Error> build(uint32_t width, uint32_t height);  // TODO(migoox): handle resize
 
  private:
   RenderPass render_pass_;
@@ -97,7 +98,7 @@ struct RenderPassAttachmentImage {
   vk::AccessFlags2 src_access_mask               = {};  // NOLINT
   vk::ImageLayout src_layout                     = vk::ImageLayout::eUndefined;
   vk::ClearColorValue clear_color                = vk::ClearColorValue{0.F, 0.F, 0.F, 0.F};
-  vk::ClearDepthStencilValue clear_depth_stencil = vk::ClearDepthStencilValue{.depth = 0.F, .stencil = 0U};
+  vk::ClearDepthStencilValue clear_depth_stencil = vk::ClearDepthStencilValue{.depth = 1.F, .stencil = 0U};
 };
 
 class RenderGraph {
@@ -128,11 +129,14 @@ class RenderGraph {
   RenderPassAttachmentHandle emplace_attachment(ImageResource&& attachment, ImageAttachmentType type);
   RenderPassHandle emplace_render_pass(RenderPass&& render_pass);
 
-  void emplace_final_pass_dependency(RenderPassAttachmentHandle handle, vk::PipelineStageFlags2 stage_mask,
-                                     vk::AccessFlagBits2 access_mask, vk::ImageLayout layout);
+  void emplace_final_pass_dependency(RenderPassAttachmentHandle handle,
+                                     vk::PipelineStageFlags2 stage_mask = vk::PipelineStageFlagBits2::eFragmentShader,
+                                     vk::AccessFlagBits2 access_mask    = vk::AccessFlagBits2::eShaderRead,
+                                     vk::ImageLayout layout             = vk::ImageLayout::eReadOnlyOptimal);
 
   void emit(Device& device, vk::CommandBuffer& cmd_buff);
   const RenderPassAttachmentImage& attachment(RenderPassAttachmentHandle handle) const;
+  const RenderPass& render_pass(RenderPassHandle handle) const;
 
  private:
   void for_each_attachment(const std::function<void(RenderPassAttachmentImage& attachment_image)>& action);
