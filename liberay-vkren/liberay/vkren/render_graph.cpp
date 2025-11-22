@@ -40,35 +40,37 @@ RenderPassBuilder& RenderPassBuilder::with_color_attachment(RenderPassAttachment
   return *this;
 }
 
-RenderPassBuilder& RenderPassBuilder::with_msaa_color_attachment(RenderPassAttachmentHandle image_handle,
+RenderPassBuilder& RenderPassBuilder::with_msaa_color_attachment(RenderPassAttachmentHandle msaa_image_handle,
                                                                  RenderPassAttachmentHandle resolve_image_handle,
-                                                                 vk::SampleCountFlagBits samples,
                                                                  vk::AttachmentLoadOp load_op,
                                                                  vk::AttachmentStoreOp store_op) {
+  if (render_pass_.samples != render_graph_->attachment(msaa_image_handle).samples) {
+    util::panic("Render pass MSAA sample count does not match the color attachment sample count");
+  }
+
   render_pass_.color_attachments.emplace_back(RenderPassAttachmentImageInfo{
-      .handle         = image_handle,
+      .handle         = msaa_image_handle,
       .resolve_handle = resolve_image_handle,
       .load_op        = load_op,
       .store_op       = store_op,
-      .sample_count   = samples,
+      .sample_count   = render_pass_.samples,
   });
-
-  if (render_pass_.samples != vk::SampleCountFlagBits::e1 && render_pass_.samples != samples) {
-    util::panic("MSAA attachments must have equal number of samples");
-  }
-  render_pass_.samples = samples;
   return *this;
 }
 
 RenderPassBuilder& RenderPassBuilder::with_depth_stencil_attachment(RenderPassAttachmentHandle handle,
                                                                     vk::AttachmentLoadOp load_op,
                                                                     vk::AttachmentStoreOp store_op) {
+  if (render_pass_.samples != render_graph_->attachment(handle).samples) {
+    util::panic("Render pass MSAA sample count does not match the color attachment sample count");
+  }
+
   render_pass_.depth_stencil_attachment = RenderPassAttachmentImageInfo{
       .handle         = handle,
       .resolve_handle = std::nullopt,
       .load_op        = load_op,
       .store_op       = store_op,
-      .sample_count   = vk::SampleCountFlagBits::e1,
+      .sample_count   = render_pass_.samples,
   };
   return *this;
 }
@@ -76,12 +78,16 @@ RenderPassBuilder& RenderPassBuilder::with_depth_stencil_attachment(RenderPassAt
 RenderPassBuilder& RenderPassBuilder::with_depth_attachment(RenderPassAttachmentHandle handle,
                                                             vk::AttachmentLoadOp load_op,
                                                             vk::AttachmentStoreOp store_op) {
+  if (render_pass_.samples != render_graph_->attachment(handle).samples) {
+    util::panic("Render pass sample count does not match the depth stencil attachment sample count");
+  }
+
   render_pass_.depth_attachment = RenderPassAttachmentImageInfo{
       .handle         = handle,
       .resolve_handle = std::nullopt,
       .load_op        = load_op,
       .store_op       = store_op,
-      .sample_count   = vk::SampleCountFlagBits::e1,
+      .sample_count   = render_pass_.samples,
   };
   return *this;
 }
@@ -89,12 +95,15 @@ RenderPassBuilder& RenderPassBuilder::with_depth_attachment(RenderPassAttachment
 RenderPassBuilder& RenderPassBuilder::with_stencil_attachment(RenderPassAttachmentHandle handle,
                                                               vk::AttachmentLoadOp load_op,
                                                               vk::AttachmentStoreOp store_op) {
+  if (render_pass_.samples != render_graph_->attachment(handle).samples) {
+    util::panic("Render pass sample count does not match the depth stencil attachment sample count");
+  }
   render_pass_.stencil_attachment = RenderPassAttachmentImageInfo{
       .handle         = handle,
       .resolve_handle = std::nullopt,
       .load_op        = load_op,
       .store_op       = store_op,
-      .sample_count   = vk::SampleCountFlagBits::e1,
+      .sample_count   = render_pass_.samples,
   };
   return *this;
 }
@@ -105,7 +114,7 @@ RenderPassBuilder& RenderPassBuilder::on_emit(
   return *this;
 }
 
-Result<RenderPass, Error> RenderPassBuilder::build(uint32_t width, uint32_t height) {
+Result<RenderPassHandle, Error> RenderPassBuilder::build(uint32_t width, uint32_t height) {
   auto is_valid =
       (!render_pass_.depth_attachment || render_pass_.depth_attachment->handle.type == ImageAttachmentType::Depth) &&
       (!render_pass_.stencil_attachment ||
@@ -148,14 +157,13 @@ Result<RenderPass, Error> RenderPassBuilder::build(uint32_t width, uint32_t heig
   render_pass_.extent.width  = width;
   render_pass_.extent.height = height;
 
-  auto res     = std::move(render_pass_);
+  auto handle  = render_graph_->emplace_render_pass(std::move(render_pass_));
   render_pass_ = RenderPass{};
-
-  return res;
+  return handle;
 }
 
 RenderPassAttachmentHandle RenderGraph::create_color_attachment(Device& device, uint32_t width, uint32_t height,
-                                                                vk::Format format, vk::SampleCountFlagBits samples) {
+                                                                vk::SampleCountFlagBits samples, vk::Format format) {
   if (!device.is_format_supported(format, vk::FormatFeatureFlagBits::eColorAttachment)) {
     util::Logger::err("Requested format {} is not supported. Using default format", vk::to_string(format));
   }
@@ -166,8 +174,9 @@ RenderPassAttachmentHandle RenderGraph::create_color_attachment(Device& device, 
   auto view = img.create_image_view().or_panic("Could not create image view");
 
   color_attachments_.emplace_back(RenderPassAttachmentImage{
-      .img  = std::move(img),
-      .view = std::move(view),
+      .img     = std::move(img),
+      .view    = std::move(view),
+      .samples = samples,
   });
 
   return RenderPassAttachmentHandle{
@@ -177,8 +186,8 @@ RenderPassAttachmentHandle RenderGraph::create_color_attachment(Device& device, 
 }
 
 RenderPassAttachmentHandle RenderGraph::create_depth_stencil_attachment(Device& device, uint32_t width, uint32_t height,
-                                                                        std::optional<vk::Format> format,
-                                                                        vk::SampleCountFlagBits samples) {
+                                                                        vk::SampleCountFlagBits samples,
+                                                                        std::optional<vk::Format> format) {
   vk::FormatFeatureFlags features = vk::FormatFeatureFlagBits::eDepthStencilAttachment;
 
   std::array formats = {
@@ -204,8 +213,9 @@ RenderPassAttachmentHandle RenderGraph::create_depth_stencil_attachment(Device& 
                  .or_panic("Could not create attachment image");
   auto view = img.create_image_view().or_panic("Could not create image view");
   depth_stencil_attachments_.emplace_back(RenderPassAttachmentImage{
-      .img  = std::move(img),
-      .view = std::move(view),
+      .img     = std::move(img),
+      .view    = std::move(view),
+      .samples = samples,
   });
 
   return RenderPassAttachmentHandle{
@@ -215,8 +225,8 @@ RenderPassAttachmentHandle RenderGraph::create_depth_stencil_attachment(Device& 
 }
 
 RenderPassAttachmentHandle RenderGraph::create_depth_attachment(Device& device, uint32_t width, uint32_t height,
-                                                                std::optional<vk::Format> format,
-                                                                vk::SampleCountFlagBits samples) {
+                                                                vk::SampleCountFlagBits samples,
+                                                                std::optional<vk::Format> format) {
   vk::FormatFeatureFlags features = vk::FormatFeatureFlagBits::eDepthStencilAttachment;
 
   std::array formats = {
@@ -242,8 +252,9 @@ RenderPassAttachmentHandle RenderGraph::create_depth_attachment(Device& device, 
                  .or_panic("Could not create attachment image");
   auto view = img.create_image_view().or_panic("Could not create image view");
   depth_attachments_.emplace_back(RenderPassAttachmentImage{
-      .img  = std::move(img),
-      .view = std::move(view),
+      .img     = std::move(img),
+      .view    = std::move(view),
+      .samples = samples,
   });
 
   return RenderPassAttachmentHandle{
@@ -259,8 +270,9 @@ RenderPassAttachmentHandle RenderGraph::create_stencil_attachment(Device& device
                           .or_panic("Could not create attachment image");
   auto view = img.create_image_view().or_panic("Could not create image view");
   stencil_attachments_.emplace_back(RenderPassAttachmentImage{
-      .img  = std::move(img),
-      .view = std::move(view),
+      .img     = std::move(img),
+      .view    = std::move(view),
+      .samples = samples,
   });
 
   return RenderPassAttachmentHandle{
@@ -274,8 +286,9 @@ RenderPassAttachmentHandle RenderGraph::emplace_attachment(ImageResource&& attac
   switch (type) {
     case eray::vkren::ImageAttachmentType::Color:
       color_attachments_.emplace_back(RenderPassAttachmentImage{
-          .img  = std::move(attachment),
-          .view = std::move(view),
+          .img     = std::move(attachment),
+          .view    = std::move(view),
+          .samples = attachment.sample_count,
       });
       return RenderPassAttachmentHandle{
           .index = static_cast<uint32_t>(color_attachments_.size() - 1),
@@ -283,8 +296,9 @@ RenderPassAttachmentHandle RenderGraph::emplace_attachment(ImageResource&& attac
       };
     case eray::vkren::ImageAttachmentType::Depth:
       depth_attachments_.emplace_back(RenderPassAttachmentImage{
-          .img  = std::move(attachment),
-          .view = std::move(view),
+          .img     = std::move(attachment),
+          .view    = std::move(view),
+          .samples = attachment.sample_count,
       });
       return RenderPassAttachmentHandle{
           .index = static_cast<uint32_t>(depth_attachments_.size() - 1),
@@ -292,8 +306,9 @@ RenderPassAttachmentHandle RenderGraph::emplace_attachment(ImageResource&& attac
       };
     case eray::vkren::ImageAttachmentType::Stencil:
       stencil_attachments_.emplace_back(RenderPassAttachmentImage{
-          .img  = std::move(attachment),
-          .view = std::move(view),
+          .img     = std::move(attachment),
+          .view    = std::move(view),
+          .samples = attachment.sample_count,
       });
       return RenderPassAttachmentHandle{
           .index = static_cast<uint32_t>(stencil_attachments_.size() - 1),
@@ -301,8 +316,9 @@ RenderPassAttachmentHandle RenderGraph::emplace_attachment(ImageResource&& attac
       };
     case eray::vkren::ImageAttachmentType::DepthStencil:
       depth_stencil_attachments_.emplace_back(RenderPassAttachmentImage{
-          .img  = std::move(attachment),
-          .view = std::move(view),
+          .img     = std::move(attachment),
+          .view    = std::move(view),
+          .samples = attachment.sample_count,
       });
       return RenderPassAttachmentHandle{
           .index = static_cast<uint32_t>(depth_stencil_attachments_.size() - 1),

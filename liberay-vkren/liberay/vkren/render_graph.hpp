@@ -52,8 +52,18 @@ struct RenderPass {
   std::function<void(Device& device, vk::CommandBuffer& cmd_buff)> on_cmd_emit_func = [](auto&, auto&) {};
 };
 
+class RenderGraph;
+
 class RenderPassBuilder {
  public:
+  RenderPassBuilder() = delete;
+  static RenderPassBuilder create(RenderGraph& render_graph,
+                                  vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
+    auto rpb                 = RenderPassBuilder(&render_graph);
+    rpb.render_pass_.samples = sample_count;
+    return rpb;
+  }
+
   RenderPassBuilder& with_dependency(RenderPassAttachmentHandle handle,
                                      vk::PipelineStageFlags2 stage_mask = vk::PipelineStageFlagBits2::eFragmentShader,
                                      vk::AccessFlagBits2 access_mask    = vk::AccessFlagBits2::eShaderRead,
@@ -61,9 +71,8 @@ class RenderPassBuilder {
   RenderPassBuilder& with_color_attachment(RenderPassAttachmentHandle handle,
                                            vk::AttachmentLoadOp load_op   = vk::AttachmentLoadOp::eClear,
                                            vk::AttachmentStoreOp store_op = vk::AttachmentStoreOp::eStore);
-  RenderPassBuilder& with_msaa_color_attachment(RenderPassAttachmentHandle image_handle,
+  RenderPassBuilder& with_msaa_color_attachment(RenderPassAttachmentHandle msaa_image_handle,
                                                 RenderPassAttachmentHandle resolve_image_handle,
-                                                vk::SampleCountFlagBits samples,
                                                 vk::AttachmentLoadOp load_op   = vk::AttachmentLoadOp::eClear,
                                                 vk::AttachmentStoreOp store_op = vk::AttachmentStoreOp::eStore);
   RenderPassBuilder& with_depth_stencil_attachment(RenderPassAttachmentHandle handle,
@@ -85,15 +94,18 @@ class RenderPassBuilder {
    * @return Result<RenderPass, Error>
    * @warning After build is invoked it returns to default state (it does not preserve the current state).
    */
-  [[nodiscard]] Result<RenderPass, Error> build(uint32_t width, uint32_t height);  // TODO(migoox): handle resize
+  [[nodiscard]] Result<RenderPassHandle, Error> build(uint32_t width, uint32_t height);  // TODO(migoox): handle resize
 
  private:
+  explicit RenderPassBuilder(RenderGraph* render_graph) : render_graph_(render_graph) {}
   RenderPass render_pass_;
+  RenderGraph* render_graph_;
 };
 
 struct RenderPassAttachmentImage {
   ImageResource img;
   vk::raii::ImageView view;
+  vk::SampleCountFlagBits samples;
   vk::PipelineStageFlags2 src_stage_mask         = vk::PipelineStageFlagBits2::eTopOfPipe;
   vk::AccessFlags2 src_access_mask               = {};  // NOLINT
   vk::ImageLayout src_layout                     = vk::ImageLayout::eUndefined;
@@ -112,22 +124,26 @@ class RenderGraph {
   static RenderGraph create() { return RenderGraph(); }
 
   RenderPassAttachmentHandle create_color_attachment(Device& device, uint32_t width, uint32_t height,
-                                                     vk::Format format               = vk::Format::eB8G8R8A8Srgb,
-                                                     vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1);
+                                                     vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
+                                                     vk::Format format               = vk::Format::eB8G8R8A8Srgb);
 
   RenderPassAttachmentHandle create_depth_stencil_attachment(
-      Device& device, uint32_t width, uint32_t height, std::optional<vk::Format> format = std::nullopt,
-      vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1);
+      Device& device, uint32_t width, uint32_t height, vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
+      std::optional<vk::Format> format = std::nullopt);
 
   RenderPassAttachmentHandle create_depth_attachment(Device& device, uint32_t width, uint32_t height,
-                                                     std::optional<vk::Format> format = std::nullopt,
-                                                     vk::SampleCountFlagBits samples  = vk::SampleCountFlagBits::e1);
+                                                     vk::SampleCountFlagBits samples  = vk::SampleCountFlagBits::e1,
+                                                     std::optional<vk::Format> format = std::nullopt);
 
   RenderPassAttachmentHandle create_stencil_attachment(Device& device, uint32_t width, uint32_t height,
                                                        vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1);
 
   RenderPassAttachmentHandle emplace_attachment(ImageResource&& attachment, ImageAttachmentType type);
   RenderPassHandle emplace_render_pass(RenderPass&& render_pass);
+
+  RenderPassBuilder render_pass_builder(vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
+    return RenderPassBuilder::create(*this, sample_count);
+  }
 
   void emplace_final_pass_dependency(RenderPassAttachmentHandle handle,
                                      vk::PipelineStageFlags2 stage_mask = vk::PipelineStageFlagBits2::eFragmentShader,
@@ -139,6 +155,8 @@ class RenderGraph {
   const RenderPass& render_pass(RenderPassHandle handle) const;
 
  private:
+  friend RenderPassBuilder;
+
   void for_each_attachment(const std::function<void(RenderPassAttachmentImage& attachment_image)>& action);
   void for_each_depth_or_stencil(const std::function<void(RenderPassAttachmentImage& attachment_image)>& action);
   RenderPassAttachmentImage& attachment(RenderPassAttachmentHandle handle);
