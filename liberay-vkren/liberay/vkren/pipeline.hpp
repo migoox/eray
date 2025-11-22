@@ -1,6 +1,7 @@
 #pragma once
 
 #include <liberay/util/zstring_view.hpp>
+#include <liberay/vkren/render_graph.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <vulkan/vulkan_enums.hpp>
@@ -17,6 +18,7 @@ struct Pipeline {
 struct GraphicsPipelineBuilder {
   GraphicsPipelineBuilder() = delete;
   static GraphicsPipelineBuilder create(const SwapChain& swap_chain);
+  static GraphicsPipelineBuilder create(const RenderGraph& render_pass, RenderPassHandle rp_handle);
 
   GraphicsPipelineBuilder& with_shaders(vk::ShaderModule shader_module,
                                         util::zstring_view vertex_shader_entry_point   = "",
@@ -85,13 +87,56 @@ struct GraphicsPipelineBuilder {
 
   GraphicsPipelineBuilder& with_stencil_test();
 
+  /**
+   * @brief Sets all color attachments blending factors.
+   *
+   * @param color_blend_factor
+   * @param alpha_blend_factor
+   * @return GraphicsPipelineBuilder&
+   */
   GraphicsPipelineBuilder& with_src_blend_factors(vk::BlendFactor color_blend_factor,
                                                   vk::BlendFactor alpha_blend_factor);
+  /**
+   * @brief Sets all color attachments blending factors
+   *
+   * @param color_blend_factor
+   * @param alpha_blend_factor
+   * @return GraphicsPipelineBuilder&
+   */
   GraphicsPipelineBuilder& with_dst_blend_factors(vk::BlendFactor color_blend_factor,
                                                   vk::BlendFactor alpha_blend_factor);
+  /**
+   * @brief Sets all color attachments blending operations.
+   *
+   * @param color_blend_op
+   * @param alpha_blend_op
+   * @return GraphicsPipelineBuilder&
+   */
   GraphicsPipelineBuilder& with_blend_ops(vk::BlendOp color_blend_op, vk::BlendOp alpha_blend_op);
+
+  /**
+   * @brief Sets all color attachments blending color write mask.
+   *
+   * @param flags
+   * @return GraphicsPipelineBuilder&
+   */
   GraphicsPipelineBuilder& with_color_write_mask(vk::ColorComponentFlags flags);
+
+  /**
+   * @brief Enables blending for all color attachments
+   *
+   * @return GraphicsPipelineBuilder&
+   */
   GraphicsPipelineBuilder& with_blending();
+
+  GraphicsPipelineBuilder& with_src_blend_factors(RenderPassAttachmentHandle handle, vk::BlendFactor color_blend_factor,
+                                                  vk::BlendFactor alpha_blend_factor);
+  GraphicsPipelineBuilder& with_dst_blend_factors(RenderPassAttachmentHandle handle, vk::BlendFactor color_blend_factor,
+                                                  vk::BlendFactor alpha_blend_factor);
+  GraphicsPipelineBuilder& with_blend_ops(RenderPassAttachmentHandle handle, vk::BlendOp color_blend_op,
+                                          vk::BlendOp alpha_blend_op);
+  GraphicsPipelineBuilder& with_color_write_mask(RenderPassAttachmentHandle handle, vk::ColorComponentFlags flags);
+  GraphicsPipelineBuilder& with_blending(RenderPassAttachmentHandle handle);
 
   GraphicsPipelineBuilder& with_descriptor_set_layouts(std::span<vk::DescriptorSetLayout> layout);
   GraphicsPipelineBuilder& with_descriptor_set_layout(const vk::DescriptorSetLayout& layouts);
@@ -110,12 +155,15 @@ struct GraphicsPipelineBuilder {
   vk::PipelineRasterizationStateCreateInfo _rasterizer;
   vk::PipelineMultisampleStateCreateInfo _multisampling;
   vk::PipelineDepthStencilStateCreateInfo _depth_stencil;
-  vk::PipelineColorBlendAttachmentState _color_blend;
+  std::vector<vk::PipelineColorBlendAttachmentState> _color_blends;
   vk::PipelineLayoutCreateInfo _pipeline_layout;
   vk::PipelineTessellationStateCreateInfo _tess_stage;
   vk::PipelineTessellationDomainOriginStateCreateInfoKHR _tess_domain_origin;
-  vk::Format _color_attachment_format;
-  vk::Format _depth_stencil_format;
+  std::vector<vk::Format> _color_attachment_formats;
+  std::optional<vk::Format> _depth_format;
+  std::optional<vk::Format> _stencil_format;
+
+  std::unordered_map<uint32_t, uint32_t> _rg_attachment_handle_to_rp_attachment_ind;
 
   bool tess_stage{false};
 
@@ -125,7 +173,9 @@ struct GraphicsPipelineBuilder {
   static constexpr util::zstring_view kDefaultTessellationEvalShaderEntryPoint    = "mainTessEval";
 
  private:
+  void init();
   explicit GraphicsPipelineBuilder(const SwapChain& swap_chain);
+  explicit GraphicsPipelineBuilder(const RenderGraph& render_graph, RenderPassHandle rp_handle);
 };
 
 struct ComputePipelineBuilder {

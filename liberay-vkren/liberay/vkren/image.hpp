@@ -23,6 +23,7 @@ struct ImageResource {
   uint32_t mip_levels;
   vk::ImageAspectFlags aspect;
   vk::ImageUsageFlags usage;
+  vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1;
 
   /**
    * @brief Any resources that you frequently write and read on GPU, e.g. images used as color attachments (aka "render
@@ -53,6 +54,20 @@ struct ImageResource {
       vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
     return create_attachment_image(device, desc, vk::ImageUsageFlagBits::eDepthStencilAttachment,
                                    vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil, sample_count);
+  }
+
+  [[nodiscard]] static Result<ImageResource, Error> create_stencil_attachment_image(
+      Device& device, const ImageDescription& desc,
+      vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
+    return create_attachment_image(device, desc, vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                                   vk::ImageAspectFlagBits::eStencil, sample_count);
+  }
+
+  [[nodiscard]] static Result<ImageResource, Error> create_depth_attachment_image(
+      Device& device, const ImageDescription& desc,
+      vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
+    return create_attachment_image(device, desc, vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                                   vk::ImageAspectFlagBits::eDepth, sample_count);
   }
 
   /**

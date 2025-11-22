@@ -47,12 +47,13 @@ Result<ImageResource, Error> ImageResource::create_attachment_image(Device& devi
   }
 
   return ImageResource{
-      ._image      = VmaRaiiImage(device.vma_alloc_manager(), image_opt->allocation, image_opt->vk_image),
-      .description = desc,
-      ._p_device   = &device,
-      .mip_levels  = 1,
-      .aspect      = aspect,
-      .usage       = usage,
+      ._image       = VmaRaiiImage(device.vma_alloc_manager(), image_opt->allocation, image_opt->vk_image),
+      .description  = desc,
+      ._p_device    = &device,
+      .mip_levels   = 1,
+      .aspect       = aspect,
+      .usage        = usage,
+      .sample_count = sample_count,
   };
 }
 

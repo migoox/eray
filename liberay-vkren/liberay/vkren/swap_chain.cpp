@@ -384,8 +384,6 @@ void SwapChain::destroy() {
 
 void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t image_index,
                                 vk::ClearColorValue clear_color, vk::ClearDepthStencilValue clear_depth_stencil) {
-  cmd_buff.begin({});
-
   // == Swap Chain Images ==============================================================================================
   auto swap_chain_image_barrier = vk::ImageMemoryBarrier2{
       .srcStageMask        = vk::PipelineStageFlagBits2::eTopOfPipe,
@@ -499,6 +497,7 @@ void SwapChain::begin_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_
       .colorAttachmentCount = 1,
       .pColorAttachments    = &color_attachment_info,
       .pDepthAttachment     = &depth_stencil_attachment_info,
+      .pStencilAttachment   = &depth_stencil_attachment_info,
   });
 }
 
@@ -532,7 +531,6 @@ void SwapChain::end_rendering(const vk::raii::CommandBuffer& cmd_buff, uint32_t 
   };
 
   cmd_buff.pipelineBarrier2(swap_chain_image_dependency_info);
-  cmd_buff.end();
 }
 
 Result<SwapChain::AcquireResult, Error> SwapChain::acquire_next_image(uint64_t timeout, vk::Semaphore semaphore,

@@ -146,6 +146,13 @@ class Device {
   vk::raii::Queue& presentation_queue() noexcept { return presentation_queue_; }
   const vk::raii::Queue& presentation_queue() const noexcept { return presentation_queue_; }
 
+  bool is_format_supported(vk::Format format, vk::FormatFeatureFlags features,
+                           vk::ImageTiling tiling = vk::ImageTiling::eOptimal) const;
+
+  std::optional<vk::Format> get_first_supported_format(const std::span<vk::Format>& formats,
+                                                       vk::FormatFeatureFlags features,
+                                                       vk::ImageTiling tiling = vk::ImageTiling::eOptimal) const;
+
   Result<uint32_t, Error> find_mem_type(uint32_t type_filter, vk::MemoryPropertyFlags props) const;
 
   template <typename T>

@@ -82,6 +82,7 @@ void VulkanApplication::main_loop() {
     ImGui::NewFrame();
     on_imgui(context_);
     ImGui::Render();
+    on_render_begin(context_, delta);
     render_frame(delta);
     if (imgui_io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
       ImGui::UpdatePlatformWindows();
@@ -106,22 +107,18 @@ void VulkanApplication::main_loop() {
 }
 
 void VulkanApplication::render_frame(Duration delta) {
-  // A binary (there is also a timeline semaphore) semaphore is used to add order between queue operations (work
-  // submitted to the queue). Semaphores are used for both -- to order work inside the same queue and between
-  // different queues. The waiting happens on GPU only, the host (CPU) is not blocked.
-  //
-  // A fence is used on CPU. Unlike the semaphores the vkWaitForFence is blocking the host.
-
-  // The solution below is not correct:
+  // If rendering for the current frame has not finished yet, CPU waits for the GPU
   while (vk::Result::eTimeout ==
-         context_.device_->vk().waitForFences(*in_flight_fences_[current_frame_], vk::True, UINT64_MAX)) {
+         context_.device_->vk().waitForFences(*record_fences_[current_frame_], vk::True, UINT64_MAX)) {
     ;
   }
+  context_.device_->vk().resetFences(*record_fences_[current_frame_]);
+  graphics_command_buffers_[current_frame_].reset();
 
-  // Get the image from the swap chain. When the image will be ready the present semaphore will be signaled.
+  // Get the image from the swap chain. When the image is ready ready the present semaphore will be signaled.
   uint32_t image_index{};
   if (auto acquire_opt = context_.swap_chain_->acquire_next_image(
-          UINT64_MAX, *present_finished_semaphores_[current_semaphore_], nullptr)) {
+          UINT64_MAX, *acquire_image_semaphores_[current_semaphore_], nullptr)) {
     if (acquire_opt->status != SwapChain::AcquireResult::Status::Success) {
       return;
     }
@@ -130,41 +127,30 @@ void VulkanApplication::render_frame(Duration delta) {
     eray::util::panic("Failed to acquire next image!");
     return;
   }
-
-  on_frame_prepare(context_, current_frame_, delta);
-
-  context_.device_->vk().resetFences(*in_flight_fences_[current_frame_]);
-  graphics_command_buffers_[current_frame_].reset();
   record_graphics_command_buffer(current_frame_, image_index);
+  on_frame_prepare(context_, current_frame_, delta);
 
   auto wait_dst_stage_mask = vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput);
   auto submit_info         = vk::SubmitInfo{
               .waitSemaphoreCount   = 1,
-              .pWaitSemaphores      = &*present_finished_semaphores_[current_semaphore_],
+              .pWaitSemaphores      = &*acquire_image_semaphores_[current_semaphore_],
               .pWaitDstStageMask    = &wait_dst_stage_mask,
               .commandBufferCount   = 1,
               .pCommandBuffers      = &*graphics_command_buffers_[current_frame_],
               .signalSemaphoreCount = 1,
-              .pSignalSemaphores    = &*render_finished_semaphores_[image_index],  //
+              .pSignalSemaphores    = &*render_finished_semaphores_[image_index],
   };
 
-  // Inject the external semaphores if there are any
-  if (!external_submit_semaphores_.empty()) {
-    external_submit_semaphores_.push_back(*present_finished_semaphores_[current_semaphore_]);
-    submit_stage_masks_.emplace_back(vk::PipelineStageFlagBits::eColorAttachmentOutput);
-
-    submit_info.pWaitSemaphores    = external_submit_semaphores_.data();
-    submit_info.waitSemaphoreCount = static_cast<uint32_t>(external_submit_semaphores_.size());
-    submit_info.pWaitDstStageMask  = submit_stage_masks_.data();
+  if (frame_data_dirty_) {
+    auto prev_frame = (kMaxFramesInFlight + current_frame_ - 1) % kMaxFramesInFlight;
+    while (vk::Result::eTimeout ==
+           context_.device_->vk().waitForFences(*record_fences_[prev_frame], vk::True, UINT64_MAX)) {
+      ;
+    }
+    on_frame_prepare_sync(context_, delta);
+    frame_data_dirty_ = false;
   }
-
-  // Submits the provided commands to the queue. The vkWaitForFences blocks the execution until all
-  // of the commands will be submitted. The submitting will begin after the present semaphore
-  // receives the signal from acquire next image.
-  //
-  // When the rendering finishes, the finished render finished semaphore is signaled.
-  //
-  context_.device_->graphics_queue().submit(submit_info, *in_flight_fences_[current_frame_]);
+  context_.device_->graphics_queue().submit(submit_info, *record_fences_[current_frame_]);
 
   // The image will not be presented until the render finished semaphore is signaled by the submit call.
   const auto present_info = vk::PresentInfoKHR{
@@ -180,11 +166,8 @@ void VulkanApplication::render_frame(Duration delta) {
     eray::util::Logger::err("Failed to present an image!");
   }
 
-  current_semaphore_ = (current_semaphore_ + 1) % present_finished_semaphores_.size();
+  current_semaphore_ = (current_semaphore_ + 1) % acquire_image_semaphores_.size();
   current_frame_     = (current_frame_ + 1) % kMaxFramesInFlight;
-
-  // External semaphores are used for a single frame only
-  external_submit_semaphores_.clear();
 }
 
 void VulkanApplication::create_dsl() {
@@ -251,12 +234,12 @@ void VulkanApplication::create_command_buffers() {
 }
 
 void VulkanApplication::create_sync_objs() {
-  present_finished_semaphores_.clear();
+  acquire_image_semaphores_.clear();
   render_finished_semaphores_.clear();
 
   for (size_t i = 0; i < context_.swap_chain_->images().size(); ++i) {
     if (auto result = context_.device_->vk().createSemaphore(vk::SemaphoreCreateInfo{})) {
-      present_finished_semaphores_.emplace_back(std::move(*result));
+      acquire_image_semaphores_.emplace_back(std::move(*result));
     } else {
       eray::util::panic("Could not create a semaphore");
     }
@@ -273,7 +256,7 @@ void VulkanApplication::create_sync_objs() {
   for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
     if (auto result =
             context_.device_->vk().createFence(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled})) {
-      in_flight_fences_[i] = std::move(*result);
+      record_fences_[i] = std::move(*result);
     } else {
       eray::util::panic("Could not create a fence");
     }
@@ -284,6 +267,11 @@ void VulkanApplication::record_graphics_command_buffer(size_t frame_index, uint3
   auto clear_color_value         = get_clear_color_value();
   auto clear_depth_stencil_value = get_clear_depth_stencil_value();
 
+  graphics_command_buffers_[frame_index].begin({});
+  {
+    auto cmd_buff = vk::CommandBuffer{graphics_command_buffers_[frame_index]};
+    context_.render_graph_.emit(*context_.device_, cmd_buff);
+  }
   context_.swap_chain_->begin_rendering(graphics_command_buffers_[frame_index], image_index, clear_color_value,
                                         clear_depth_stencil_value);
 
@@ -304,11 +292,12 @@ void VulkanApplication::record_graphics_command_buffer(size_t frame_index, uint3
   on_record_graphics(context_, graphics_command_buffers_[frame_index], static_cast<uint32_t>(frame_index));
 
   {
-    vk::CommandBuffer buff = graphics_command_buffers_[frame_index];
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(buff));
+    vk::CommandBuffer cmd_buff = graphics_command_buffers_[frame_index];
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(cmd_buff));
   }
 
   context_.swap_chain_->end_rendering(graphics_command_buffers_[frame_index], image_index);
+  graphics_command_buffers_[frame_index].end();
 }
 
 static void check_vk_result(VkResult err) {
@@ -400,11 +389,6 @@ void VulkanApplication::init_imgui() {
   deletion_queue_.push_deletor([]() { ImGui_ImplVulkan_Shutdown(); });
 
   util::Logger::succ("Successfully initialized ImGui");
-}
-
-void VulkanApplication::wait_semaphore_on_submit_once(vk::Semaphore semaphore, vk::PipelineStageFlags stage_mask) {
-  external_submit_semaphores_.push_back(semaphore);
-  submit_stage_masks_.push_back(stage_mask);
 }
 
 }  // namespace eray::vkren

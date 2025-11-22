@@ -696,4 +696,27 @@ void Device::immediate_command_submit(const std::function<void(vk::CommandBuffer
   end_single_time_commands(cmd_buf);
 }
 
+bool Device::is_format_supported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const {
+  auto props = physical_device_.getFormatProperties(format);
+  if (tiling == vk::ImageTiling::eLinear && (props.linearTilingFeatures & features) == features) {
+    return true;
+  }
+  if (tiling == vk::ImageTiling::eOptimal && (props.optimalTilingFeatures & features) == features) {
+    return true;
+  }
+
+  return false;
+}
+
+std::optional<vk::Format> Device::get_first_supported_format(const std::span<vk::Format>& formats,
+                                                             vk::FormatFeatureFlags features,
+                                                             vk::ImageTiling tiling) const {
+  for (const auto format : formats) {
+    if (is_format_supported(format, features, tiling)) {
+      return format;
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace eray::vkren
