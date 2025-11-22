@@ -55,6 +55,20 @@ struct ImageResource {
                                    vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil, sample_count);
   }
 
+  [[nodiscard]] static Result<ImageResource, Error> create_stencil_attachment_image(
+      Device& device, const ImageDescription& desc,
+      vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
+    return create_attachment_image(device, desc, vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                                   vk::ImageAspectFlagBits::eStencil, sample_count);
+  }
+
+  [[nodiscard]] static Result<ImageResource, Error> create_depth_attachment_image(
+      Device& device, const ImageDescription& desc,
+      vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
+    return create_attachment_image(device, desc, vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                                   vk::ImageAspectFlagBits::eDepth, sample_count);
+  }
+
   /**
    * @brief Use this for buffers that are frequently sampled by the GPU, and loaded once from the CPU. The layout is
    * VK_IMAGE_LAYOUT_UNDEFINED.

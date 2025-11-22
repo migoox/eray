@@ -9,6 +9,7 @@
 #include <liberay/vkren/deletion_queue.hpp>
 #include <liberay/vkren/descriptor.hpp>
 #include <liberay/vkren/device.hpp>
+#include <liberay/vkren/render_graph.hpp>
 #include <liberay/vkren/swap_chain.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -32,6 +33,7 @@ struct VulkanApplicationContext {
   DescriptorSetLayoutManager dsl_manager_   = DescriptorSetLayoutManager(nullptr);
   DescriptorAllocator dsl_allocator_        = DescriptorAllocator(nullptr);
   std::shared_ptr<eray::os::Window> window_ = nullptr;
+  RenderGraph render_graph;
 };
 
 struct VulkanApplicationCreateInfo {
@@ -135,6 +137,10 @@ class VulkanApplication {
    * @brief Designed to update dynamic GPU resources, e.g. UBOs that are updated per frames. The GPU execution never
    * overlaps with this method execution, so there is no need to create a resource per frame in flight. This function
    * is called only if frame data is marked dirty, see `mark_frame_data_dirty()`.
+   *
+   * @warning Avoid doing heavy operations in this method as it stalls both CPU and GPU. This
+   * method should be responsible only for uploading the data. If you need to perform some data calculations use
+   * `on_update()` instead.
    */
   virtual void on_frame_prepare_sync(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
 
