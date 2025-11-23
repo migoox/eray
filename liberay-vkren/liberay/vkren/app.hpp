@@ -118,6 +118,12 @@ class VulkanApplication {
 
   virtual void on_input_events_polled(VulkanApplicationContext& /*ctx*/) {}
 
+  /**
+   * @brief Includes events captured by imgui
+   *
+   */
+  virtual void on_input_events_polled_all(VulkanApplicationContext& /*ctx*/) {}
+
   virtual void on_update(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
 
   /**

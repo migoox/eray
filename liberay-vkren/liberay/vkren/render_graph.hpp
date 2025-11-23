@@ -109,7 +109,7 @@ struct RenderPassAttachmentImage {
   vk::PipelineStageFlags2 src_stage_mask         = vk::PipelineStageFlagBits2::eTopOfPipe;
   vk::AccessFlags2 src_access_mask               = {};  // NOLINT
   vk::ImageLayout src_layout                     = vk::ImageLayout::eUndefined;
-  vk::ClearColorValue clear_color                = vk::ClearColorValue{0.F, 0.F, 0.F, 0.F};
+  vk::ClearColorValue clear_color                = vk::ClearColorValue{0.F, 0.F, 0.F, 1.F};
   vk::ClearDepthStencilValue clear_depth_stencil = vk::ClearDepthStencilValue{.depth = 1.F, .stencil = 0U};
 };
 

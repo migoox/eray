@@ -59,6 +59,7 @@ void VulkanApplication::main_loop() {
     if (!imgui_io.WantCaptureMouse && !imgui_io.WantCaptureKeyboard) {
       on_input_events_polled(context_);
     }
+    on_input_events_polled_all(context_);
     context_.window_->process_queued_events();
 
     // == Fixed time step update =======================================================================================
