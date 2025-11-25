@@ -131,14 +131,25 @@ struct Quat {
   }
 
   /**
-   * @brief Creates an unit quaternion that represents a rotation from the provided euler angles. The X rotation
-   * is applied first.
+   * @brief Converts euler (formally Tait-Bryan) extrinsic angles (a,b,c), R_z''(a)R_y'(b)R_x(c) = R_z(c)R_y(b)R_x(a)
+   * (for column-major matrices) to quaternion.
    *
    * @param angles in radians
    * @return constexpr Quat
    */
   constexpr static Quat from_euler_xyz(const Vec<3, T>& angles) {
     return (rotation_z(angles.z()) * rotation_y(angles.y()) * rotation_x(angles.x())).normalized();
+  }
+
+  /**
+   * @brief Converts euler extrinsic angles (a,b,c), R_z''(a)R_x'(b)R_z(c) = R_z(c)R_x(b)R_z(a) (for column-major
+   * matrices), to quaternion.
+   *
+   * @param angles in radians
+   * @return constexpr Quat
+   */
+  constexpr static Quat from_euler_zxz(const Vec<3, T>& angles) {
+    return (rotation_z(angles.z()) * rotation_x(angles.y()) * rotation_z(angles.x())).normalized();
   }
 
   /**

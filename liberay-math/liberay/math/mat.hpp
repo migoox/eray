@@ -383,6 +383,30 @@ Mat<4, 4, T> rotation_z(T rad_angle) {
 }
 
 /**
+ * @brief Composes an orthogonal matrix from euler (formally Tait-Bryan) extrinsic angles (a,b,c),
+ * R_z''(a)R_y'(b)R_x(c) = R_z(c)R_y(b)R_x(a) (for column-major).
+ *
+ * @param angles in radians
+ * @return Mat<4, 4, T>
+ */
+template <CFloatingPoint T>
+Mat<4, 4, T> rotation_xyz(const Vec<3, T>& angles) {
+  return rotation_z(angles.z()) * rotation_y(angles.y()) * rotation_x(angles.x());
+}
+
+/**
+ * @brief Composes an orthogonal matrix from euler extrinsic angles (a,b,c), R_z''(a)R_x'(b)R_z(c) = R_z(c)R_x(b)R_z(a)
+ * (for column-major).
+ *
+ * @param angles in radians
+ * @return Mat<4, 4, T>
+ */
+template <CFloatingPoint T>
+Mat<4, 4, T> rotation_zxz(const Vec<3, T>& angles) {
+  return rotation_z(angles.z()) * rotation_x(angles.y()) * rotation_z(angles.x());
+}
+
+/**
  * @brief Returns affine 3D rotation matrix around an arbitrary axis.
  *
  * @tparam T
@@ -718,8 +742,9 @@ constexpr bool is_zero(T value) {
 }  // namespace internal
 
 /**
- * @brief Extracts the euler angles from the given rotation matrix assuming XYZ order. For column-major it's Z * Y * X.
- * For row-major it's X * Y * Z.
+ * @brief Extracts the euler angles (formally Tait-Bryan) from the given rotation matrix assuming XYZ order. The
+ * resulting vector (a,b,c) stores extrinsic euler angles, which means that R_z''(a)R_y'(b)R_x(c) = R_z(c)R_y(b)R_x(a)
+ * (for column-major).
  *
  * @tparam T
  * @param mat
@@ -746,6 +771,31 @@ template <CFloatingPoint T, std::size_t N>
     eulers.z(std::atan2(mat[0][1] / k, mat[0][0] / k));
   }
   return eulers;
+}
+
+/**
+ * @brief Extracts the euler angles from the given rotation matrix assuming ZXZ order. The resulting vector (a,b,c)
+ * stores extrinsic euler angles, which means that R_z''(a)R_x'(b)R_z(c) = R_z(c)R_x(b)R_z(a) (for column-major).
+ *
+ * @tparam T
+ * @param mat
+ * @return Vec<3, T>
+ */
+template <CFloatingPoint T, std::size_t N>
+[[nodiscard]] Vec<3, T> eulers_zxz(const Mat<N, N, T>& mat)
+  requires(N == 3 || N == 4)
+{
+  auto c = std::atan2(mat[2][0], -mat[2][1]);
+  if (c < static_cast<T>(1)) {
+    c += std::numbers::pi_v<T>;
+  }
+  auto cos_c = std::cos(c);
+  auto sin_c = std::sin(c);
+
+  auto b = std::atan2(mat[2][0] * sin_c - mat[2][1] * cos_c, mat[2][2]);
+  auto a = std::atan2(-mat[1][0] * cos_c - mat[1][1] * sin_c, mat[0][0] * cos_c + mat[0][1] * sin_c);
+
+  return Vec<3, T>{a, b, c};
 }
 
 }  // namespace eray::math
