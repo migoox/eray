@@ -548,6 +548,18 @@ Mat<4, 4, T> perspective_vk_rh(T fovy, T aspect, T z_near, T z_far) {
   };
 }
 
+template <CFloatingPoint T>
+Mat<4, 4, T> inv_perspective_vk_rh(T fovy, T aspect, T z_near, T z_far) {
+  const T tan_half_fovy = std::tan(fovy / static_cast<T>(2));
+
+  return Mat<4, 4, T>{
+      Vec<4, T>{(aspect * tan_half_fovy), 0, 0, 0},
+      Vec<4, T>{0, -tan_half_fovy, 0, 0},
+      Vec<4, T>{0, 0, 0, (-z_far + z_near) / (z_far * z_near)},
+      Vec<4, T>{0, 0, -static_cast<T>(1), static_cast<T>(1) / z_near},
+  };
+}
+
 /**
  * @brief Right-handed orthographic projection matrix with depth range 0 to 1 (Vulkan).
  *
