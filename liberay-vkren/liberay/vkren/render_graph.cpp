@@ -10,6 +10,7 @@
 #include <liberay/vkren/render_graph.hpp>
 #include <optional>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
@@ -110,6 +111,11 @@ RenderPassBuilder& RenderPassBuilder::with_stencil_attachment(RenderPassAttachme
 
 RenderPassBuilder& RenderPassBuilder::on_emit(
     const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func) {
+  render_pass_.on_cmd_emit_func = [emit_func](EmitContext& ctx) { emit_func(ctx.device(), ctx.cmd_buff()); };
+  return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::on_emit(const std::function<void(EmitContext& ctx)>& emit_func) {
   render_pass_.on_cmd_emit_func = emit_func;
   return *this;
 }
@@ -165,12 +171,20 @@ Result<RenderPassHandle, Error> RenderPassBuilder::build(uint32_t width, uint32_
 RenderPassAttachmentHandle RenderGraph::create_color_attachment(Device& device, uint32_t width, uint32_t height,
                                                                 bool readable, vk::SampleCountFlagBits samples,
                                                                 vk::Format format) {
-  vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eColorAttachment;
+  auto usage = ImageAttachmentUsage::FragmentOutputOnly;
   if (readable) {
-    usage |= vk::ImageUsageFlagBits::eSampled;
-  } else {
-    usage |= vk::ImageUsageFlagBits::eTransientAttachment;
+    usage = ImageAttachmentUsage::Read;
   }
+
+  return create_color_attachment(device, width, height, usage, samples, format);
+}
+
+RenderPassAttachmentHandle RenderGraph::create_color_attachment(Device& device, uint32_t width, uint32_t height,
+                                                                ImageAttachmentUsage usage,
+                                                                vk::SampleCountFlagBits samples, vk::Format format) {
+  vk::ImageUsageFlags usage_flags = vk::ImageUsageFlagBits::eColorAttachment;
+  append_usage_flags(usage_flags, usage);
+
   auto aspect = vk::ImageAspectFlagBits::eColor;
 
   if (!device.is_format_supported(format, vk::FormatFeatureFlagBits::eColorAttachment)) {
@@ -178,7 +192,7 @@ RenderPassAttachmentHandle RenderGraph::create_color_attachment(Device& device, 
   }
   format   = vk::Format::eB8G8R8A8Srgb;
   auto img = ImageResource::create_attachment_image(device, ImageDescription::image2d_desc(format, width, height),
-                                                    usage, aspect, samples)
+                                                    usage_flags, aspect, samples)
                  .or_panic("Could not create image attachment");
 
   auto view = img.create_image_view().or_panic("Could not create image view");
@@ -316,6 +330,24 @@ RenderPassAttachmentHandle RenderGraph::create_stencil_attachment(Device& device
   };
 }
 
+void RenderGraph::append_usage_flags(vk::ImageUsageFlags& usage_flags, ImageAttachmentUsage usage) {
+  switch (usage) {
+    case ImageAttachmentUsage::FragmentOutputOnly:
+      usage_flags |= vk::ImageUsageFlagBits::eTransientAttachment;
+      return;
+    case ImageAttachmentUsage::Read:
+      usage_flags |= vk::ImageUsageFlagBits::eSampled;
+      return;
+    case ImageAttachmentUsage::Write:
+      usage_flags |= vk::ImageUsageFlagBits::eTransferDst;
+      return;
+    case ImageAttachmentUsage::ReadWrite:
+      usage_flags |= vk::ImageUsageFlagBits::eTransferDst;
+      usage_flags |= vk::ImageUsageFlagBits::eSampled;
+      return;
+  };
+}
+
 RenderPassAttachmentHandle RenderGraph::emplace_attachment(ImageResource&& attachment, ImageAttachmentType type) {
   auto view = attachment.create_image_view().or_panic("Could not create image view");
   switch (type) {
@@ -440,6 +472,8 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
   if (render_passes_.empty()) {
     return;
   }
+
+  auto emit_ctx = EmitContext{this, cmd_buff, &device};
 
   auto color_attachment_infos = std::vector<vk::RenderingAttachmentInfo>();
 
@@ -694,7 +728,8 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
                              .maxDepth = 1.0F  //
                          });
 
-    rp.on_cmd_emit_func(device, cmd_buff);
+    emit_ctx.prepare(&rp);
+    rp.on_cmd_emit_func(emit_ctx);
     cmd_buff.endRendering();
   }
 
@@ -736,5 +771,112 @@ void RenderGraph::emplace_final_pass_dependency(RenderPassAttachmentHandle handl
 }
 
 const RenderPass& RenderGraph::render_pass(RenderPassHandle handle) const { return render_passes_[handle.index]; }
+
+void EmitContext::clear_depth(float d) {
+  if (!render_pass_->depth_attachment) {
+    assert(true &&  // NOLINT
+           "Requested depth clear, but no depth attachment is attached to the render pass");
+    return;
+  }
+
+  auto& img_info = render_graph_->depth_attachments_[render_pass_->depth_attachment->handle.index];
+  record_in_transfer_dst_layout(img_info, [d](vk::CommandBuffer& cmd_buff, vk::Image vk_image,
+                                              vk::ImageLayout dst_layout, vk::ImageSubresourceRange subresource_range) {
+    cmd_buff.clearDepthStencilImage(vk_image, dst_layout, vk::ClearDepthStencilValue{.depth = d, .stencil = 0U},
+                                    subresource_range);
+  });
+}
+
+void EmitContext::clear_depth_stencil(vk::ClearDepthStencilValue depth_stencil_value) {
+  if (!render_pass_->depth_stencil_attachment) {
+    assert(true &&  // NOLINT
+           "Requested depth stencil clear, but no depth stencil attachment is attached to the render pass");
+    return;
+  }
+
+  auto& img_info = render_graph_->depth_stencil_attachments_[render_pass_->depth_stencil_attachment->handle.index];
+  record_in_transfer_dst_layout(
+      img_info, [depth_stencil_value](vk::CommandBuffer& cmd_buff, vk::Image vk_image, vk::ImageLayout dst_layout,
+                                      vk::ImageSubresourceRange subresource_range) {
+        cmd_buff.clearDepthStencilImage(vk_image, dst_layout, depth_stencil_value, subresource_range);
+      });
+}
+
+void EmitContext::clear_stencil(uint8_t u) {
+  if (!render_pass_->stencil_attachment) {
+    assert(true &&  // NOLINT
+           "Requested stencil clear, but no stencil attachment is attached to the render pass");
+    return;
+  }
+
+  auto& img_info = render_graph_->stencil_attachments_[render_pass_->stencil_attachment->handle.index];
+  record_in_transfer_dst_layout(img_info, [u](vk::CommandBuffer& cmd_buff, vk::Image vk_image,
+                                              vk::ImageLayout dst_layout, vk::ImageSubresourceRange subresource_range) {
+    cmd_buff.clearDepthStencilImage(vk_image, dst_layout, vk::ClearDepthStencilValue{.depth = 1.F, .stencil = u},
+                                    subresource_range);
+  });
+}
+
+/**
+ * @brief Clears color image with the provided handle.
+ *
+ * @param image_handle
+ * @param color_value
+ */
+void EmitContext::clear_color(RenderPassAttachmentHandle image_handle, vk::ClearColorValue color_value) {
+  auto& img_info = render_graph_->color_attachments_[image_handle.index];
+  record_in_transfer_dst_layout(
+      img_info, [color_value](vk::CommandBuffer& cmd_buff, vk::Image vk_image, vk::ImageLayout dst_layout,
+                              vk::ImageSubresourceRange subresource_range) {
+        cmd_buff.clearColorImage(vk_image, dst_layout, color_value, subresource_range);
+      });
+}
+
+void EmitContext::record_in_transfer_dst_layout(
+    RenderPassAttachmentImage& img,
+    const std::function<void(vk::CommandBuffer& cmd_buff, vk::Image vk_image, vk::ImageLayout dst_layout,
+                             vk::ImageSubresourceRange subresource_range)>& action) {
+  auto dst_stage_mask  = vk::PipelineStageFlagBits2::eTransfer;
+  auto dst_access_mask = vk::AccessFlagBits2::eTransferWrite;
+  auto dst_layout      = vk::ImageLayout::eTransferDstOptimal;
+
+  auto barrier = vk::ImageMemoryBarrier2{
+      .srcStageMask        = img.src_stage_mask,
+      .srcAccessMask       = img.src_access_mask,
+      .dstStageMask        = dst_stage_mask,
+      .dstAccessMask       = dst_access_mask,
+      .oldLayout           = img.src_layout,
+      .newLayout           = dst_layout,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image               = img.img.vk_image(),
+      .subresourceRange    = img.img.full_resource_range(),
+  };
+
+  cmd_buff_.pipelineBarrier2(vk::DependencyInfo{
+      .dependencyFlags         = {},
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers    = &barrier,
+  });
+
+  action(cmd_buff_, img.img.vk_image(), dst_layout, barrier.subresourceRange);
+
+  barrier = vk::BufferMemoryBarrier2{
+      .srcStageMask        = dst_stage_mask,
+      .srcAccessMask       = dst_access_mask,
+      .dstStageMask        = img.src_stage_mask,
+      .dstAccessMask       = img.src_access_mask,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image               = img.img.vk_image(),
+      .subresourceRange    = img.img.full_resource_range(),
+  };
+
+  cmd_buff_.pipelineBarrier2(vk::DependencyInfo{
+      .dependencyFlags          = {},
+      .pBufferMemoryBarriers    = &barrier,
+      .bufferMemoryBarrierCount = 1,
+  });
+}
 
 }  // namespace eray::vkren

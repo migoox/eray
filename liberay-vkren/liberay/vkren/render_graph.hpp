@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/image.hpp>
 #include <liberay/vkren/image_description.hpp>
@@ -7,6 +8,8 @@
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
+
+#include "liberay/vkren/device.hpp"
 
 namespace eray::vkren {
 
@@ -41,18 +44,56 @@ struct RenderPassAttachmentDependency {
   vk::ImageLayout layout;
 };
 
+class RenderGraph;
+struct RenderPass;
+struct RenderPassAttachmentImage;
+
+class EmitContext {
+ public:
+  explicit EmitContext(RenderGraph* render_graph, vk::CommandBuffer cmd_buff, Device* device)
+      : cmd_buff_(cmd_buff), render_graph_(render_graph), device_(device) {}
+
+  void clear_depth(float d = 1.F);
+  void clear_depth_stencil(vk::ClearDepthStencilValue depth_stencil_value);
+  void clear_stencil(uint8_t u = 0U);
+
+  /**
+   * @brief Clears color image with the provided handle.
+   *
+   * @param image_handle
+   * @param color_value
+   */
+  void clear_color(RenderPassAttachmentHandle image_handle, vk::ClearColorValue color_value);
+
+  Device& device() { return *device_; }
+  vk::CommandBuffer& cmd_buff() { return cmd_buff_; }
+
+ private:
+  friend RenderGraph;
+
+  void prepare(RenderPass* render_pass) { render_pass_ = render_pass; }
+
+  void record_in_transfer_dst_layout(
+      RenderPassAttachmentImage& img,
+      const std::function<void(vk::CommandBuffer& cmd_buff, vk::Image vk_image, vk::ImageLayout dst_layout,
+                               vk::ImageSubresourceRange subresource_range)>&);
+
+  vk::CommandBuffer cmd_buff_ = nullptr;
+  RenderGraph* render_graph_  = nullptr;
+  Device* device_             = nullptr;
+  RenderPass* render_pass_    = nullptr;
+};
+
 struct RenderPass {
   vk::Extent2D extent;
   std::vector<RenderPassAttachmentDependency> attachment_dependencies;
   std::vector<RenderPassAttachmentImageInfo> color_attachments;
-  vk::SampleCountFlagBits samples                                                   = vk::SampleCountFlagBits::e1;
-  std::optional<RenderPassAttachmentImageInfo> depth_stencil_attachment             = std::nullopt;
-  std::optional<RenderPassAttachmentImageInfo> depth_attachment                     = std::nullopt;
-  std::optional<RenderPassAttachmentImageInfo> stencil_attachment                   = std::nullopt;
-  std::function<void(Device& device, vk::CommandBuffer& cmd_buff)> on_cmd_emit_func = [](auto&, auto&) {};
+  vk::SampleCountFlagBits samples                                       = vk::SampleCountFlagBits::e1;
+  std::optional<RenderPassAttachmentImageInfo> depth_stencil_attachment = std::nullopt;
+  std::optional<RenderPassAttachmentImageInfo> depth_attachment         = std::nullopt;
+  std::optional<RenderPassAttachmentImageInfo> stencil_attachment       = std::nullopt;
+  std::function<void(EmitContext& ctx)> on_cmd_emit_func                = [](auto&) {};
 };
-
-class RenderGraph;
 
 class RenderPassBuilder {
  public:
@@ -85,6 +126,7 @@ class RenderPassBuilder {
                                              vk::AttachmentLoadOp load_op   = vk::AttachmentLoadOp::eClear,
                                              vk::AttachmentStoreOp store_op = vk::AttachmentStoreOp::eStore);
   RenderPassBuilder& on_emit(const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func);
+  RenderPassBuilder& on_emit(const std::function<void(EmitContext& ctx)>& emit_func);
 
   /**
    * @brief Builds the render pass.
@@ -113,6 +155,13 @@ struct RenderPassAttachmentImage {
   vk::ClearDepthStencilValue clear_depth_stencil = vk::ClearDepthStencilValue{.depth = 1.F, .stencil = 0U};
 };
 
+enum class ImageAttachmentUsage : uint8_t {
+  FragmentOutputOnly,
+  Read,   // for sampled textures
+  Write,  // for clearable textures
+  ReadWrite,
+};
+
 class RenderGraph {
  public:
   RenderGraph()                                  = default;
@@ -128,8 +177,18 @@ class RenderGraph {
                                                      vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
                                                      vk::Format format               = vk::Format::eB8G8R8A8Srgb);
 
+  RenderPassAttachmentHandle create_color_attachment(
+      Device& device, uint32_t width, uint32_t height,
+      ImageAttachmentUsage usage      = ImageAttachmentUsage::FragmentOutputOnly,
+      vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1, vk::Format format = vk::Format::eB8G8R8A8Srgb);
+
   RenderPassAttachmentHandle create_depth_stencil_attachment(
       Device& device, uint32_t width, uint32_t height, bool readable = false,
+      vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1, std::optional<vk::Format> format = std::nullopt);
+
+  RenderPassAttachmentHandle create_depth_stencil_attachment(
+      Device& device, uint32_t width, uint32_t height,
+      ImageAttachmentUsage usage      = ImageAttachmentUsage::FragmentOutputOnly,
       vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1, std::optional<vk::Format> format = std::nullopt);
 
   RenderPassAttachmentHandle create_depth_attachment(Device& device, uint32_t width, uint32_t height,
@@ -161,10 +220,13 @@ class RenderGraph {
  private:
   friend RenderPassBuilder;
 
+  static void append_usage_flags(vk::ImageUsageFlags& usage_flags, ImageAttachmentUsage usage);
   void for_each_attachment(const std::function<void(RenderPassAttachmentImage& attachment_image)>& action);
   void for_each_depth_or_stencil(const std::function<void(RenderPassAttachmentImage& attachment_image)>& action);
 
  private:
+  friend EmitContext;
+
   std::vector<RenderPassAttachmentImage> color_attachments_;
   std::vector<RenderPassAttachmentImage> depth_stencil_attachments_;
   std::vector<RenderPassAttachmentImage> depth_attachments_;
