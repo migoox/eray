@@ -27,46 +27,79 @@ template <std::size_t N, CPrimitive T>
 struct Vec {
   T data[N];
 
-  auto x() const
-    requires(N >= 1)
-  {
-    return data[0];
-  }
-  auto y() const
-    requires(N >= 2)
-  {
-    return data[1];
-  }
-  auto z() const
-    requires(N >= 3)
-  {
-    return data[2];
-  }
-  auto w() const
-    requires(N >= 4)
-  {
-    return data[3];
+  template <std::size_t I>
+  constexpr auto& at() noexcept {
+    static_assert(I < N);
+    return data[I];
   }
 
-  auto x(auto&& x)
+  template <std::size_t I>
+  constexpr const auto& at() const noexcept {
+    static_assert(I < N);
+    return data[I];
+  }
+
+  constexpr auto& x() noexcept
     requires(N >= 1)
   {
-    data[0] = x;
+    return at<0>();
   }
-  auto y(auto&& y)
+  constexpr auto& y() noexcept
     requires(N >= 2)
   {
-    data[1] = y;
+    return at<1>();
   }
-  auto z(auto&& z)
+  constexpr auto& z() noexcept
     requires(N >= 3)
   {
-    data[2] = z;
+    return at<2>();
   }
-  auto w(auto&& w)
+  constexpr auto& w() noexcept
     requires(N >= 4)
   {
-    data[3] = w;
+    return at<3>();
+  }
+
+  constexpr const auto& x() const noexcept
+    requires(N >= 1)
+  {
+    return at<0>();
+  }
+  constexpr const auto& y() const noexcept
+    requires(N >= 2)
+  {
+    return at<1>();
+  }
+  constexpr const auto& z() const noexcept
+    requires(N >= 3)
+  {
+    return at<2>();
+  }
+  constexpr const auto& w() const noexcept
+    requires(N >= 4)
+  {
+    return at<3>();
+  }
+
+  constexpr void x(auto&& x) noexcept
+    requires(N >= 1)
+  {
+    data[0] = std::forward<decltype(x)>(x);
+  }
+  constexpr void y(auto&& y) noexcept
+    requires(N >= 2)
+  {
+    data[1] = std::forward<decltype(y)>(y);
+  }
+  constexpr void z(auto&& z) noexcept
+    requires(N >= 3)
+  {
+    data[2] = std::forward<decltype(z)>(z);
+  }
+  constexpr void w(auto&& w) noexcept
+    requires(N >= 4)
+  {
+    data[3] = std::forward<decltype(w)>(w);
   }
 
   /**
