@@ -291,9 +291,9 @@ struct Vec {
 
   // == "[]" operator ==================================================================================================
 
-  T& operator[](std::size_t index) { return data[index]; }
+  constexpr T& operator[](std::size_t index) noexcept { return data[index]; }
 
-  const T& operator[](std::size_t index) const { return data[index]; }
+  constexpr const T& operator[](std::size_t index) const noexcept { return data[index]; }
 
   // == Getters ========================================================================================================
 
