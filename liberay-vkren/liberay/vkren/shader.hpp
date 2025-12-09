@@ -20,6 +20,8 @@ struct ShaderModule {
   [[nodiscard]] static Result<ShaderModule, Error> create(const Device& device,
                                                           std::span<const uint32_t> spirv_bytecode);
   [[nodiscard]] static Result<ShaderModule, Error> create(const Device& device, const res::SPIRVShaderBinary& spirv);
+  [[nodiscard]] static Result<ShaderModule, Error> load_from_path(const Device& device,
+                                                                  const std::filesystem::path& path);
 };
 
 }  // namespace eray::vkren

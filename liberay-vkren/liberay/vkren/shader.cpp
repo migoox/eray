@@ -1,6 +1,11 @@
+#include "liberay/res/shader.hpp"
+
 #include <expected>
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/shader.hpp>
+
+#include "liberay/res/error.hpp"
+#include "liberay/util/logger.hpp"
 
 namespace eray::vkren {
 
@@ -28,6 +33,18 @@ Result<ShaderModule, Error> ShaderModule::create(const Device& device, std::span
 
 Result<ShaderModule, Error> ShaderModule::create(const Device& device, const res::SPIRVShaderBinary& spirv) {
   return ShaderModule::create(device, spirv.data());
+}
+
+Result<ShaderModule, Error> ShaderModule::load_from_path(const Device& device, const std::filesystem::path& path) {
+  if (auto bin = res::SPIRVShaderBinary::load_from_path(path)) {
+    return create(device, *bin);
+  }
+
+  util::Logger::err("Load shader module from path {}", path.string());
+  return std::unexpected(Error{
+      .msg  = "Could not load shader module due to file error",
+      .code = ErrorCode::FileError{},
+  });
 }
 
 }  // namespace eray::vkren
