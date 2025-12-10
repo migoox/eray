@@ -239,7 +239,7 @@ struct Vec {
     return lhs;
   }
 
-  friend Vec operator-(T lhs, const Vec& rhs) { return rhs - lhs; }
+  friend Vec operator-(T lhs, const Vec& rhs) { return -rhs + lhs; }
 
   friend Vec operator-(Vec lhs, const Vec& rhs) {
     sub(std::make_index_sequence<N>{}, lhs.data, rhs.data);

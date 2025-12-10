@@ -327,6 +327,19 @@ Mat<4, 4, T> scale(Vec<3, T> scale) {
 }
 
 /**
+ * @brief Returns affine 3D uniform scale matrix.
+ *
+ * @tparam Vec<3, T>
+ * @param scale
+ * @return Mat<4, 4, T>
+ */
+template <CFloatingPoint T>
+Mat<4, 4, T> scale(T uniform_scale) {
+  return Mat<4, 4, T>{Vec<4, T>{uniform_scale, 0, 0, 0}, Vec<4, T>{0, uniform_scale, 0, 0},
+                      Vec<4, T>{0, 0, uniform_scale, 0}, Vec<4, T>{0, 0, 0, 1}};
+}
+
+/**
  * @brief Returns affine 2D rotation matrix for angle in radians.
  *
  * @tparam T
