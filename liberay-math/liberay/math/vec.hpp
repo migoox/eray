@@ -1,7 +1,6 @@
 #pragma once
 #include <cmath>
 #include <format>
-#include <initializer_list>
 #include <liberay/math/types.hpp>
 #include <liberay/math/vec_fwd.hpp>
 #include <numbers>

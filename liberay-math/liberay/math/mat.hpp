@@ -598,6 +598,16 @@ Mat<4, 4, T> orthographic_vk_rh(T left, T right, T bottom, T top, T z_near, T z_
   };
 }
 
+template <CFloatingPoint T>
+Mat<4, 4, T> inv_orthographic_vk_rh(T left, T right, T bottom, T top, T z_near, T z_far) {
+  return Mat<4, 4, T>{
+      Vec<4, T>{(right - left) / static_cast<T>(2), 0, 0, 0},
+      Vec<4, T>{0, (bottom - top) / static_cast<T>(2), 0, 0},
+      Vec<4, T>{0, 0, -z_far + z_near, 0},
+      Vec<4, T>{(left + right) / static_cast<T>(2), (bottom + top) / static_cast<T>(2), z_near, static_cast<T>(1)},
+  };
+}
+
 /**
  * @brief Right-handed perspective projection matrix with depth range 0 to 1 (DirectX).
  *
