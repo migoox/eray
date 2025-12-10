@@ -30,7 +30,7 @@ struct ResultBase : public std::expected<TType, TError> {
   ResultBase(std::expected<TType, TError>&& exp) : base(std::move(exp)) {}  // NOLINT
 
   /**
-   * @brief In the case the error is returned, program crashes. Inspired by
+   * @brief In the case the error is returned, program crashes. Inspired by rust.
    *
    * @param fmt_loc
    * @return TType
@@ -45,8 +45,8 @@ struct ResultBase : public std::expected<TType, TError> {
 };
 
 template <typename TError, CResultLogger<TError> TResultLogger>
-struct [[nodiscard("Result should be checked for errors")]] ResultBase<void, TError, TResultLogger>
-    : public std::expected<void, TError> {
+struct [[nodiscard("Result should be checked for errors")]]
+ResultBase<void, TError, TResultLogger> : public std::expected<void, TError> {
   using base = std::expected<void, TError>;
   using base::base;  // inherit constructors
 

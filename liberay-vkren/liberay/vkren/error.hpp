@@ -30,6 +30,7 @@ class ErrorCode {
   struct InvalidRenderPass {};
   struct InvalidRenderGraph {};
   struct FileError {};
+  struct ParserError {};
 
   using Enum = std::variant<         //
       VulkanObjectCreationFailure,   //
@@ -46,7 +47,8 @@ class ErrorCode {
       PresentationFailure,           //
       InvalidRenderPass,             //
       InvalidRenderGraph,            //
-      FileError                      //
+      FileError,                     //
+      ParserError                    //
       >;
 };
 

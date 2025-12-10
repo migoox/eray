@@ -173,13 +173,31 @@ struct Vec {
    * @brief Sets all components of a vector to 1
    *
    */
-  constexpr static Vec ones() { return Vec(std::make_index_sequence<N>{}, 1); }
+  constexpr static Vec ones() { return Vec(std::make_index_sequence<N>{}, static_cast<T>(1)); }
 
   /**
    * @brief Sets all components of a vector to requested value
    *
    */
   constexpr static Vec filled(T val) { return Vec(std::make_index_sequence<N>{}, std::move(val)); }
+
+  constexpr static Vec x_unit()
+    requires(N == 3U)
+  {
+    return Vec<N, T>{static_cast<T>(1), static_cast<T>(0), static_cast<T>(0)};
+  }
+
+  constexpr static Vec y_unit()
+    requires(N == 3U)
+  {
+    return Vec<N, T>{static_cast<T>(0), static_cast<T>(1), static_cast<T>(0)};
+  }
+
+  constexpr static Vec z_unit()
+    requires(N == 3U)
+  {
+    return Vec<N, T>{static_cast<T>(0), static_cast<T>(0), static_cast<T>(1)};
+  }
 
   // == "=" operator ===================================================================================================
 
@@ -663,6 +681,8 @@ template <CFloatingPoint T, std::size_t N>
   auto t = eray::math::abs(vec1 - vec2);
   return !internal::all_components_less_than(std::make_index_sequence<N>(), t.data, epsilon);
 }
+
+static_assert(std::is_trivially_copyable_v<Vec<3, float>>);
 
 }  // namespace eray::math
 

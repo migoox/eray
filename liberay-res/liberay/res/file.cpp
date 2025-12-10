@@ -5,7 +5,7 @@ namespace eray::res {
 
 util::Result<void, FileError> validate_file(const std::filesystem::path& path, std::span<const char*> extensions) {
   if (!std::filesystem::exists(path)) {
-    util::Logger::err(R"(Provided image file with path "{}" does not exist.)", path.string());
+    util::Logger::err(R"(Provided file with path "{}" does not exist.)", path.string());
     return std::unexpected(FileError{
         .path = path,
         .msg  = "File does not exist.",
