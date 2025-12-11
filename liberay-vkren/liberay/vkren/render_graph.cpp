@@ -636,7 +636,7 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
           .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
           .loadOp      = a->load_op,
           .storeOp     = a->store_op,
-          .clearValue  = depth_stencil_attachments_[a->handle.index].clear_color,
+          .clearValue  = depth_stencil_attachments_[a->handle.index].clear_depth_stencil,
       };
 
       auto dst_stage_mask =
