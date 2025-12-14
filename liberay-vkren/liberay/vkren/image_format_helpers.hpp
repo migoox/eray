@@ -84,6 +84,14 @@ inline bool is_block_format(vk::Format format) {
     case vk::Format::eR32G32B32A32Uint:
     case vk::Format::eR32G32B32A32Sint:
     case vk::Format::eR32G32B32A32Sfloat:
+
+    case vk::Format::eA8B8G8R8UintPack32:
+    case vk::Format::eA8B8G8R8SintPack32:
+    case vk::Format::eA8B8G8R8UnormPack32:
+    case vk::Format::eA8B8G8R8SnormPack32:
+    case vk::Format::eA8B8G8R8SrgbPack32:
+    case vk::Format::eA8B8G8R8SscaledPack32:
+    case vk::Format::eA8B8G8R8UscaledPack32:
       return false;
 
     // Block compression formats (BCn, ETC, ASTC, PVRTC, etc.)
