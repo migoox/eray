@@ -622,6 +622,24 @@ constexpr T distance(const Vec<N, T>& lhs, const Vec<N, T>& rhs) {
 }
 
 template <CFloatingPoint T>
+T lerp_angle(T a1, T a2, T t) {
+  static constexpr auto kPi  = std::numbers::pi_v<T>;
+  static constexpr auto k2Pi = 2.F * kPi;
+
+  a1 = a1 - std::floor(a1 / k2Pi) * k2Pi;
+  a2 = a2 - std::floor(a2 / k2Pi) * k2Pi;
+  if (std::abs(a1 - a2) > kPi) {
+    if (a1 < a2) {
+      a1 += k2Pi;
+    } else {
+      a2 += k2Pi;
+    }
+  }
+
+  return std::lerp(a1, a2, t);
+}
+
+template <CFloatingPoint T>
 [[nodiscard]] T radians(T deg) {
   return deg / static_cast<T>(180) * std::numbers::pi_v<T>;
 }
