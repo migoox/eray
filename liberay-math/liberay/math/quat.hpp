@@ -394,6 +394,36 @@ struct Quat {
   }
 };
 
+template <CFloatingPoint T>
+Quat<T> slerp_quat(const Quat<T>& start, const Quat<T>& end, float t) {
+  auto dot      = math::dot(start.quat, end.quat);
+  auto end_quat = end.quat;
+  if (dot < 0.F) {
+    end_quat = -end.quat;
+    dot      = -dot;
+  }
+  auto a = std::acos(dot);
+
+  auto s = std::sin(a);
+  if (std::abs(s) < 1.e-5F) {  // if s -> 0 then slerp -> lerp
+    return lerp_quat_frame(start, end, t);
+  }
+
+  return (start.quat * std::sin((1.F - t) * a) / s + end_quat * std::sin(t * a) / s).normalized();
+}
+
+template <CFloatingPoint T>
+Quat<T> lerp_quat(const Quat<T>& start, const Quat<T>& end, float t) {
+  auto dot      = math::dot(start.quat, end.quat);
+  auto end_quat = end.quat;
+  if (dot < 0.F) {
+    end_quat = -end.quat;
+    dot      = -dot;
+  }
+
+  return (start.quat * (1.F - t) + end_quat * t).normalized();
+}
+
 /**
  * @brief Returns a real part of the quaternion.
  *
