@@ -640,6 +640,13 @@ T lerp_angle(T a1, T a2, T t) {
 }
 
 template <CFloatingPoint T>
+T map_angle_to_0_2pi(T a) {
+  static constexpr auto kPi  = std::numbers::pi_v<T>;
+  static constexpr auto k2Pi = 2.F * kPi;
+  return a - std::floor(a / k2Pi) * k2Pi;
+}
+
+template <CFloatingPoint T>
 [[nodiscard]] T radians(T deg) {
   return deg / static_cast<T>(180) * std::numbers::pi_v<T>;
 }
