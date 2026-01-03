@@ -385,14 +385,14 @@ class ComputeParticlesApplication {
     compute_descriptor_sets_       = std::move(result.descriptor_sets);
     compute_descriptor_set_layout_ = result.layout;
 
-    auto writer = vkren::DescriptorSetWriter::create(*device_);
+    auto writer = vkren::DescriptorSetBinder::create(*device_);
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
       auto last_ind = (i - 1) % kMaxFramesInFlight;
       auto curr_ind = i;
-      writer.write_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
-      writer.write_buffer(1, ssbuffers_[last_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
-      writer.write_buffer(2, ssbuffers_[curr_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
-      writer.write_to_set(compute_descriptor_sets_[i]);
+      writer.bind_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
+      writer.bind_buffer(1, ssbuffers_[last_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
+      writer.bind_buffer(2, ssbuffers_[curr_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
+      writer.apply(compute_descriptor_sets_[i]);
     }
   }
 
@@ -443,7 +443,7 @@ class ComputeParticlesApplication {
   static constexpr int kMaxFramesInFlight = 2;
 
   /**
-   * @brief Drawing operations are recorded in comand buffer objects.
+   * @brief Drawing operations are recorded in command buffer objects.
    *
    */
   std::vector<vk::raii::CommandBuffer> graphics_command_buffers_;

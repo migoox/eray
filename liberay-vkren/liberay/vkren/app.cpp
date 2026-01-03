@@ -39,7 +39,6 @@ std::unique_ptr<Device> VulkanApplication::create_device() {
 void VulkanApplication::init_vk() {
   context_.device = create_device();
   create_swap_chain();
-  create_dsl();
   create_command_pool();
   create_command_buffers();
   create_sync_objs();
@@ -179,12 +178,6 @@ void VulkanApplication::render_frame(Duration delta) {
 
   current_semaphore_ = (current_semaphore_ + 1) % acquire_image_semaphores_.size();
   current_frame_     = (current_frame_ + 1) % kMaxFramesInFlight;
-}
-
-void VulkanApplication::create_dsl() {
-  context_.dsl_manager   = DescriptorSetLayoutManager::create(*context_.device);
-  auto ratios            = DescriptorPoolSizeRatio::create_default();
-  context_.dsl_allocator = DescriptorAllocator::create_and_init(*context_.device, 100, ratios).or_panic();
 }
 
 void VulkanApplication::destroy() {

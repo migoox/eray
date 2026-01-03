@@ -41,9 +41,6 @@ struct VulkanApplicationContext {
    */
   std::unique_ptr<SwapChain> swap_chain = nullptr;
 
-  DescriptorSetLayoutManager dsl_manager = DescriptorSetLayoutManager(nullptr);
-  DescriptorAllocator dsl_allocator      = DescriptorAllocator(nullptr);
-
   /**
    * @brief Represents rendering API agnostic window that the Vulkan application is rendered to.
    */
@@ -173,16 +170,16 @@ class VulkanApplication {
   virtual void on_process(float /*delta*/) {}
 
   /**
-   * @brief Designed to update dynamic GPU resources, e.g. UBOs that are updated per frames. The method execution
-   * happens simultaneously with previous frame GPU rendering, which means that it requires to create resource per frame
-   * in flight.
+   * @brief Designed to update dynamic GPU resources (e.g. UBOs, new bindings) that are updated per frames. The method
+   * execution happens simultaneously with previous frame GPU rendering, which means that it requires to create resource
+   * per frame in flight.
    */
   virtual void on_frame_prepare(uint32_t /*current_frame*/, Duration /*delta*/) {}
 
   /**
-   * @brief Designed to update dynamic GPU resources, e.g. UBOs that are updated per frames. The GPU execution never
-   * overlaps with this method execution, so there is no need to create a resource per frame in flight. This function
-   * is called only if frame data is marked dirty, see `mark_frame_data_dirty()`.
+   * @brief Designed to update dynamic GPU resources (e.g. UBOs, new bindings) that are updated per frames. The GPU
+   * execution never overlaps with this method execution, so there is no need to create a resource per frame in flight.
+   * This function is called only if frame data is marked dirty, see `mark_frame_data_dirty()`.
    *
    * @warning Avoid doing heavy operations in this method as it stalls both CPU and GPU. This
    * method should be responsible only for uploading the data. If you need to perform some data calculations use
@@ -210,6 +207,10 @@ class VulkanApplication {
    */
   virtual void on_destroy() {}
 
+  /**
+   * @brief Marks the frame data dirty. If the frame data dirty is marked as dirty the `on_frame_prepare_sync` will be
+   * invoked for the current frame.
+   */
   void mark_frame_data_dirty() { frame_data_dirty_ = true; }
 
   /**
@@ -253,7 +254,6 @@ class VulkanApplication {
 
   void destroy();
 
-  void create_dsl();
   void create_swap_chain();
   void create_command_pool();
   void create_command_buffers();

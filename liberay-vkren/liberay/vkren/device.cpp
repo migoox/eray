@@ -12,6 +12,7 @@
 #include <liberay/os/window_api.hpp>
 #include <liberay/util/logger.hpp>
 #include <liberay/util/try.hpp>
+#include <liberay/vkren/descriptor.hpp>
 #include <liberay/vkren/device.hpp>
 #include <liberay/vkren/error.hpp>
 #include <map>
@@ -138,6 +139,7 @@ Result<std::unique_ptr<Device>, Error> Device::create(vk::raii::Context& ctx, co
   TRY(device->pick_physical_device(info));
   TRY(device->create_logical_device(info));
   TRY(device->create_command_pool());
+  device->create_dsl();
 
   VULKAN_HPP_DEFAULT_DISPATCHER.init(vk::Device{device->device_});
 
@@ -553,6 +555,12 @@ Result<void, Error> Device::create_command_pool() noexcept {
   }
 
   return {};
+}
+
+void Device::create_dsl() noexcept {
+  dsl_manager_   = DescriptorSetLayoutManager::create(*this);
+  auto ratios    = DescriptorPoolSizeRatio::create_default();
+  dsl_allocator_ = DescriptorAllocator::create_and_init(*this, 100, ratios).or_panic();
 }
 
 std::vector<const char*> Device::global_extensions(const CreateInfo& info) noexcept {

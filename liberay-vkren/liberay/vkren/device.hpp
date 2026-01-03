@@ -9,6 +9,7 @@
 #include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/deletion_queue.hpp>
+#include <liberay/vkren/descriptor.hpp>
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/vma_allocation_manager.hpp>
@@ -195,6 +196,12 @@ class Device {
 
   void push_deletor(std::function<void()>&& function);
 
+  DescriptorSetLayoutManager& dsl_manager() { return dsl_manager_; }
+  const DescriptorSetLayoutManager& dsl_manager() const { return dsl_manager_; }
+
+  DescriptorAllocator& dsl_allocator() { return dsl_allocator_; }
+  const DescriptorAllocator& dsl_allocator() const { return dsl_allocator_; }
+
  private:
   Device() = default;
 
@@ -203,6 +210,7 @@ class Device {
   Result<void, Error> pick_physical_device(const CreateInfo& info) noexcept;
   Result<void, Error> create_logical_device(const CreateInfo& info) noexcept;
   Result<void, Error> create_command_pool() noexcept;
+  void create_dsl() noexcept;
 
   std::vector<const char*> global_extensions(const CreateInfo& info) noexcept;
 
@@ -286,6 +294,9 @@ class Device {
   uint32_t compute_queue_family_{};
   vk::raii::Queue presentation_queue_ = nullptr;
   uint32_t presentation_queue_family_{};
+
+  DescriptorSetLayoutManager dsl_manager_ = DescriptorSetLayoutManager(nullptr);
+  DescriptorAllocator dsl_allocator_      = DescriptorAllocator(nullptr);
 };
 
 }  // namespace eray::vkren

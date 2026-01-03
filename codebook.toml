@@ -1,9 +1,14 @@
 words = [
+    "constexpr",
     "dsl",
     "emplaced",
     "eray",
     "glfw",
+    "glfw's",
     "imgui",
+    "infos",
+    "khr",
+    "khronos",
     "migoox",
     "msaa",
     "nolint",
@@ -15,5 +20,6 @@ words = [
     "spirv",
     "tps",
     "vkren",
+    "vma",
     "vsync",
 ]
