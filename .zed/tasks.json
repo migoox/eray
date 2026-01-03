@@ -1,0 +1,22 @@
+[
+  {
+    "label": "CMake: Build and Run",
+    "command": ".zed/scripts/cmake_build_and_run.sh",
+  },
+  {
+    "label": "CMake: Full Configure",
+    "command": ".zed/scripts/cmake_full_configure.sh",
+  },
+  {
+    "label": "CMake: Configure",
+    "command": ".zed/scripts/cmake_configure.sh",
+  },
+  {
+    "label": "CMake: Build",
+    "command": ".zed/scripts/cmake_build.sh",
+  },
+  {
+    "label": "CMake: Choose target",
+    "command": ".zed/scripts/cmake_choose_target.sh",
+  },
+]

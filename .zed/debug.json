@@ -1,0 +1,17 @@
+// Project-local debug tasks
+//
+// For more documentation on how to configure debug tasks,
+// see: https://zed.dev/docs/debugger
+
+[
+  {
+    "adapter": "CodeLLDB",
+    "label": "Debug CMake Target",
+    "type": "lldb",
+    "request": "launch",
+    "program": "build/zed_cmake_tools/out",
+    "build": {
+      "command": ".zed/scripts/cmake_build.sh",
+    },
+  },
+]
