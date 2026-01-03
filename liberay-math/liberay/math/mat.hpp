@@ -46,7 +46,7 @@ struct Mat {
     init_data(std::make_index_sequence<N>{}, std::forward<Args>(args)...);
   }
 
-  // FACTORY METHODS //////////////////////////////////////////////////////////////////////////////////
+  // == FACTORY METHODS ================================================================================================
 
   /**
    * @brief Returns a matrix with all cells set to 0
@@ -90,7 +90,7 @@ struct Mat {
    */
   constexpr static Mat filled(T val) { return Mat(std::make_index_sequence<N>{}, std::move(val)); }
 
-  // OPERATOR + and += /////////////////////////////////////////////////////////////////
+  // == OPERATOR + and += ==============================================================================================
 
   friend Mat operator+(Mat lhs, const Mat& rhs) {
     add(std::make_index_sequence<N>{}, lhs.data_, rhs.data_);
@@ -102,7 +102,7 @@ struct Mat {
     return *this;
   }
 
-  // OPERATOR - and -= /////////////////////////////////////////////////////////////////
+  // == OPERATOR - and -= ==============================================================================================
 
   friend Mat operator-(Mat lhs, const Mat& rhs) {
     sub(std::make_index_sequence<N>{}, lhs.data_, rhs.data_);
@@ -114,7 +114,7 @@ struct Mat {
     return *this;
   }
 
-  // OPERATOR * and *= /////////////////////////////////////////////////////////////////
+  // == OPERATOR * and *= ==============================================================================================
 
   template <std::size_t K>
   friend Mat<M, K, T> operator*(const Mat& lhs, const Mat<N, K, T>& rhs) {
@@ -140,7 +140,7 @@ struct Mat {
     return *this;
   }
 
-  // OPERATOR [] //////////////////////////////////////////////////////////////////////////
+  // == OPERATOR [] ====================================================================================================
 
   /**
    * @brief Returns vector with the provided index.
@@ -158,7 +158,7 @@ struct Mat {
    */
   constexpr const Vec<M, T>& operator[](std::size_t index) const { return data_[index]; }
 
-  // GETTERS ///////////////////////////////////////////////////////////////////////////
+  // == GETTERS ========================================================================================================
 
   /**
    * @brief Returns n-th matrix element, treating the matrix as a sequence of vectors.
@@ -188,7 +188,7 @@ struct Mat {
     return result;
   }
 
-  // MEMORY ////////////////////////////////////////////////////////////////////////////
+  // == MEMORY =========================================================================================================
 
   /**
    * @brief Returns a pointer to memory that stores the vectors contiguously.

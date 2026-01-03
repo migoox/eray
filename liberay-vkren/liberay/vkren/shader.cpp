@@ -1,11 +1,9 @@
 #include "liberay/res/shader.hpp"
 
 #include <expected>
+#include <liberay/util/logger.hpp>
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/shader.hpp>
-
-#include "liberay/res/error.hpp"
-#include "liberay/util/logger.hpp"
 
 namespace eray::vkren {
 

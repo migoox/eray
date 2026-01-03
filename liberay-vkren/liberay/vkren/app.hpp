@@ -27,13 +27,32 @@ struct VulkanApplicationContext {
    * vkCreateInstance.
    *
    */
-  vk::raii::Context vk_context_;
-  std::unique_ptr<Device> device_           = nullptr;
-  std::unique_ptr<SwapChain> swap_chain_    = nullptr;
-  DescriptorSetLayoutManager dsl_manager_   = DescriptorSetLayoutManager(nullptr);
-  DescriptorAllocator dsl_allocator_        = DescriptorAllocator(nullptr);
-  std::shared_ptr<eray::os::Window> window_ = nullptr;
-  RenderGraph render_graph_;
+  vk::raii::Context vk_context;
+
+  /**
+   * @brief Vulkan logical device wrapper. Provides all functionalities of Vulkan and additional high-level features
+   * implemented in vkren.
+   */
+  std::unique_ptr<Device> device = nullptr;
+
+  /**
+   * @brief Vulkan swap chain wrapper. Maintains the swap chain queue and provides basic attachments. ImGui is rendered
+   * the image attachment of the swap chain.
+   */
+  std::unique_ptr<SwapChain> swap_chain = nullptr;
+
+  DescriptorSetLayoutManager dsl_manager = DescriptorSetLayoutManager(nullptr);
+  DescriptorAllocator dsl_allocator      = DescriptorAllocator(nullptr);
+
+  /**
+   * @brief Represents rendering API agnostic window that the Vulkan application is rendered to.
+   */
+  std::shared_ptr<eray::os::Window> window = nullptr;
+
+  /**
+   * @brief Main render graph used by the application.
+   */
+  RenderGraph render_graph;
 };
 
 struct VulkanApplicationCreateInfo {
@@ -114,30 +133,51 @@ class VulkanApplication {
   /**
    * @brief Called after the window and Vulkan initialization and before the main loop.
    */
-  virtual void on_init(VulkanApplicationContext& /*ctx*/) {}
-
-  virtual void on_input_events_polled(VulkanApplicationContext& /*ctx*/) {}
+  virtual void on_init() {}
 
   /**
-   * @brief Includes events captured by imgui
-   *
+   * brief Called right after all the window events are polled.
    */
-  virtual void on_input_events_polled_all(VulkanApplicationContext& /*ctx*/) {}
+  virtual void on_input_events_polled() {}
 
-  virtual void on_update(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
+  /**
+   * brief Called right after all the window events are polled.
+   */
+  virtual void on_input_events_polled(bool /*gui_captured*/) {}
+
+  /**
+   * brief Called right after all the window events are polled.
+   */
+  virtual void on_input_events_polled(bool /*gui_mouse_captured*/, bool /*gui_keyboard_captured*/) {}
+
+  /**
+   * @brief Called on each physics update (synchronously) with fixed time step. To change time step use `set_tick_time`.
+   */
+  virtual void on_process_physics_generic(Duration /*delta*/) {}
+
+  /**
+   * @brief Called on each physics update (synchronously) with fixed time step. To change time step use `set_tick_time`.
+   */
+  virtual void on_process_physics(float /*delta*/) {}
 
   /**
    * @brief Called after `on_imgui()` finishes before the rendering begins.
    *
    */
-  virtual void on_render_begin(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
+  virtual void on_process_generic(Duration /*delta*/) {}
+
+  /**
+   * @brief Called after `on_imgui()` finishes before the rendering begins.
+   *
+   */
+  virtual void on_process(float /*delta*/) {}
 
   /**
    * @brief Designed to update dynamic GPU resources, e.g. UBOs that are updated per frames. The method execution
    * happens simultaneously with previous frame GPU rendering, which means that it requires to create resource per frame
    * in flight.
    */
-  virtual void on_frame_prepare(VulkanApplicationContext& /*ctx*/, uint32_t /*current_frame*/, Duration /*delta*/) {}
+  virtual void on_frame_prepare(uint32_t /*current_frame*/, Duration /*delta*/) {}
 
   /**
    * @brief Designed to update dynamic GPU resources, e.g. UBOs that are updated per frames. The GPU execution never
@@ -148,18 +188,22 @@ class VulkanApplication {
    * method should be responsible only for uploading the data. If you need to perform some data calculations use
    * `on_update()` instead.
    */
-  virtual void on_frame_prepare_sync(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
+  virtual void on_frame_prepare_sync(Duration /*delta*/) {}
 
   /**
    * @brief Called right after ImGui is prepared for drawing a new frame.
    */
-  virtual void on_imgui(VulkanApplicationContext& /*ctx*/) { ImGui::ShowDemoWindow(); }
+  virtual void on_imgui() { ImGui::ShowDemoWindow(); }
+
+  /**
+   * @brief Called right after ImGui is prepared for drawing a new frame.
+   */
+  virtual void on_imgui(float /*delta*/) { ImGui::ShowDemoWindow(); }
 
   /**
    * @brief Invoked when the graphics command buffer gets recorded.
    */
-  virtual void on_record_graphics(VulkanApplicationContext& /*ctx*/,
-                                  vk::raii::CommandBuffer& /*graphics_command_buffer*/, uint32_t /*current_frame*/) {}
+  virtual void on_record_graphics(vk::raii::CommandBuffer& /*graphics_command_buffer*/, uint32_t /*current_frame*/) {}
 
   /**
    * @brief Called after the main loop exits, before destruction.
@@ -168,10 +212,26 @@ class VulkanApplication {
 
   void mark_frame_data_dirty() { frame_data_dirty_ = true; }
 
+  /**
+   * @brief Returns current frames per seconds.
+   */
   std::uint16_t fps() const { return fps_; }
+
+  /**
+   * @brief Returns current physics ticks per seconds.
+   */
   std::uint16_t tps() const { return tps_; }
+
+  /**
+   * @brief Returns time in seconds from start of the app.
+   *
+   * @warning Casting this value to float directly might produce numerical instability the older the application is.
+   */
   Duration time() const { return time_; }
   void set_tick_time(Duration tick_time) { tick_time_ = tick_time; }
+
+  VulkanApplicationContext& ctx() { return context_; }
+  const VulkanApplicationContext& ctx() const { return context_; }
 
   os::FileDialog& file_dialog() { return os::System::file_dialog(); }
 
@@ -224,7 +284,7 @@ class VulkanApplication {
   uint32_t current_frame_     = 0;
 
   /**
-   * @brief Drawing operations are recorded in comand buffer objects.
+   * @brief Drawing operations are recorded in command buffer objects.
    *
    */
   std::array<vk::raii::CommandBuffer, kMaxFramesInFlight> graphics_command_buffers_ = {nullptr, nullptr};

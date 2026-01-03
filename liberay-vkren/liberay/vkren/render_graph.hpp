@@ -113,6 +113,9 @@ struct RenderPassAttachmentImage {
   vk::ClearDepthStencilValue clear_depth_stencil = vk::ClearDepthStencilValue{.depth = 1.F, .stencil = 0U};
 };
 
+/**
+ * @brief Render graph allows for rendering dependency graph creation. 
+ */
 class RenderGraph {
  public:
   RenderGraph()                                  = default;
