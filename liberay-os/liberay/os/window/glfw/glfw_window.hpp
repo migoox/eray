@@ -32,13 +32,14 @@ class GLFWWindow final : public Window {
   bool is_mouse_btn_pressed(MouseBtnCode code) final;
 
   void set_mouse_cursor_mode(CursorMode cursor_mode) final;
-  CursorMode mouse_cursor_mode() final;
+  CursorMode mouse_cursor_mode() const final;
 
   bool should_close() const final;
 
-  void* win_handle() const final { return glfw_window_ptr_; }
+  void* win_ptr() const final { return glfw_window_ptr_; }
 
   void destroy() override;
+  bool is_destroyed() const override { return glfw_window_ptr_ == nullptr; }
 
  private:
   void init_dispatcher();

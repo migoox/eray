@@ -12,7 +12,7 @@ USER_CMAKE_TARGET=$(cat build/zed_cmake_tools/target)
 (
     set +e # ignore errors
 
-    TARGET_BIN=$(cat build/$USER_CMAKE_PRESET/build.ninja | grep -E "TARGET_FILE = .*vk_triangle" | sed 's/TARGET_FILE//' | sed 's/=//' | sed 's/ //g')
+    TARGET_BIN=$(cat build/$USER_CMAKE_PRESET/build.ninja | grep -E "TARGET_FILE = .*$USER_CMAKE_TARGET" | sed 's/TARGET_FILE//' | sed 's/=//' | sed 's/ //g')
     TARGET_BIN="$ZED_WORKTREE_ROOT/build/$USER_CMAKE_PRESET/$TARGET_BIN"
     echo "$TARGET_BIN" > build/zed_cmake_tools/target_bin
 

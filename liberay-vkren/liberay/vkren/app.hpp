@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <liberay/os/file_dialog.hpp>
+#include <liberay/os/input.hpp>
 #include <liberay/os/system.hpp>
 #include <liberay/os/window/window.hpp>
 #include <liberay/vkren/deletion_queue.hpp>
@@ -27,13 +28,39 @@ struct VulkanApplicationContext {
    * vkCreateInstance.
    *
    */
-  vk::raii::Context vk_context_;
-  std::unique_ptr<Device> device_           = nullptr;
-  std::unique_ptr<SwapChain> swap_chain_    = nullptr;
-  DescriptorSetLayoutManager dsl_manager_   = DescriptorSetLayoutManager(nullptr);
-  DescriptorAllocator dsl_allocator_        = DescriptorAllocator(nullptr);
-  std::shared_ptr<eray::os::Window> window_ = nullptr;
-  RenderGraph render_graph_;
+  vk::raii::Context vk_context;
+
+  /**
+   * @brief Vulkan logical device wrapper. Provides all functionalities of Vulkan and additional high-level features
+   * implemented in vkren.
+   */
+  std::unique_ptr<Device> device = nullptr;
+
+  /**
+   * @brief Vulkan swap chain wrapper. Maintains the swap chain queue and provides basic attachments. ImGui is rendered
+   * the image attachment of the swap chain.
+   */
+  std::unique_ptr<SwapChain> swap_chain = nullptr;
+
+  /**
+   * @brief Represents rendering API agnostic window that the Vulkan application is rendered to.
+   */
+  std::shared_ptr<eray::os::Window> window = nullptr;
+
+  /**
+   * @brief Main render graph used by the application.
+   */
+  RenderGraph render_graph;
+
+  /**
+   * @brief Main input manager of the application.
+   */
+  std::unique_ptr<os::InputManager> physics_input_manager = nullptr;
+
+  /**
+   * @brief Main input manager of the application.
+   */
+  std::unique_ptr<os::InputManager> frame_input_manager = nullptr;
 };
 
 struct VulkanApplicationCreateInfo {
@@ -114,68 +141,106 @@ class VulkanApplication {
   /**
    * @brief Called after the window and Vulkan initialization and before the main loop.
    */
-  virtual void on_init(VulkanApplicationContext& /*ctx*/) {}
-
-  virtual void on_input_events_polled(VulkanApplicationContext& /*ctx*/) {}
+  virtual void on_init() {}
 
   /**
-   * @brief Includes events captured by imgui
-   *
+   * @brief Called on each physics update (synchronously) with fixed time step. To change time step use `set_tick_time`.
    */
-  virtual void on_input_events_polled_all(VulkanApplicationContext& /*ctx*/) {}
+  virtual void on_process_physics_generic(Duration /*delta*/) {}
 
-  virtual void on_update(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
+  /**
+   * @brief Called on each physics update (synchronously) with fixed time step. To change time step use `set_tick_time`.
+   */
+  virtual void on_process_physics(float /*delta*/) {}
 
   /**
    * @brief Called after `on_imgui()` finishes before the rendering begins.
    *
    */
-  virtual void on_render_begin(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
+  virtual void on_process_generic(Duration /*delta*/) {}
 
   /**
-   * @brief Designed to update dynamic GPU resources, e.g. UBOs that are updated per frames. The method execution
-   * happens simultaneously with previous frame GPU rendering, which means that it requires to create resource per frame
-   * in flight.
+   * @brief Called after `on_imgui()` finishes before the rendering begins.
+   *
    */
-  virtual void on_frame_prepare(VulkanApplicationContext& /*ctx*/, uint32_t /*current_frame*/, Duration /*delta*/) {}
+  virtual void on_process(float /*delta*/) {}
 
   /**
-   * @brief Designed to update dynamic GPU resources, e.g. UBOs that are updated per frames. The GPU execution never
-   * overlaps with this method execution, so there is no need to create a resource per frame in flight. This function
-   * is called only if frame data is marked dirty, see `mark_frame_data_dirty()`.
+   * @brief Designed to update dynamic GPU resources (e.g. UBOs, new bindings) that are updated per frames. The method
+   * execution happens simultaneously with previous frame GPU rendering, which means that it requires to create resource
+   * per frame in flight.
+   */
+  virtual void on_frame_prepare(uint32_t /*current_frame*/, Duration /*delta*/) {}
+
+  /**
+   * @brief Designed to update dynamic GPU resources (e.g. UBOs, new bindings) that are updated per frames. The GPU
+   * execution never overlaps with this method execution, so there is no need to create a resource per frame in flight.
+   * This function is called only if frame data is marked dirty, see `mark_frame_data_dirty()`.
    *
    * @warning Avoid doing heavy operations in this method as it stalls both CPU and GPU. This
    * method should be responsible only for uploading the data. If you need to perform some data calculations use
    * `on_update()` instead.
    */
-  virtual void on_frame_prepare_sync(VulkanApplicationContext& /*ctx*/, Duration /*delta*/) {}
+  virtual void on_frame_prepare_sync(Duration /*delta*/) {}
 
   /**
    * @brief Called right after ImGui is prepared for drawing a new frame.
    */
-  virtual void on_imgui(VulkanApplicationContext& /*ctx*/) { ImGui::ShowDemoWindow(); }
+  virtual void on_imgui() {}
+
+  /**
+   * @brief Called right after ImGui is prepared for drawing a new frame.
+   */
+  virtual void on_imgui(float /*delta*/) {}
 
   /**
    * @brief Invoked when the graphics command buffer gets recorded.
    */
-  virtual void on_record_graphics(VulkanApplicationContext& /*ctx*/,
-                                  vk::raii::CommandBuffer& /*graphics_command_buffer*/, uint32_t /*current_frame*/) {}
+  virtual void on_record_graphics(vk::CommandBuffer /*graphics_command_buffer*/, uint32_t /*current_frame_in_flight*/) {
+  }
 
   /**
    * @brief Called after the main loop exits, before destruction.
    */
   virtual void on_destroy() {}
 
+  /**
+   * @brief Marks the frame data dirty. If the frame data dirty is marked as dirty the `on_frame_prepare_sync` will be
+   * invoked for the current frame.
+   */
   void mark_frame_data_dirty() { frame_data_dirty_ = true; }
 
+  /**
+   * @brief Returns current frames per seconds.
+   */
   std::uint16_t fps() const { return fps_; }
+
+  /**
+   * @brief Returns current physics ticks per seconds.
+   */
   std::uint16_t tps() const { return tps_; }
+
+  /**
+   * @brief Returns time in seconds from start of the app.
+   *
+   * @warning Casting this value to float directly might produce numerical instability the older the application is.
+   */
   Duration time() const { return time_; }
   void set_tick_time(Duration tick_time) { tick_time_ = tick_time; }
+
+  VulkanApplicationContext& ctx() { return context_; }
+  const VulkanApplicationContext& ctx() const { return context_; }
 
   os::FileDialog& file_dialog() { return os::System::file_dialog(); }
 
   VulkanApplication() = default;
+
+  os::Window& window() { return *context_.window; }
+  const os::Window& window() const { return *context_.window; }
+
+  Device& device() const { return *context_.device; }
+  SwapChain& swap_chain() const { return *context_.swap_chain; }
+  os::InputManager& input() const { return *current_input_manager_; }
 
  private:
   void init_vk();
@@ -193,7 +258,6 @@ class VulkanApplication {
 
   void destroy();
 
-  void create_dsl();
   void create_swap_chain();
   void create_command_pool();
   void create_command_buffers();
@@ -224,7 +288,7 @@ class VulkanApplication {
   uint32_t current_frame_     = 0;
 
   /**
-   * @brief Drawing operations are recorded in comand buffer objects.
+   * @brief Drawing operations are recorded in command buffer objects.
    *
    */
   std::array<vk::raii::CommandBuffer, kMaxFramesInFlight> graphics_command_buffers_ = {nullptr, nullptr};
@@ -250,6 +314,8 @@ class VulkanApplication {
   VulkanApplicationCreateInfo create_info_;
 
   DeletionQueue deletion_queue_;
+
+  os::InputManager* current_input_manager_ = nullptr;
 
   bool frame_data_dirty_ = true;
 };

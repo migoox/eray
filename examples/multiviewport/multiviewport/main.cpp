@@ -275,7 +275,7 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
       viewport.render_pass_ds_ = std::move(result.descriptor_set);
       main_dsl_                = std::move(result.layout);
 
-      auto writer = vkren::DescriptorSetWriter::create(*ctx.device_);
+      auto writer = vkren::DescriptorSetBinder::create(*ctx.device_);
       writer.write_buffer(0, viewport.uniform_buffer_.desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
       writer.write_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
       writer.write_to_set(viewport.render_pass_ds_);

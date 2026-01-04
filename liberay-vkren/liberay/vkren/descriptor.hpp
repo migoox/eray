@@ -1,8 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <deque>
 #include <liberay/vkren/common.hpp>
-#include <liberay/vkren/device.hpp>
+#include <unordered_map>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -10,6 +11,8 @@
 #include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
+
+class Device;
 
 struct DescriptorPoolSizeRatio {
   vk::DescriptorType type;
@@ -89,49 +92,49 @@ class DescriptorAllocator {
   observer_ptr<Device> p_device_{};
 };
 
-struct DescriptorSetWriter {
+struct DescriptorSetBinder {
   std::deque<vk::DescriptorImageInfo> image_infos;
   std::deque<vk::DescriptorBufferInfo> buffer_infos;
   std::vector<vk::WriteDescriptorSet> writes;
   observer_ptr<Device> _p_device;
 
-  static DescriptorSetWriter create(Device& device);
+  static DescriptorSetBinder create(Device& device);
 
   /**
-   * @brief Calls the `write_image` function with VK_DESCRIPTOR_TYPE_SAMPLER type.
+   * @brief Calls the `bind_image` function with VK_DESCRIPTOR_TYPE_SAMPLER type.
    *
    * @param binding
    * @param sampler
    */
-  void write_sampler(uint32_t binding, vk::Sampler sampler);
+  void bind_sampler(uint32_t binding, vk::Sampler sampler);
 
   /**
-   * @brief Calls the `write_image` function with VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE type.
+   * @brief Calls the `bind_image` function with VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE type.
    *
    * @param binding
    * @param image
    * @param layout
    */
-  void write_sampled_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout);
+  void bind_sampled_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout);
 
   /**
-   * @brief Calls the `write_image` function with VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER type.
+   * @brief Calls the `bind_image` function with VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER type.
    *
    * @param binding
    * @param image
    * @param sampler
    * @param layout
    */
-  void write_combined_image_sampler(uint32_t binding, vk::ImageView image, vk::Sampler sampler, vk::ImageLayout layout);
+  void bind_combined_image_sampler(uint32_t binding, vk::ImageView image, vk::Sampler sampler, vk::ImageLayout layout);
 
   /**
-   * @brief Calls the `write_image` function with VK_DESCRIPTOR_TYPE_STORAGE_IMAGE type.
+   * @brief Calls the `bind_image` function with VK_DESCRIPTOR_TYPE_STORAGE_IMAGE type.
    *
    * @param binding
    * @param image
    * @param layout
    */
-  void write_storage_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout);
+  void bind_storage_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout);
 
   /**
    * @brief Generalized image write. It's abstracted by `write_sampler`, `write_sampled_image`,
@@ -143,15 +146,18 @@ struct DescriptorSetWriter {
    * @param layout
    * @param type
    */
-  void write_image(uint32_t binding, vk::ImageView image, vk::Sampler sampler, vk::ImageLayout layout,
-                   vk::DescriptorType type);
+  void bind_image(uint32_t binding, vk::ImageView image, vk::Sampler sampler, vk::ImageLayout layout,
+                  vk::DescriptorType type);
 
-  void write_buffer(uint32_t binding, vk::Buffer buffer, size_t size, size_t offset, vk::DescriptorType type);
-  void write_buffer(uint32_t binding, vk::DescriptorBufferInfo info, vk::DescriptorType type);
+  void bind_buffer(uint32_t binding, vk::Buffer buffer, size_t size, size_t offset, vk::DescriptorType type);
+  void bind_buffer(uint32_t binding, vk::DescriptorBufferInfo info, vk::DescriptorType type);
 
   void clear();
-
-  void write_to_set(vk::DescriptorSet set);
+  void apply(vk::DescriptorSet ds);
+  void apply_and_clear(vk::DescriptorSet ds) {
+    apply(ds);
+    clear();
+  }
 };
 
 /**
@@ -208,6 +214,7 @@ struct DescriptorSetBuilder {
   DescriptorSetBuilder() = delete;
   [[nodiscard]] static DescriptorSetBuilder create(DescriptorSetLayoutManager& layout_manager,
                                                    DescriptorAllocator& allocator);
+  [[nodiscard]] static DescriptorSetBuilder create(Device& device);
 
   /**
    * @brief Order of the bindings specifies the binding numbers.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <expected>
 #include <liberay/vkren/descriptor.hpp>
+#include <liberay/vkren/device.hpp>
 #include <liberay/vkren/error.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -66,7 +67,7 @@ Result<vk::raii::DescriptorPool, Error> DescriptorAllocator::create_pool(
 
   auto create_info = vk::DescriptorPoolCreateInfo{
       .sType = vk::StructureType::eDescriptorPoolCreateInfo,
-      // TODO(migoox): Resarch why eFreeDescriptorSet is needed
+      // TODO(migoox): Research why eFreeDescriptorSet is needed
       .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       .maxSets       = set_count,
       .poolSizeCount = static_cast<uint32_t>(pool_sizes.size()),
@@ -183,25 +184,25 @@ Result<std::vector<vk::DescriptorSet>, Error> DescriptorAllocator::allocate_many
   return result;
 }
 
-void DescriptorSetWriter::write_sampler(uint32_t binding, vk::Sampler sampler) {
-  write_image(binding, VK_NULL_HANDLE, sampler, vk::ImageLayout::eUndefined, vk::DescriptorType::eSampler);
+void DescriptorSetBinder::bind_sampler(uint32_t binding, vk::Sampler sampler) {
+  bind_image(binding, VK_NULL_HANDLE, sampler, vk::ImageLayout::eUndefined, vk::DescriptorType::eSampler);
 }
 
-void DescriptorSetWriter::write_sampled_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout) {
-  write_image(binding, image, VK_NULL_HANDLE, layout, vk::DescriptorType::eSampledImage);
+void DescriptorSetBinder::bind_sampled_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout) {
+  bind_image(binding, image, VK_NULL_HANDLE, layout, vk::DescriptorType::eSampledImage);
 }
 
-void DescriptorSetWriter::write_combined_image_sampler(uint32_t binding, vk::ImageView image, vk::Sampler sampler,
-                                                       vk::ImageLayout layout) {
-  write_image(binding, image, sampler, layout, vk::DescriptorType::eCombinedImageSampler);
+void DescriptorSetBinder::bind_combined_image_sampler(uint32_t binding, vk::ImageView image, vk::Sampler sampler,
+                                                      vk::ImageLayout layout) {
+  bind_image(binding, image, sampler, layout, vk::DescriptorType::eCombinedImageSampler);
 }
 
-void DescriptorSetWriter::write_storage_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout) {
-  write_image(binding, image, VK_NULL_HANDLE, layout, vk::DescriptorType::eStorageImage);
+void DescriptorSetBinder::bind_storage_image(uint32_t binding, vk::ImageView image, vk::ImageLayout layout) {
+  bind_image(binding, image, VK_NULL_HANDLE, layout, vk::DescriptorType::eStorageImage);
 }
 
-void DescriptorSetWriter::write_image(uint32_t binding, vk::ImageView image, vk::Sampler sampler,
-                                      vk::ImageLayout layout, vk::DescriptorType type) {
+void DescriptorSetBinder::bind_image(uint32_t binding, vk::ImageView image, vk::Sampler sampler, vk::ImageLayout layout,
+                                     vk::DescriptorType type) {
   auto& info = image_infos.emplace_back(vk::DescriptorImageInfo{
       .sampler     = sampler,
       .imageView   = image,
@@ -220,12 +221,12 @@ void DescriptorSetWriter::write_image(uint32_t binding, vk::ImageView image, vk:
   writes.push_back(write);
 }
 
-void DescriptorSetWriter::write_buffer(uint32_t binding, vk::DescriptorBufferInfo info, vk::DescriptorType type) {
-  write_buffer(binding, info.buffer, static_cast<size_t>(info.range), static_cast<size_t>(info.offset), type);
+void DescriptorSetBinder::bind_buffer(uint32_t binding, vk::DescriptorBufferInfo info, vk::DescriptorType type) {
+  bind_buffer(binding, info.buffer, static_cast<size_t>(info.range), static_cast<size_t>(info.offset), type);
 }
 
-void DescriptorSetWriter::write_buffer(uint32_t binding, vk::Buffer buffer, size_t size, size_t offset,
-                                       vk::DescriptorType type) {
+void DescriptorSetBinder::bind_buffer(uint32_t binding, vk::Buffer buffer, size_t size, size_t offset,
+                                      vk::DescriptorType type) {
   auto& info = buffer_infos.emplace_back(vk::DescriptorBufferInfo{
       .buffer = buffer,
       .offset = offset,
@@ -244,15 +245,15 @@ void DescriptorSetWriter::write_buffer(uint32_t binding, vk::Buffer buffer, size
   writes.push_back(write);
 }
 
-void DescriptorSetWriter::clear() {
+void DescriptorSetBinder::clear() {
   image_infos.clear();
   writes.clear();
   buffer_infos.clear();
 }
 
-void DescriptorSetWriter::write_to_set(vk::DescriptorSet set) {
+void DescriptorSetBinder::apply(vk::DescriptorSet ds) {
   for (auto& write : writes) {
-    write.dstSet = set;
+    write.dstSet = ds;
   }
 
   (*_p_device)->updateDescriptorSets(writes, nullptr);
@@ -304,8 +305,8 @@ size_t DescriptorSetLayoutInfo::generate_hash() const {
   return result;
 }
 
-DescriptorSetWriter DescriptorSetWriter::create(Device& device) {
-  return DescriptorSetWriter{
+DescriptorSetBinder DescriptorSetBinder::create(Device& device) {
+  return DescriptorSetBinder{
       .image_infos  = {},
       .buffer_infos = {},
       .writes       = {},
@@ -359,6 +360,10 @@ void DescriptorSetLayoutManager::destroy() { _layout_cache.clear(); }
 DescriptorSetBuilder DescriptorSetBuilder::create(DescriptorSetLayoutManager& layout_manager,
                                                   DescriptorAllocator& allocator) {
   return DescriptorSetBuilder(layout_manager, allocator);
+}
+
+DescriptorSetBuilder DescriptorSetBuilder::create(Device& device) {
+  return DescriptorSetBuilder(device.dsl_manager(), device.dsl_allocator());
 }
 
 DescriptorSetBuilder::DescriptorSetBuilder(DescriptorSetLayoutManager& layout_manager, DescriptorAllocator& allocator)

@@ -32,7 +32,7 @@ struct OffscreenFragmentRenderer {
   vk::raii::Fence finished_fence_           = nullptr;
   observer_ptr<const Device> _p_device      = nullptr;
   bool blocking{true};
-  vk::Viewport viewport;
+  vk::Viewport viewport{};
 
   static Result<OffscreenFragmentRenderer, Error> create(Device& device, const ImageDescription& target_image_desc,
                                                          bool blocking = true);

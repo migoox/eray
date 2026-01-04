@@ -5,7 +5,7 @@ include(cmake/find_repo_version.cmake)
 find_repo_version(VERSION IS_STABLE)
 
 project(
-  eray 
+  eray
   DESCRIPTION "Cross-platform family of libraries for 3D rendering"
   LANGUAGES CXX C
   VERSION ${VERSION})
@@ -20,7 +20,7 @@ option(ENABLE_TRACY "Fetches and uses tracy for frame profiling" OFF)
 
 set(VERSION_SUFFIX "")
 if(IS_STABLE EQUAL 0)
-  set(VERSION_SUFFIX "(unstable)")
+    set(VERSION_SUFFIX "(unstable)")
 endif()
 message(STATUS "Version: ${CMAKE_PROJECT_VERSION}${VERSION_SUFFIX}")
 
@@ -36,8 +36,8 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(CTest)
 
 if(GENERATE_CLANGD_FILE)
-  include(cmake/generate_clangd_file.cmake)
-  generate_clangd_file("${PROJ_CXX_FLAGS}")
+    include(cmake/generate_clangd_file.cmake)
+    generate_clangd_file("${PROJ_CXX_FLAGS}")
 endif()
 
 set(PATCHES_DIR "${CMAKE_CURRENT_LIST_DIR}/patches")
@@ -54,13 +54,16 @@ add_subdirectory(liberay-os)
 add_subdirectory(liberay-glren)
 add_subdirectory(liberay-vkren)
 
-if(BUILD_SANDBOX) 
+if(BUILD_SANDBOX)
     add_subdirectory(sandbox)
 endif()
 
 if(BUILD_EXAMPLES)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/vk_triangle")
     add_subdirectory(examples/vk_triangle)
+
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/vkren_triangle")
+    add_subdirectory(examples/vkren_triangle)
 
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/multiviewport")
     add_subdirectory(examples/multiviewport)

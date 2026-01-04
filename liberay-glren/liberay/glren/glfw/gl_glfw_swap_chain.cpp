@@ -8,7 +8,7 @@ GLFWSwapChain GLFWSwapChain::create(const os::Window& window) {
   if (window.window_api() != os::WindowAPI::GLFW) {
     util::panic("Only GLFW API is supported by the renderer");
   }
-  auto* glfw_win_handle = reinterpret_cast<GLFWwindow*>(window.win_handle());  // required for buffer swapping
+  auto* glfw_win_handle = reinterpret_cast<GLFWwindow*>(window.win_ptr());  // required for buffer swapping
 
   return GLFWSwapChain(glfw_win_handle);
 }
