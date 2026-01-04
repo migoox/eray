@@ -11,8 +11,8 @@
 namespace eray::vkren {
 
 struct Pipeline {
-  vk::raii::Pipeline pipeline;
-  vk::raii::PipelineLayout layout;
+  vk::raii::Pipeline pipeline     = nullptr;
+  vk::raii::PipelineLayout layout = nullptr;
 };
 
 struct GraphicsPipelineBuilder {
@@ -60,17 +60,6 @@ struct GraphicsPipelineBuilder {
   GraphicsPipelineBuilder& with_polygon_mode(vk::PolygonMode polygon_mode, float line_width = 1.F);
   GraphicsPipelineBuilder& with_cull_mode(vk::CullModeFlags cull_mode, vk::FrontFace front_face);
   GraphicsPipelineBuilder& with_depth_bias(float slope_factor);
-
-  /**
-   * @brief Sets rasterization samples.
-   *
-   * @warning If the swapchain was provided during builder creation, the rasterization samples are already set based on
-   * the swapchain.
-   *
-   * @param rasterization_samples
-   * @return GraphicsPipelineBuilder&
-   */
-  GraphicsPipelineBuilder& with_multisampling(vk::SampleCountFlagBits rasterization_samples);
 
   /**
    * @brief If sampling shading is enabled, an implementation must invoke the fragment shader at least

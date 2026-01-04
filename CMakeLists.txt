@@ -62,6 +62,9 @@ if(BUILD_EXAMPLES)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/vk_triangle")
     add_subdirectory(examples/vk_triangle)
 
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/vkren_triangle")
+    add_subdirectory(examples/vkren_triangle)
+
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/multiviewport")
     add_subdirectory(examples/multiviewport)
 

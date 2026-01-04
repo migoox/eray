@@ -22,6 +22,10 @@ void VulkanApplication::run() {
   context_.window = eray::os::System::instance().create_window().or_panic("Could not create a window");
   context_.window->set_title(create_info_.app_name);
   on_window_setup(*context_.window);
+  context_.physics_input_manager = os::InputManager::create(context_.window);
+  context_.frame_input_manager   = os::InputManager::create(context_.window);
+  current_input_manager_         = context_.frame_input_manager.get();
+
   init_vk();
   init_imgui();
   on_init();
@@ -54,24 +58,25 @@ void VulkanApplication::main_loop() {
     lag_ += std::chrono::duration_cast<Duration>(delta);
     second_ += std::chrono::duration_cast<Duration>(delta);
 
-    // == Process Input ================================================================================================
+    // == Process Window events ========================================================================================
     context_.window->poll_events();
-    on_input_events_polled();
-    on_input_events_polled(imgui_io.WantCaptureMouse || imgui_io.WantCaptureKeyboard);
-    on_input_events_polled(imgui_io.WantCaptureMouse, imgui_io.WantCaptureKeyboard);
     context_.window->process_queued_events();
 
     // == Fixed time step update =======================================================================================
     auto tick_time_flt = std::chrono::duration<float>(delta).count();
+
+    current_input_manager_ = context_.physics_input_manager.get();
     while (lag_ >= tick_time_) {
+      context_.physics_input_manager->prepare(imgui_io.WantCaptureMouse || imgui_io.WantCaptureKeyboard);
       on_process_physics(tick_time_flt);
       on_process_physics_generic(tick_time_);
+      context_.physics_input_manager->process();
 
       lag_ -= tick_time_;
       time_ += tick_time_;
       ++ticks_;
     }
-    ++frames_;
+    current_input_manager_ = context_.frame_input_manager.get();
 
     // == File dialog update ===========================================================================================
     if (auto result = os::System::file_dialog().update(); !result) {
@@ -89,10 +94,13 @@ void VulkanApplication::main_loop() {
     on_imgui();
     ImGui::Render();
 
-    on_process_generic(delta);
+    context_.frame_input_manager->prepare(imgui_io.WantCaptureMouse || imgui_io.WantCaptureKeyboard);
     on_process(delta_flt);
+    on_process_generic(delta);
+    context_.frame_input_manager->process();
 
     render_frame(delta);
+    frames_++;
 
     if (imgui_io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
       ImGui::UpdatePlatformWindows();
@@ -347,7 +355,7 @@ void VulkanApplication::init_imgui() {
   if (context_.window->window_api() != os::WindowAPI::GLFW) {
     util::panic("Could not initialize imgui context: only GLFW is supported");
   }
-  ImGui_ImplGlfw_InitForVulkan(reinterpret_cast<GLFWwindow*>(context_.window->win_handle()), true);
+  ImGui_ImplGlfw_InitForVulkan(reinterpret_cast<GLFWwindow*>(context_.window->win_ptr()), true);
 
   // this initializes imgui for Vulkan
   vk::Instance instance                    = context_.device->instance();

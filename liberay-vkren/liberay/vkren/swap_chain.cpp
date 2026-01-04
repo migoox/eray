@@ -15,6 +15,7 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 namespace eray::vkren {
 
@@ -62,7 +63,7 @@ Result<void, Error> SwapChain::create_swap_chain(Device& device, uint32_t width,
 
   auto swap_surface_format = choose_swap_surface_format(available_formats);
 
-  // Presentation mode represents the actual conditions for showing imgaes to the screen:
+  // Presentation mode represents the actual conditions for showing images to the screen:
   //
   //  - VK_PRESENT_MODE_IMMEDIATE_KHR:    images are transferred to the screen right away -- tearing
   //
@@ -334,11 +335,11 @@ vk::PresentModeKHR SwapChain::choose_swap_present_mode(const std::vector<vk::Pre
 
   // Note: Mailbox is a good solution only if energy usage is not a concern, avoid for mobile devices, see:
   // https://docs.vulkan.org/samples/latest/samples/performance/swapchain_images/README.html#_best_practice_summary
-  auto mode_it = std::ranges::find_if(available_present_modes,
-                                      [](const auto& mode) { return mode == vk::PresentModeKHR::eMailbox; });
-  if (mode_it != available_present_modes.end()) {
-    return *mode_it;
-  }
+  // auto mode_it = std::ranges::find_if(available_present_modes,
+  //                                     [](const auto& mode) { return mode == vk::PresentModeKHR::eMailbox; });
+  // if (mode_it != available_present_modes.end()) {
+  //   return *mode_it;
+  // }
 
   return vk::PresentModeKHR::eFifo;
 }

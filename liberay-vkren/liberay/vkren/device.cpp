@@ -34,7 +34,7 @@ Device::CreateInfo Device::CreateInfo::DesktopProfile::get(const eray::os::Windo
                       os::kWindowingAPIName[window.window_api()]);
   }
 
-  auto* window_handle = reinterpret_cast<GLFWwindow*>(window.win_handle());
+  auto* window_handle = reinterpret_cast<GLFWwindow*>(window.win_ptr());
 
   // == Global Extensions ============================================================================================
   auto required_global_extensions = std::vector<const char*>();

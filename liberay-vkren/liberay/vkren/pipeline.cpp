@@ -367,11 +367,6 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_depth_bias(float slope_fa
   return *this;
 }
 
-GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_multisampling(vk::SampleCountFlagBits rasterization_samples) {
-  _multisampling.rasterizationSamples = rasterization_samples;
-  return *this;
-}
-
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_sample_shading(float min_sample_shading) {
   _multisampling.sampleShadingEnable = vk::True;
   _multisampling.minSampleShading    = min_sample_shading;

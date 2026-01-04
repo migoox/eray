@@ -56,7 +56,7 @@ class Window {
    * `window_size()` function. On high DPI displays (like Apple's Retina display), screen coordinates returned by
    * `window_size()` does not correspond to pixels of the framebuffer.
    *
-   * @return FramebufferSize
+   * @return Dimensions
    */
   virtual Dimensions framebuffer_size() const = 0;
 
@@ -100,11 +100,27 @@ class Window {
   void process_queued_events() { event_dispatcher_.process_queued_events(); }
 
   virtual void set_mouse_cursor_mode(CursorMode cursor_mode) = 0;
-  virtual CursorMode mouse_cursor_mode()                     = 0;
+  virtual CursorMode mouse_cursor_mode() const               = 0;
 
-  virtual void* win_handle() const = 0;
+  /**
+   * @brief Returns the native window handle for the active backend.
+   *
+   * @warning Platform-specific escape hatch.
+   * The returned pointer must be cast to the correct native type:
+   *  - GLFW  -> GLFWwindow*
+   *  - Win32 -> HWND
+   *  - SDL   -> SDL_Window*
+   *
+   * Valid only while the window is alive.
+   */
+  virtual void* win_ptr() const = 0;
 
-  virtual void destroy() = 0;
+  /**
+   * @brief
+   *
+   */
+  virtual void destroy()            = 0;
+  virtual bool is_destroyed() const = 0;
 
  protected:
   bool on_win_resized(const WindowResizedEvent& ev) {

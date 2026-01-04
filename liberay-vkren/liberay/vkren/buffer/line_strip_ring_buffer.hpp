@@ -2,7 +2,7 @@
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/device.hpp>
 
-namespace sim {
+namespace eray::vkren {
 
 struct LineStripRingBufferFrameData {
   eray::vkren::BufferResource vertex_buffer;
@@ -30,7 +30,7 @@ struct LineStripRingBuffer {
    *
    * @param device
    * @param max_size_
-   * @param max_frames_in_flight If frames in flight are disabled, use 1.
+   * @param max_frames_in_flight If frames in flight are disabled or 'on_frame_prepare_sync` is used, use 1.
    * @return LineStripRingBuffer
    */
   static LineStripRingBuffer create(eray::vkren::Device& device, std::uint32_t max_size_,
@@ -124,4 +124,4 @@ struct LineStripRingBuffer {
   }
 };
 
-}  // namespace sim
+}  // namespace eray::vkren

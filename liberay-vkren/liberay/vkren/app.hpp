@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <liberay/os/file_dialog.hpp>
+#include <liberay/os/input.hpp>
 #include <liberay/os/system.hpp>
 #include <liberay/os/window/window.hpp>
 #include <liberay/vkren/deletion_queue.hpp>
@@ -50,6 +51,16 @@ struct VulkanApplicationContext {
    * @brief Main render graph used by the application.
    */
   RenderGraph render_graph;
+
+  /**
+   * @brief Main input manager of the application.
+   */
+  std::unique_ptr<os::InputManager> physics_input_manager = nullptr;
+
+  /**
+   * @brief Main input manager of the application.
+   */
+  std::unique_ptr<os::InputManager> frame_input_manager = nullptr;
 };
 
 struct VulkanApplicationCreateInfo {
@@ -133,21 +144,6 @@ class VulkanApplication {
   virtual void on_init() {}
 
   /**
-   * brief Called right after all the window events are polled.
-   */
-  virtual void on_input_events_polled() {}
-
-  /**
-   * brief Called right after all the window events are polled.
-   */
-  virtual void on_input_events_polled(bool /*gui_captured*/) {}
-
-  /**
-   * brief Called right after all the window events are polled.
-   */
-  virtual void on_input_events_polled(bool /*gui_mouse_captured*/, bool /*gui_keyboard_captured*/) {}
-
-  /**
    * @brief Called on each physics update (synchronously) with fixed time step. To change time step use `set_tick_time`.
    */
   virtual void on_process_physics_generic(Duration /*delta*/) {}
@@ -190,17 +186,18 @@ class VulkanApplication {
   /**
    * @brief Called right after ImGui is prepared for drawing a new frame.
    */
-  virtual void on_imgui() { ImGui::ShowDemoWindow(); }
+  virtual void on_imgui() {}
 
   /**
    * @brief Called right after ImGui is prepared for drawing a new frame.
    */
-  virtual void on_imgui(float /*delta*/) { ImGui::ShowDemoWindow(); }
+  virtual void on_imgui(float /*delta*/) {}
 
   /**
    * @brief Invoked when the graphics command buffer gets recorded.
    */
-  virtual void on_record_graphics(vk::raii::CommandBuffer& /*graphics_command_buffer*/, uint32_t /*current_frame*/) {}
+  virtual void on_record_graphics(vk::CommandBuffer /*graphics_command_buffer*/, uint32_t /*current_frame_in_flight*/) {
+  }
 
   /**
    * @brief Called after the main loop exits, before destruction.
@@ -237,6 +234,13 @@ class VulkanApplication {
   os::FileDialog& file_dialog() { return os::System::file_dialog(); }
 
   VulkanApplication() = default;
+
+  os::Window& window() { return *context_.window; }
+  const os::Window& window() const { return *context_.window; }
+
+  Device& device() const { return *context_.device; }
+  SwapChain& swap_chain() const { return *context_.swap_chain; }
+  os::InputManager& input() const { return *current_input_manager_; }
 
  private:
   void init_vk();
@@ -310,6 +314,8 @@ class VulkanApplication {
   VulkanApplicationCreateInfo create_info_;
 
   DeletionQueue deletion_queue_;
+
+  os::InputManager* current_input_manager_ = nullptr;
 
   bool frame_data_dirty_ = true;
 };

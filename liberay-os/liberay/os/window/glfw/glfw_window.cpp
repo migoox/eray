@@ -148,7 +148,7 @@ void GLFWWindow::set_mouse_cursor_mode(CursorMode cursor_mode) {
   glfwSetInputMode(glfw::glfw_win_ptr(glfw_window_ptr_), GLFW_CURSOR, mouse_cursor_to_glfw(cursor_mode));
 }
 
-CursorMode GLFWWindow::mouse_cursor_mode() {
+CursorMode GLFWWindow::mouse_cursor_mode() const {
   return *mouse_cursor_from_glfw(glfwGetInputMode(glfw::glfw_win_ptr(glfw_window_ptr_), GLFW_CURSOR));
 }
 
