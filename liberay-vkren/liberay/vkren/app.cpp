@@ -86,6 +86,8 @@ void VulkanApplication::main_loop() {
     // == Render =======================================================================================================
     auto delta_flt = std::chrono::duration<float>(delta).count();
 
+    context_.frame_input_manager->prepare(imgui_io.WantCaptureMouse || imgui_io.WantCaptureKeyboard);
+
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
 
@@ -94,13 +96,13 @@ void VulkanApplication::main_loop() {
     on_imgui();
     ImGui::Render();
 
-    context_.frame_input_manager->prepare(imgui_io.WantCaptureMouse || imgui_io.WantCaptureKeyboard);
     on_process(delta_flt);
     on_process_generic(delta);
-    context_.frame_input_manager->process();
 
     render_frame(delta);
     frames_++;
+
+    context_.frame_input_manager->process();
 
     if (imgui_io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
       ImGui::UpdatePlatformWindows();
