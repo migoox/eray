@@ -56,6 +56,7 @@ std::unique_ptr<InputManager> InputManager::create(std::shared_ptr<Window> windo
       [input_manager](const MouseScrolledEvent& mouse_scrolled_event) {
         input_manager->mouse_scroll_x_ = mouse_scrolled_event.x_offset();
         input_manager->mouse_scroll_y_ = mouse_scrolled_event.y_offset();
+        input_manager->just_scrolled_  = true;
 
         return false;
       });
@@ -131,6 +132,8 @@ void InputManager::process() {
   keys_just_released_.clear();
   mouse_btns_just_pressed_.clear();
   mouse_btns_just_released_.clear();
+
+  just_scrolled_ = false;
 
   last_mouse_pos_x_ = mouse_pos_x_;
   last_mouse_pos_y_ = mouse_pos_y_;

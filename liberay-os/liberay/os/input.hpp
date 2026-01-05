@@ -51,6 +51,8 @@ class InputManager {
    */
   bool is_mouse_btn_just_released(MouseBtnCode mouse_btn_code) const;
 
+  bool just_scrolled() const { return just_scrolled_; }
+
   /**
    * @brief Returns true when the button is down.
    */
@@ -144,8 +146,8 @@ class InputManager {
    * @brief Called automatically bo the application.
    */
   void prepare(bool input_captured) {
-    mouse_pos_x_      = window_->mouse_pos().x;
-    mouse_pos_y_      = window_->mouse_pos().y;
+    mouse_pos_x_ = window_->mouse_pos().x;
+    mouse_pos_y_ = window_->mouse_pos().y;
 
     is_input_captured_ = input_captured;
   }
@@ -161,6 +163,7 @@ class InputManager {
   std::array<bool, static_cast<uint8_t>(MouseBtnCode::_Count)> is_mouse_btn_pressed_{};
   std::unordered_set<uint8_t> mouse_btns_just_pressed_;
   std::unordered_set<uint8_t> mouse_btns_just_released_;
+  bool just_scrolled_;
 
   double last_mouse_pos_x_ = 0.;
   double last_mouse_pos_y_ = 0.;
