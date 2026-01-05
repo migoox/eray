@@ -63,7 +63,7 @@ void VulkanApplication::main_loop() {
     context_.window->process_queued_events();
 
     // == Fixed time step update =======================================================================================
-    auto tick_time_flt = std::chrono::duration<float>(delta).count();
+    auto tick_time_flt = std::chrono::duration<float>(tick_time_).count();
 
     current_input_manager_ = context_.physics_input_manager.get();
     while (lag_ >= tick_time_) {

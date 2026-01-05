@@ -143,7 +143,12 @@ class InputManager {
   /**
    * @brief Called automatically bo the application.
    */
-  void prepare(bool input_captured) { is_input_captured_ = input_captured; }
+  void prepare(bool input_captured) {
+    mouse_pos_x_      = window_->mouse_pos().x;
+    mouse_pos_y_      = window_->mouse_pos().y;
+
+    is_input_captured_ = input_captured;
+  }
 
  private:
   explicit InputManager(std::shared_ptr<Window> window);

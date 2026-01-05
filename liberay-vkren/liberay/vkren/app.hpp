@@ -242,6 +242,11 @@ class VulkanApplication {
   SwapChain& swap_chain() const { return *context_.swap_chain; }
   os::InputManager& input() const { return *current_input_manager_; }
 
+  RenderGraph& render_graph() { return context_.render_graph; }
+  const RenderGraph& render_graph() const { return context_.render_graph; }
+
+  static constexpr Duration kDefaultTickTime = 16666us;  // 60 TPS = 16.6(6) ms/t
+
  private:
   void init_vk();
   void init_imgui();
@@ -265,8 +270,6 @@ class VulkanApplication {
 
  private:
   VulkanApplicationContext context_;
-
-  static constexpr Duration kDefaultTickTime = 16666us;  // 60 TPS = 16.6(6) ms/t
 
   Duration tick_time_ = kDefaultTickTime;
   Duration time_      = 0ns;

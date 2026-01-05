@@ -132,13 +132,11 @@ void InputManager::process() {
   mouse_btns_just_pressed_.clear();
   mouse_btns_just_released_.clear();
 
-  mouse_scroll_x_ = 0.;
-  mouse_scroll_y_ = 0.;
-
   last_mouse_pos_x_ = mouse_pos_x_;
   last_mouse_pos_y_ = mouse_pos_y_;
-  mouse_pos_x_      = window_->mouse_pos().x;
-  mouse_pos_y_      = window_->mouse_pos().y;
+
+  mouse_scroll_x_ = 0.;
+  mouse_scroll_y_ = 0.;
 }
 
 }  // namespace eray::os
