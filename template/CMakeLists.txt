@@ -5,6 +5,6 @@ add_slang_shader_target(__targetname____mesh_phong OUT_BINARY_NAME "mesh_phong" 
 
 configure_binary(
     NAME __targetname__
-    DEPS_PUBLIC liberay-vkren liberay-res liberay-os liberay-math implot
+    DEPS_PUBLIC liberay-vkren liberay-res liberay-os liberay-math
     SHADER_TARGETS __targetname____mesh_phong
 )
