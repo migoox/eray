@@ -113,7 +113,7 @@ struct LineStripRingBuffer {
 
   vk::DeviceSize size_bytes() const { return max_size * sizeof(TVertex); }
 
-  void render(vk::raii::CommandBuffer& graphics_command_buffer, std::uint32_t image_index) const {
+  void render(vk::CommandBuffer graphics_command_buffer, std::uint32_t image_index) const {
     graphics_command_buffer.bindVertexBuffers(0, frame_data[image_index].vertex_buffer.vk_buffer(), {0});
     if (_rounded) {
       graphics_command_buffer.draw(_pivot, 1, 0, 0);

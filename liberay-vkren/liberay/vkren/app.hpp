@@ -157,7 +157,7 @@ class VulkanApplication {
    * @brief Called after `on_imgui()` finishes before the rendering begins.
    *
    */
-  virtual void on_process_generic(Duration /*delta*/) {}
+  virtual void on_process_generic(uint32_t current_frame_, Duration /*delta*/) {}
 
   /**
    * @brief Called after `on_imgui()` finishes before the rendering begins.

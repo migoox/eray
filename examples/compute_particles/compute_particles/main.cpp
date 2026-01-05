@@ -389,10 +389,10 @@ class ComputeParticlesApplication {
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
       auto last_ind = (i - 1) % kMaxFramesInFlight;
       auto curr_ind = i;
-      writer.bind_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
-      writer.bind_buffer(1, ssbuffers_[last_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
-      writer.bind_buffer(2, ssbuffers_[curr_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
-      writer.apply(compute_descriptor_sets_[i]);
+      binder.bind_buffer(0, uniform_buffers_[i].desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
+      binder.bind_buffer(1, ssbuffers_[last_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
+      binder.bind_buffer(2, ssbuffers_[curr_ind].desc_buffer_info(), vk::DescriptorType::eStorageBuffer);
+      binder.apply(compute_descriptor_sets_[i]);
     }
   }
 

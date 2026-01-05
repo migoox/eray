@@ -97,7 +97,7 @@ void VulkanApplication::main_loop() {
     ImGui::Render();
 
     on_process(delta_flt);
-    on_process_generic(delta);
+    on_process_generic(current_frame_, delta);
 
     render_frame(delta);
     frames_++;

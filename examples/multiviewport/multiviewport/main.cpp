@@ -181,7 +181,7 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
  public:
   void on_init(vkren::VulkanApplicationContext& ctx) override {
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    ctx.window_->set_window_size(kViewportSize * kViewportsCount / 2U, kViewportSize * kViewportsCount / 2U);
+    window().set_window_size(kViewportSize * kViewportsCount / 2U, kViewportSize * kViewportsCount / 2U);
 
     for (auto i = 0U; i < kViewportsCount; ++i) {
       viewports_[i].name = std::format("Viewport {}", i);
@@ -189,14 +189,14 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
 
     // == Render graph setup ===========================================================================================
     for (auto& viewport : viewports_) {
-      auto msaa_color_attachment = ctx.render_graph_.create_color_attachment(*ctx.device_, kViewportSize, kViewportSize,
+      auto msaa_color_attachment = render_graph().create_color_attachment(device(), kViewportSize, kViewportSize,
                                                                              false, vk::SampleCountFlagBits::e8);
       auto color_attachment =
-          ctx.render_graph_.create_color_attachment(*ctx.device_, kViewportSize, kViewportSize, true);
-      auto depth_attachment = ctx.render_graph_.create_depth_attachment(*ctx.device_, kViewportSize, kViewportSize,
+          render_graph().create_color_attachment(device(), kViewportSize, kViewportSize, true);
+      auto depth_attachment = render_graph().create_depth_attachment(device(), kViewportSize, kViewportSize,
                                                                         true, vk::SampleCountFlagBits::e8);
 
-      viewport.render_pass = ctx.render_graph_.render_pass_builder(vk::SampleCountFlagBits::e8)
+      viewport.render_pass = render_graph().render_pass_builder(vk::SampleCountFlagBits::e8)
                                  .with_msaa_color_attachment(msaa_color_attachment, color_attachment)
                                  .with_depth_attachment(depth_attachment)
                                  .on_emit([this, &ctx, &viewport](vkren::Device&, vk::CommandBuffer& cmd_buff) {
@@ -205,7 +205,7 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
                                  .build(kViewportSize, kViewportSize)
                                  .or_panic("Could not create render pass");
 
-      ctx.render_graph_.emplace_final_pass_dependency(color_attachment);
+      render_graph().emplace_final_pass_dependency(color_attachment);
 
       viewport.color_attachment = color_attachment;
     }
@@ -215,18 +215,18 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
       auto vb = VertexBuffer::create();
 
       auto vertices_region = eray::util::MemoryRegion{vb.vertices.data(), vb.vertices_size_bytes()};
-      vert_buffer_         = vkren::BufferResource::create_vertex_buffer(*ctx.device_, vertices_region.size_bytes())
+      vert_buffer_         = vkren::BufferResource::create_vertex_buffer(device(), vertices_region.size_bytes())
                          .or_panic("Could not create the vertex buffer");
       vert_buffer_.write(vertices_region).or_panic("Could not fill the vertex buffer");
 
       auto indices_region = eray::util::MemoryRegion{vb.indices.data(), vb.indices_size_bytes()};
-      ind_buffer_         = vkren::BufferResource::create_index_buffer(*ctx.device_, indices_region.size_bytes())
+      ind_buffer_         = vkren::BufferResource::create_index_buffer(device(), indices_region.size_bytes())
                         .or_panic("Could not create a Vertex Buffer");
       ind_buffer_.write(indices_region).or_panic("Could not fill the index buffer");
 
       for (auto& viewport : viewports_) {
         vk::DeviceSize size_bytes = sizeof(UniformBufferObject);
-        auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(*ctx.device_, size_bytes)
+        auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(device(), size_bytes)
                        .or_panic("Could not create the uniform buffer");
         viewport.uniform_buffer_ = std::move(ubo.buffer);
 
@@ -239,12 +239,12 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
     {
       auto img = eray::res::Image::load_from_path(eray::os::System::executable_dir() / "assets" / "cad.jpeg")
                      .or_panic("cad is not there :(");
-      txt_image_ = vkren::ImageResource::create_texture(*ctx.device_, vkren::ImageDescription::from(img))
+      txt_image_ = vkren::ImageResource::create_texture(device(), vkren::ImageDescription::from(img))
                        .or_panic("Could not create a texture image");
       txt_image_.upload(img.memory_region()).or_panic("Could not upload the image");
       txt_view_ = txt_image_.create_image_view().or_panic("Could not create the image view");
 
-      auto pdev_props   = ctx.device_->physical_device().getProperties();
+      auto pdev_props   = device().physical_device().getProperties();
       auto sampler_info = vk::SamplerCreateInfo{
           .magFilter        = vk::Filter::eLinear,
           .minFilter        = vk::Filter::eLinear,
@@ -261,12 +261,12 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
           .maxLod           = vk::LodClampNone,
       };
       txt_sampler_ =
-          vkren::Result(ctx.device_->vk().createSampler(sampler_info)).or_panic("Could not create the sampler");
+          vkren::Result(device().vk().createSampler(sampler_info)).or_panic("Could not create the sampler");
     }
 
     // == Descriptors setup ============================================================================================
     for (auto& viewport : viewports_) {
-      auto result = vkren::DescriptorSetBuilder::create(ctx.dsl_manager_, ctx.dsl_allocator_)
+      auto result = vkren::DescriptorSetBuilder::create(device())
                         .with_binding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
                         .with_binding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
                         .build()
@@ -275,15 +275,15 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
       viewport.render_pass_ds_ = std::move(result.descriptor_set);
       main_dsl_                = std::move(result.layout);
 
-      auto writer = vkren::DescriptorSetBinder::create(*ctx.device_);
-      writer.write_buffer(0, viewport.uniform_buffer_.desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
-      writer.write_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
-      writer.write_to_set(viewport.render_pass_ds_);
-      writer.clear();
+      auto writer = vkren::DescriptorSetBinder::create(device());
+      binder.bind_buffer(0, viewport.uniform_buffer_.desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
+      binder.bind_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
+      binder.apply(viewport.render_pass_ds_);
+      binder.clear();
 
       viewport.imgui_txt_ds_ = ImGui_ImplVulkan_AddTexture(
           static_cast<VkSampler>(vk::Sampler{txt_sampler_}),
-          static_cast<VkImageView>(vk::ImageView{ctx.render_graph_.attachment(viewport.color_attachment).view}),
+          static_cast<VkImageView>(vk::ImageView{render_graph().attachment(viewport.color_attachment).view}),
           static_cast<VkImageLayout>(vk::ImageLayout::eShaderReadOnlyOptimal));
     }
 
@@ -293,18 +293,18 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
           eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
               .or_panic("Could not find main_sh.spv");
       auto main_shader_module =
-          vkren::ShaderModule::create(*ctx.device_, main_binary).or_panic("Could not create a main shader module");
+          vkren::ShaderModule::create(device(), main_binary).or_panic("Could not create a main shader module");
 
       auto binding_desc = Vertex::binding_desc();
       auto attribs_desc = Vertex::attribs_desc();
 
       // All pipelines are the same for each viewport, so only one is created
-      auto pipeline = vkren::GraphicsPipelineBuilder::create(ctx.render_graph_, viewports_[0].render_pass)
+      auto pipeline = vkren::GraphicsPipelineBuilder::create(render_graph(), viewports_[0].render_pass)
                           .with_shaders(main_shader_module.shader_module, main_shader_module.shader_module)
                           .with_input_state(binding_desc, attribs_desc)
                           .with_descriptor_set_layout(main_dsl_)
                           .with_depth_test()
-                          .build(*ctx.device_)
+                          .build(device())
                           .or_panic("Could not create a graphics pipeline");
 
       main_pipeline_        = std::move(pipeline.pipeline);
@@ -313,7 +313,7 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
   }
   void on_render_begin(vkren::VulkanApplicationContext& ctx, Duration /*delta*/) override {
     mark_frame_data_dirty();
-    auto window_size = ctx.window_->window_size();
+    auto window_size = window().window_size();
 
     for (auto i = 0U; i < kViewportsCount; ++i) {
       auto t = std::chrono::duration<float>(time()).count();
