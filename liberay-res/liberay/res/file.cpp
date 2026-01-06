@@ -1,5 +1,9 @@
+#include <expected>
+#include <fstream>
 #include <liberay/res/file.hpp>
 #include <span>
+
+#include "liberay/res/error.hpp"
 
 namespace eray::res {
 
@@ -38,4 +42,30 @@ util::Result<void, FileError> validate_file(const std::filesystem::path& path, s
 
   return {};
 }
+
+util::Result<std::string, FileError> load_as_string_utf8(const std::filesystem::path& path,
+                                                         std::span<const char*> extensions) {
+  if (auto res = validate_file(path, extensions); !res) {
+    return std::unexpected(res.error());
+  }
+
+  auto file = std::ifstream(path, std::ios::binary);
+  if (!file) {
+    return std::unexpected(FileError{
+        .path = path,
+        .msg  = "Could not open the file stream",
+        .code = FileErrorCode::ReadFailure,
+    });
+  }
+
+  file.seekg(0, std::ios::end);
+  auto size = file.tellg();
+  file.seekg(0);
+
+  auto str_buff = std::string(static_cast<size_t>(size), '\0');
+  file.read(str_buff.data(), size);
+
+  return str_buff;
+}
+
 }  // namespace eray::res

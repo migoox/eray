@@ -16,4 +16,7 @@ namespace eray::res {
  */
 util::Result<void, FileError> validate_file(const std::filesystem::path& path, std::span<const char*> extensions = {});
 
+util::Result<std::string, FileError> load_as_string_utf8(const std::filesystem::path& path,
+                                                         std::span<const char*> extensions = {});
+
 }  // namespace eray::res
