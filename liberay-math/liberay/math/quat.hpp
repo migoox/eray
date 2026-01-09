@@ -394,36 +394,6 @@ struct Quat {
   }
 };
 
-template <CFloatingPoint T>
-Quat<T> slerp_quat(const Quat<T>& start, const Quat<T>& end, float t) {
-  auto dot      = math::dot(start.quat, end.quat);
-  auto end_quat = end.quat;
-  if (dot < 0.F) {
-    end_quat = -end.quat;
-    dot      = -dot;
-  }
-  auto a = std::acos(dot);
-
-  auto s = std::sin(a);
-  if (std::abs(s) < 1.e-5F) {  // if s -> 0 then slerp -> lerp
-    return lerp_quat_frame(start, end, t);
-  }
-
-  return (start.quat * std::sin((1.F - t) * a) / s + end_quat * std::sin(t * a) / s).normalized();
-}
-
-template <CFloatingPoint T>
-Quat<T> lerp_quat(const Quat<T>& start, const Quat<T>& end, float t) {
-  auto dot      = math::dot(start.quat, end.quat);
-  auto end_quat = end.quat;
-  if (dot < 0.F) {
-    end_quat = -end.quat;
-    dot      = -dot;
-  }
-
-  return (start.quat * (1.F - t) + end_quat * t).normalized();
-}
-
 /**
  * @brief Returns a real part of the quaternion.
  *
@@ -521,6 +491,36 @@ template <CFloatingPoint T>
 [[nodiscard]] constexpr bool eps_neq(const Quat<T>& quat1, const Quat<T>& quat2, const T epsilon) {
   auto q = abs(quat1 - quat2);
   return q.w >= epsilon && q.x >= epsilon && q.y >= epsilon && q.z >= epsilon;
+}
+
+template <CFloatingPoint T>
+[[nodiscard]] Quat<T> slerp_quat(const Quat<T>& start, const Quat<T>& end, float t) {
+  auto dot_val  = dot(start, end);
+  auto end_quat = end;
+  if (dot_val < 0.F) {
+    end_quat = -end;
+    dot_val  = -dot_val;
+  }
+  auto a = std::acos(dot_val);
+
+  auto s = std::sin(a);
+  if (std::abs(s) < 1.e-5F) {  // if s -> 0 then slerp -> lerp
+    return lerp_quat(start, end, t);
+  }
+
+  return (start * std::sin((1.F - t) * a) / s + end_quat * std::sin(t * a) / s).normalized();
+}
+
+template <CFloatingPoint T>
+[[nodiscard]] Quat<T> lerp_quat(const Quat<T>& start, const Quat<T>& end, float t) {
+  T dot_val     = dot(start, end);
+  auto end_quat = end;
+  if (dot_val < 0.F) {
+    end_quat = -end;
+    dot_val  = -dot_val;
+  }
+
+  return (start * (1.F - t) + end_quat * t).normalized();
 }
 
 }  // namespace eray::math

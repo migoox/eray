@@ -101,6 +101,30 @@ struct Vec {
     data[3] = std::forward<decltype(w)>(w);
   }
 
+  constexpr Vec<N - 1, T> xy() noexcept
+    requires(N == 3)
+  {
+    return Vec<N - 1, T>{data[0], data[1]};
+  }
+
+  constexpr Vec<N - 1, T> xyz() noexcept
+    requires(N == 4)
+  {
+    return Vec<N - 1, T>{data[0], data[1], data[2]};
+  }
+
+  /**
+   * @brief Create a vector with additional dimension.
+   *
+   */
+  constexpr Vec<N + 1, T> extended(T val) noexcept { return Vec<N + 1, T>{*this, val}; }
+
+  /**
+   * @brief Create a vector without the last dimension.
+   *
+   */
+  constexpr Vec<N - 1, T> shrinked() noexcept { return Vec<N - 1, T>{*this}; }
+
   /**
    * @brief Default constructor that sets all components of a vector to 0
    *
@@ -463,9 +487,15 @@ template <std::size_t... Is, CPrimitive T>
 constexpr void min_base(std::index_sequence<Is...>, T* data, const T* vec1_data, const T* vec2_data) {
   ((data[Is] = std::min(vec1_data[Is], vec2_data[Is])), ...);
 }
+
 template <std::size_t... Is, CPrimitive T>
 constexpr void max_base(std::index_sequence<Is...>, T* data, const T* vec1_data, const T* vec2_data) {
   ((data[Is] = std::max(vec1_data[Is], vec2_data[Is])), ...);
+}
+
+template <std::size_t... Is, CPrimitive T>
+constexpr void lerp_base(std::index_sequence<Is...>, T* data, const T* vec1_data, const T* vec2_data, float t) {
+  ((data[Is] = std::lerp(vec1_data[Is], vec2_data[Is], t)), ...);
 }
 
 template <std::size_t... Is, CPrimitive T>
@@ -619,6 +649,13 @@ constexpr T distance(const Vec<N, T>& lhs, const Vec<N, T>& rhs) {
     val += (rhs[i] - lhs[i]) * (rhs[i] - lhs[i]);
   }
   return std::sqrt(val);
+}
+
+template <std::size_t N, CFloatingPoint T>
+constexpr Vec<N, T> lerp(const Vec<N, T>& lhs, const Vec<N, T>& rhs, float t) {
+  Vec<N, T> result;
+  internal::lerp_base(std::make_index_sequence<N>(), result.data, lhs.data, rhs.data, t);
+  return result;
 }
 
 template <CFloatingPoint T>
