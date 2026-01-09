@@ -101,13 +101,13 @@ struct Vec {
     data[3] = std::forward<decltype(w)>(w);
   }
 
-  constexpr Vec<N - 1, T> xy() noexcept
+  constexpr Vec<N - 1, T> xy() const noexcept
     requires(N == 3)
   {
     return Vec<N - 1, T>{data[0], data[1]};
   }
 
-  constexpr Vec<N - 1, T> xyz() noexcept
+  constexpr Vec<N - 1, T> xyz() const noexcept
     requires(N == 4)
   {
     return Vec<N - 1, T>{data[0], data[1], data[2]};
@@ -117,13 +117,13 @@ struct Vec {
    * @brief Create a vector with additional dimension.
    *
    */
-  constexpr Vec<N + 1, T> extended(T val) noexcept { return Vec<N + 1, T>{*this, val}; }
+  constexpr Vec<N + 1, T> extended(T val) const noexcept { return Vec<N + 1, T>{*this, val}; }
 
   /**
    * @brief Create a vector without the last dimension.
    *
    */
-  constexpr Vec<N - 1, T> shrinked() noexcept { return Vec<N - 1, T>{*this}; }
+  constexpr Vec<N - 1, T> shrinked() const noexcept { return Vec<N - 1, T>{*this}; }
 
   /**
    * @brief Default constructor that sets all components of a vector to 0
