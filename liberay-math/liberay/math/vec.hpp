@@ -659,12 +659,37 @@ constexpr Vec<N, T> lerp(const Vec<N, T>& lhs, const Vec<N, T>& rhs, float t) {
 }
 
 template <CFloatingPoint T>
-T lerp_angle(T a1, T a2, T t) {
+T map_angle_to_0_2pi(T a) {
+  static constexpr auto kPi  = std::numbers::pi_v<T>;
+  static constexpr auto k2Pi = 2.F * kPi;
+  return a - std::floor(a / k2Pi) * k2Pi;
+}
+
+/**
+ * @brief Unwrap two angles (in radians) so their numerical difference represents the shortest angular distance.
+ *
+ * Both input angles are first mapped into the range [0, 2π). If their absolute difference
+ * exceeds π, the smaller angle is increased by 2π so that the resulting pair represents
+ * the same physical directions but with a continuous (minimal) angular separation.
+ *
+ * This is useful when comparing or interpolating angles near the 0 / 2π wrap-around.
+ *
+ * @example
+ *   T a1 = 6.20; // ~355°
+ *   T a2 = 0.10; // ~6°
+ *   unwrap_angles_pair(a1, a2);
+ *   // Result:
+ *   //   a1 = 6.20
+ *   //   a2 = 6.38 (0.10 + 2π)
+ *   // |a1 - a2| < π
+ */
+template <CFloatingPoint T>
+void unwrap_angles_pair(T& a1, T& a2) {
   static constexpr auto kPi  = std::numbers::pi_v<T>;
   static constexpr auto k2Pi = 2.F * kPi;
 
-  a1 = a1 - std::floor(a1 / k2Pi) * k2Pi;
-  a2 = a2 - std::floor(a2 / k2Pi) * k2Pi;
+  map_angle_to_0_2pi(a1);
+  map_angle_to_0_2pi(a2);
   if (std::abs(a1 - a2) > kPi) {
     if (a1 < a2) {
       a1 += k2Pi;
@@ -672,60 +697,81 @@ T lerp_angle(T a1, T a2, T t) {
       a2 += k2Pi;
     }
   }
+}
 
+template <CFloatingPoint T>
+T lerp_angle(T a1, T a2, T t) {
+  static constexpr auto kPi  = std::numbers::pi_v<T>;
+  static constexpr auto k2Pi = 2.F * kPi;
+  unwrap_angles_pair(a1, a2);
   return std::lerp(a1, a2, t);
 }
 
 template <CFloatingPoint T>
-T map_angle_to_0_2pi(T a) {
-  static constexpr auto kPi  = std::numbers::pi_v<T>;
-  static constexpr auto k2Pi = 2.F * kPi;
-  return a - std::floor(a / k2Pi) * k2Pi;
+T shortest_angles_distance(T a1, T a2) {
+  unwrap_angles_pair(a1, a2);
+  return a2 - a1;
+}
+
+namespace internal {
+
+template <std::size_t... Is, CPrimitive T>
+constexpr void lerp_angles_base(std::index_sequence<Is...>, T* result, const T* data1, const T* data2, T t) {
+  ((result[Is] = lerp_angle(data1[Is], data2[Is], t)), ...);
+}
+
+}  // namespace internal
+
+template <size_t N, CFloatingPoint T>
+[[nodiscard]] constexpr Vec<N, T> lerp_angles(const Vec<N, T>& a1, const Vec<N, T>& a2, T t) {
+  Vec<N, T> result;
+  internal::lerp_angles_base(std::make_index_sequence<N>(), result.data, a1.data, a2.data, t);
+  return result;
 }
 
 template <CFloatingPoint T>
-[[nodiscard]] T radians(T deg) {
+[[nodiscard]] constexpr T radians(T deg) {
   return deg / static_cast<T>(180) * std::numbers::pi_v<T>;
 }
 
 template <CFloatingPoint T, std::size_t N>
-[[nodiscard]] Vec<N, T> radians(const Vec<N, T>& deg) {
+[[nodiscard]] constexpr Vec<N, T> radians(const Vec<N, T>& deg) {
   return deg / static_cast<T>(180) * std::numbers::pi_v<T>;
 }
 
 template <CFloatingPoint T>
-[[nodiscard]] T degrees(T radians) {
+[[nodiscard]] constexpr T degrees(T radians) {
   return radians * static_cast<T>(180) / std::numbers::pi_v<T>;
 }
 
 template <CFloatingPoint T, std::size_t N>
-[[nodiscard]] Vec<N, T> degrees(const Vec<N, T>& radians) {
+[[nodiscard]] constexpr Vec<N, T> degrees(const Vec<N, T>& radians) {
   return radians * static_cast<T>(180) / std::numbers::pi_v<T>;
 }
 
 template <CFloatingPoint T, std::size_t N>
-[[nodiscard]] Vec<N, T> clamp(const Vec<N, T>& vec, T min, T max) {
+[[nodiscard]] constexpr Vec<N, T> clamp(const Vec<N, T>& vec, T min, T max) {
   auto result = vec;
   internal::clamp_base(std::make_index_sequence<N>(), result.data, min, max);
   return result;
 }
 
 template <CFloatingPoint T, std::size_t N>
-[[nodiscard]] Vec<N, T> clamp(const Vec<N, T>& vec, const Vec<N, T>& min, const Vec<N, T>& max) {
+[[nodiscard]] constexpr Vec<N, T> clamp(const Vec<N, T>& vec, const Vec<N, T>& min, const Vec<N, T>& max) {
   auto result = vec;
   internal::clamp_base(std::make_index_sequence<N>(), result.data, min.data, max.data);
   return result;
 }
 
 template <CFloatingPoint T, std::size_t N>
-[[nodiscard]] Vec<N, T> min(const Vec<N, T>& vec1, const Vec<N, T>& vec2) {
+[[nodiscard]] constexpr Vec<N, T> min(const Vec<N, T>& vec1, const Vec<N, T>& vec2) {
   auto result = Vec<N, T>::filled(0.F);
   internal::min_base(std::make_index_sequence<N>(), result.data, vec1.data, vec2.data);
   return result;
 }
 
 template <CFloatingPoint T, std::size_t N>
-[[nodiscard]] Vec<N, T> max(const Vec<N, T>& vec1, const Vec<N, T>& vec2) {
+[[nodiscard]] constexpr Vec<N, T> max(const Vec<N, T>& vec1, const Vec<N, T>& vec2) {
   auto result = Vec<N, T>::filled(0.F);
   internal::max_base(std::make_index_sequence<N>(), result.data, vec1.data, vec2.data);
   return result;
