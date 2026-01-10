@@ -227,6 +227,7 @@ class VulkanApplication {
    */
   Duration time() const { return time_; }
   void set_tick_time(Duration tick_time) { tick_time_ = tick_time; }
+  float tick_time() { return std::chrono::duration<float>(tick_time_).count(); }
 
   VulkanApplicationContext& ctx() { return context_; }
   const VulkanApplicationContext& ctx() const { return context_; }
