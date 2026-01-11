@@ -179,7 +179,7 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
   vk::raii::Pipeline main_pipeline_              = nullptr;
 
  public:
-  void on_init(vkren::VulkanApplicationContext& ctx) override {
+  void on_init() override {
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     window().set_window_size(kViewportSize * kViewportsCount / 2U, kViewportSize * kViewportsCount / 2U);
 
@@ -189,18 +189,18 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
 
     // == Render graph setup ===========================================================================================
     for (auto& viewport : viewports_) {
-      auto msaa_color_attachment = render_graph().create_color_attachment(device(), kViewportSize, kViewportSize,
-                                                                             false, vk::SampleCountFlagBits::e8);
-      auto color_attachment =
-          render_graph().create_color_attachment(device(), kViewportSize, kViewportSize, true);
-      auto depth_attachment = render_graph().create_depth_attachment(device(), kViewportSize, kViewportSize,
-                                                                        true, vk::SampleCountFlagBits::e8);
+      auto msaa_color_attachment = render_graph().create_color_attachment(device(), kViewportSize, kViewportSize, false,
+                                                                          vk::SampleCountFlagBits::e8);
+      auto color_attachment      = render_graph().create_color_attachment(device(), kViewportSize, kViewportSize, true);
+      auto depth_attachment      = render_graph().create_depth_attachment(device(), kViewportSize, kViewportSize, true,
+                                                                          vk::SampleCountFlagBits::e8);
 
-      viewport.render_pass = render_graph().render_pass_builder(vk::SampleCountFlagBits::e8)
+      viewport.render_pass = render_graph()
+                                 .render_pass_builder(vk::SampleCountFlagBits::e8)
                                  .with_msaa_color_attachment(msaa_color_attachment, color_attachment)
                                  .with_depth_attachment(depth_attachment)
-                                 .on_emit([this, &ctx, &viewport](vkren::Device&, vk::CommandBuffer& cmd_buff) {
-                                   this->record_render_pass(ctx, cmd_buff, viewport);
+                                 .on_emit([this, &viewport](vkren::Device&, vk::CommandBuffer& cmd_buff) {
+                                   this->record_render_pass(cmd_buff, viewport);
                                  })
                                  .build(kViewportSize, kViewportSize)
                                  .or_panic("Could not create render pass");
@@ -260,8 +260,7 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
           .minLod           = 0.F,
           .maxLod           = vk::LodClampNone,
       };
-      txt_sampler_ =
-          vkren::Result(device().vk().createSampler(sampler_info)).or_panic("Could not create the sampler");
+      txt_sampler_ = vkren::Result(device().vk().createSampler(sampler_info)).or_panic("Could not create the sampler");
     }
 
     // == Descriptors setup ============================================================================================
@@ -275,7 +274,7 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
       viewport.render_pass_ds_ = std::move(result.descriptor_set);
       main_dsl_                = std::move(result.layout);
 
-      auto writer = vkren::DescriptorSetBinder::create(device());
+      auto binder = vkren::DescriptorSetBinder::create(device());
       binder.bind_buffer(0, viewport.uniform_buffer_.desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
       binder.bind_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
       binder.apply(viewport.render_pass_ds_);
@@ -311,7 +310,8 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
       main_pipeline_layout_ = std::move(pipeline.layout);
     }
   }
-  void on_render_begin(vkren::VulkanApplicationContext& ctx, Duration /*delta*/) override {
+
+  void on_process(float /*delta*/) override {
     mark_frame_data_dirty();
     auto window_size = window().window_size();
 
@@ -331,13 +331,13 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
     }
   }
 
-  void on_frame_prepare_sync(vkren::VulkanApplicationContext& /*ctx*/, Duration /*delta*/) override {
+  void on_frame_prepare_sync(Duration /*delta*/) override {
     for (auto& viewport : viewports_) {
       memcpy(viewport.uniform_buffer_mapped_, &viewport.ubo, sizeof(viewport.ubo));
     }
   }
 
-  void on_imgui(vkren::VulkanApplicationContext& /*ctx*/) override {
+  void on_imgui() override {
     ImGui::DockSpaceOverViewport();
     for (auto i = 0U; i < kViewportsCount; ++i) {
       ImGui::PushID(static_cast<int>(i));
@@ -348,8 +348,7 @@ class MultipleViewportsApplication : public vkren::VulkanApplication {
     }
   }
 
-  void record_render_pass(vkren::VulkanApplicationContext& /*ctx*/, vk::CommandBuffer& cmd_buff,
-                          ViewportInfo& viewport) {
+  void record_render_pass(vk::CommandBuffer& cmd_buff, ViewportInfo& viewport) {
     cmd_buff.bindPipeline(vk::PipelineBindPoint::eGraphics, main_pipeline_);
     cmd_buff.bindVertexBuffers(0, vert_buffer_.vk_buffer(), {0});
     cmd_buff.bindIndexBuffer(ind_buffer_.vk_buffer(), 0, vk::IndexType::eUint16);

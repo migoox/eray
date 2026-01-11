@@ -22,7 +22,7 @@ GraphicsPipelineBuilder::GraphicsPipelineBuilder(const RenderGraph& render_graph
   _color_attachment_formats.reserve(rp.color_attachments.size());
   for (const auto& ca : rp.color_attachments) {
     _color_attachment_formats.push_back(render_graph.attachment(ca.handle).img.description.format);
-    _rg_attachment_handle_to_rp_attachment_ind.emplace(ca.handle.index,
+    _rg_attachment_handle_to_rp_attachment_ind.emplace(ca.handle.index(),
                                                        static_cast<uint32_t>(_color_attachment_formats.size() - 1));
     _color_blends.emplace_back(vk::PipelineColorBlendAttachmentState{
         .blendEnable         = vk::False,
@@ -416,7 +416,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_color_write_mask(vk::Colo
 GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_src_blend_factors(RenderPassAttachmentHandle handle,
                                                                           vk::BlendFactor color_blend_factor,
                                                                           vk::BlendFactor alpha_blend_factor) {
-  auto& color_blend               = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index]];
+  auto& color_blend               = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index()]];
   color_blend.srcColorBlendFactor = color_blend_factor;
   color_blend.srcAlphaBlendFactor = alpha_blend_factor;
   return *this;
@@ -425,7 +425,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_src_blend_factors(Render
 GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_dst_blend_factors(RenderPassAttachmentHandle handle,
                                                                           vk::BlendFactor color_blend_factor,
                                                                           vk::BlendFactor alpha_blend_factor) {
-  auto& color_blend               = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index]];
+  auto& color_blend               = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index()]];
   color_blend.dstColorBlendFactor = color_blend_factor;
   color_blend.dstAlphaBlendFactor = alpha_blend_factor;
   return *this;
@@ -434,7 +434,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_dst_blend_factors(Render
 GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_blend_ops(RenderPassAttachmentHandle handle,
                                                                   vk::BlendOp color_blend_op,
                                                                   vk::BlendOp alpha_blend_op) {
-  auto& color_blend        = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index]];
+  auto& color_blend        = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index()]];
   color_blend.colorBlendOp = color_blend_op;
   color_blend.alphaBlendOp = alpha_blend_op;
   return *this;
@@ -442,13 +442,13 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_blend_ops(RenderPassAtta
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_color_write_mask(RenderPassAttachmentHandle handle,
                                                                          vk::ColorComponentFlags flags) {
-  auto& color_blend          = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index]];
+  auto& color_blend          = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index()]];
   color_blend.colorWriteMask = flags;
   return *this;
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder ::with_blending(RenderPassAttachmentHandle handle) {
-  auto& color_blend       = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index]];
+  auto& color_blend       = _color_blends[_rg_attachment_handle_to_rp_attachment_ind[handle.index()]];
   color_blend.blendEnable = vk::True;
   return *this;
 }
