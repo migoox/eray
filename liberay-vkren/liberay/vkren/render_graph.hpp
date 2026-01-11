@@ -80,6 +80,8 @@ struct RenderPass {
   std::vector<RenderPassAttachmentDependency> attachment_dependencies;
   std::vector<ShaderStorageDependency> shader_storage_dependencies;
 
+  std::vector<ShaderStorageHandle> shader_storage;
+
   std::vector<RenderPassAttachmentImageInfo> color_attachments;
   vk::SampleCountFlagBits samples                                                   = vk::SampleCountFlagBits::e1;
   std::optional<RenderPassAttachmentImageInfo> depth_stencil_attachment             = std::nullopt;
@@ -130,6 +132,9 @@ class RenderPassBuilder {
   RenderPassBuilder& with_stencil_attachment(RenderPassAttachmentHandle handle,
                                              vk::AttachmentLoadOp load_op   = vk::AttachmentLoadOp::eClear,
                                              vk::AttachmentStoreOp store_op = vk::AttachmentStoreOp::eStore);
+
+  RenderPassBuilder& with_shader_storage(ShaderStorageHandle handle);
+
   RenderPassBuilder& on_emit(const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func);
 
   /**

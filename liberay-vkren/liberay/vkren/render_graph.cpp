@@ -133,6 +133,11 @@ RenderPassBuilder& RenderPassBuilder::with_stencil_attachment(RenderPassAttachme
   return *this;
 }
 
+RenderPassBuilder& RenderPassBuilder::with_shader_storage(ShaderStorageHandle handle) {
+  render_pass_.shader_storage.push_back(handle);
+  return *this;
+}
+
 RenderPassBuilder& RenderPassBuilder::on_emit(
     const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func) {
   render_pass_.on_cmd_emit_func = emit_func;
@@ -662,6 +667,51 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
 
     barriers.emplace_back(std::move(barrier));
   };
+  const auto target_shader_storage_barriers = [this](std::vector<vk::BufferMemoryBarrier2>& buff_barriers,
+                                                     std::vector<vk::ImageMemoryBarrier2>& img_barriers,
+                                                     const std::span<const ShaderStorageHandle> handles) {
+    auto dst_stage_mask  = vk::PipelineStageFlagBits2::eComputeShader;
+    auto dst_access_mask = vk::AccessFlagBits2::eShaderStorageWrite | vk::AccessFlagBits2::eShaderStorageRead;
+
+    // https://vulkan.lunarg.com/doc/view/1.4.328.1/windows/antora/guide/latest/storage_image_and_texel_buffers.html#_synchronization_with_storage_images
+    auto dst_layout = vk::ImageLayout::eGeneral;
+
+    for (auto handle : handles) {
+      if (handle.type() == ShaderStorageType::Image) {
+        auto& img_info = shader_storage_images_[handle.index()];
+        img_barriers.emplace_back(vk::ImageMemoryBarrier2{
+            .srcStageMask        = img_info.src_stage_mask,
+            .srcAccessMask       = img_info.src_access_mask,
+            .dstStageMask        = dst_stage_mask,
+            .dstAccessMask       = dst_access_mask,
+            .oldLayout           = img_info.src_layout,
+            .newLayout           = dst_layout,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image               = img_info.img.vk_image(),
+            .subresourceRange    = img_info.img.full_resource_range(),
+        });
+        img_info.src_access_mask = dst_access_mask;
+        img_info.src_stage_mask  = dst_stage_mask;
+        img_info.src_layout      = dst_layout;
+      } else {
+        auto& buffer_info = shader_storage_buffers_[handle.index()];
+        buff_barriers.emplace_back(vk::BufferMemoryBarrier2{
+            .srcStageMask        = buffer_info.src_stage_mask,
+            .srcAccessMask       = buffer_info.src_access_mask,
+            .dstStageMask        = dst_stage_mask,
+            .dstAccessMask       = dst_access_mask,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer              = buffer_info.buffer.vk_buffer(),
+            .offset              = 0,
+            .size                = buffer_info.buffer.size_bytes,
+        });
+        buffer_info.src_access_mask = dst_access_mask;
+        buffer_info.src_stage_mask  = dst_stage_mask;
+      }
+    }
+  };
 
   // https://docs.vulkan.org/refpages/latest/refpages/source/VkPipelineStageFlagBits2.html
   //
@@ -900,6 +950,9 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
         img_info.src_layout      = dst_layout;
         image_memory_barriers.emplace_back(std::move(barrier));
       }
+
+      target_shader_storage_barriers(buffer_memory_barriers, image_memory_barriers, rp.shader_storage);
+
       cmd_buff.pipelineBarrier2(vk::DependencyInfo{
           .dependencyFlags          = {},
           .bufferMemoryBarrierCount = static_cast<uint32_t>(buffer_memory_barriers.size()),
@@ -936,47 +989,7 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
     } else {
       const auto& cp = std::get<ComputePass>(pass);
 
-      auto dst_stage_mask  = vk::PipelineStageFlagBits2::eComputeShader;
-      auto dst_access_mask = vk::AccessFlagBits2::eShaderStorageWrite | vk::AccessFlagBits2::eShaderStorageRead;
-
-      // https://vulkan.lunarg.com/doc/view/1.4.328.1/windows/antora/guide/latest/storage_image_and_texel_buffers.html#_synchronization_with_storage_images
-      auto dst_layout = vk::ImageLayout::eGeneral;
-
-      for (auto handle : cp.shader_storage) {
-        if (handle.type() == ShaderStorageType::Image) {
-          auto& img_info = shader_storage_images_[handle.index()];
-          image_memory_barriers.emplace_back(vk::ImageMemoryBarrier2{
-              .srcStageMask        = img_info.src_stage_mask,
-              .srcAccessMask       = img_info.src_access_mask,
-              .dstStageMask        = dst_stage_mask,
-              .dstAccessMask       = dst_access_mask,
-              .oldLayout           = img_info.src_layout,
-              .newLayout           = dst_layout,
-              .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-              .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-              .image               = img_info.img.vk_image(),
-              .subresourceRange    = img_info.img.full_resource_range(),
-          });
-          img_info.src_access_mask = dst_access_mask;
-          img_info.src_stage_mask  = dst_stage_mask;
-          img_info.src_layout      = dst_layout;
-        } else {
-          auto& buffer_info = shader_storage_buffers_[handle.index()];
-          buffer_memory_barriers.emplace_back(vk::BufferMemoryBarrier2{
-              .srcStageMask        = buffer_info.src_stage_mask,
-              .srcAccessMask       = buffer_info.src_access_mask,
-              .dstStageMask        = dst_stage_mask,
-              .dstAccessMask       = dst_access_mask,
-              .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-              .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-              .buffer              = buffer_info.buffer.vk_buffer(),
-              .offset              = 0,
-              .size                = buffer_info.buffer.size_bytes,
-          });
-          buffer_info.src_access_mask = dst_access_mask;
-          buffer_info.src_stage_mask  = dst_stage_mask;
-        }
-      }
+      target_shader_storage_barriers(buffer_memory_barriers, image_memory_barriers, cp.shader_storage);
       cmd_buff.pipelineBarrier2(vk::DependencyInfo{
           .dependencyFlags          = {},
           .bufferMemoryBarrierCount = static_cast<uint32_t>(buffer_memory_barriers.size()),
