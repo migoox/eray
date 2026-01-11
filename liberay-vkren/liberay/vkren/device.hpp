@@ -135,6 +135,27 @@ class Device {
   VmaAllocationManager& vma_alloc_manager() noexcept { return vma_alloc_manager_; }
   const VmaAllocationManager& vma_alloc_manager() const noexcept { return vma_alloc_manager_; }
 
+  /**
+   * @brief Vulkan requires an implementation which supports graphics operations to have at least one queue family
+   * that supports both graphics and compute operations (https://vulkan-tutorial.com/Compute_Shader). This method
+   * returns such queue family.
+   */
+  uint32_t graphics_compute_queue_family() const { return graphics_queue_family_; }
+
+  /**
+   * @brief Vulkan requires an implementation which supports graphics operations to have at least one queue family
+   * that supports both graphics and compute operations (https://vulkan-tutorial.com/Compute_Shader). This method
+   * returns such queue.
+   */
+  vk::raii::Queue& graphics_compute_queue() noexcept { return graphics_queue_; }
+
+  /**
+   * @brief Vulkan requires an implementation which supports graphics operations to have at least one queue family
+   * that supports both graphics and compute operations (https://vulkan-tutorial.com/Compute_Shader). This method
+   * returns such queue.
+   */
+  const vk::raii::Queue& graphics_compute_queue() const noexcept { return graphics_queue_; }
+
   uint32_t graphics_queue_family() const { return graphics_queue_family_; }
   vk::raii::Queue& graphics_queue() noexcept { return graphics_queue_; }
   const vk::raii::Queue& graphics_queue() const noexcept { return graphics_queue_; }
@@ -288,6 +309,8 @@ class Device {
   DeletionQueue main_deletion_queue_;
 
   // TODO(migoox): allow for creation of multiple queues
+  vk::raii::Queue graphics_compute_queue_ = nullptr;
+  uint32_t graphics_compute_queue_family_{};
   vk::raii::Queue graphics_queue_ = nullptr;
   uint32_t graphics_queue_family_{};
   vk::raii::Queue compute_queue_ = nullptr;

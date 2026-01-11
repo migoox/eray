@@ -68,11 +68,8 @@ if(BUILD_EXAMPLES)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/multiviewport")
     add_subdirectory(examples/multiviewport)
 
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/compute_particles")
-    add_subdirectory(examples/compute_particles)
-
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/multithreading")
-    add_subdirectory(examples/multithreading)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples_bin/compute_shader")
+    add_subdirectory(examples/compute_shader)
 
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 endif()

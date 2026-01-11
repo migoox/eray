@@ -170,7 +170,7 @@ void VulkanApplication::render_frame(Duration delta) {
     on_frame_prepare_sync(delta);
     frame_data_dirty_ = false;
   }
-  context_.device->graphics_queue().submit(submit_info, *record_fences_[current_frame_]);
+  context_.device->graphics_compute_queue().submit(submit_info, *record_fences_[current_frame_]);
 
   // The image will not be presented until the render finished semaphore is signaled by the submit call.
   const auto present_info = vk::PresentInfoKHR{
@@ -220,7 +220,7 @@ void VulkanApplication::create_command_pool() {
 
       // Each command pool can only allocate command buffers that are submitted on a single type of queue.
       // We setup commands for drawing, and thus we've chosen the graphics queue family.
-      .queueFamilyIndex = context_.device->graphics_queue_family(),
+      .queueFamilyIndex = context_.device->graphics_compute_queue_family(),
   };
 
   command_pool_ =
@@ -363,7 +363,7 @@ void VulkanApplication::init_imgui() {
   vk::Instance instance                    = context_.device->instance();
   vk::PhysicalDevice physical_device       = context_.device->physical_device();
   vk::Device device                        = **context_.device;
-  vk::Queue graphics_queue                 = context_.device->graphics_queue();
+  vk::Queue graphics_queue                 = context_.device->graphics_compute_queue();
   vk::DescriptorPool imgui_descriptor_pool = imgui_descriptor_pool_;
 
   auto color_format         = static_cast<VkFormat>(context_.swap_chain->color_attachment_format());
@@ -373,7 +373,7 @@ void VulkanApplication::init_imgui() {
   init_info.Instance                    = static_cast<VkInstance>(instance);
   init_info.PhysicalDevice              = static_cast<VkPhysicalDevice>(physical_device);
   init_info.Device                      = static_cast<VkDevice>(device);
-  init_info.QueueFamily                 = context_.device->graphics_queue_family();
+  init_info.QueueFamily                 = context_.device->graphics_compute_queue_family();
   init_info.Queue                       = static_cast<VkQueue>(graphics_queue);
   init_info.DescriptorPool              = static_cast<VkDescriptorPool>(imgui_descriptor_pool);
   init_info.RenderPass                  = VK_NULL_HANDLE;

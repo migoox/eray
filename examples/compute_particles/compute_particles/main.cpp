@@ -385,7 +385,7 @@ class ComputeParticlesApplication {
     compute_descriptor_sets_       = std::move(result.descriptor_sets);
     compute_descriptor_set_layout_ = result.layout;
 
-    auto writer = vkren::DescriptorSetBinder::create(*device_);
+    auto binder = vkren::DescriptorSetBinder::create(*device_);
     for (auto i = 0U; i < kMaxFramesInFlight; ++i) {
       auto last_ind = (i - 1) % kMaxFramesInFlight;
       auto curr_ind = i;
