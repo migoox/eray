@@ -138,6 +138,11 @@ RenderPassBuilder& RenderPassBuilder::with_shader_storage(ShaderStorageHandle ha
   return *this;
 }
 
+RenderPassBuilder& RenderPassBuilder::run_on_request_only() {
+  render_pass_.on_request_only = true;
+  return *this;
+}
+
 RenderPassBuilder& RenderPassBuilder::on_emit(
     const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func) {
   render_pass_.on_cmd_emit_func = emit_func;
@@ -229,6 +234,11 @@ ComputePassBuilder& ComputePassBuilder::with_buffer_dependency(ShaderStorageHand
 
 ComputePassBuilder& ComputePassBuilder::with_shader_storage(ShaderStorageHandle handle) {
   compute_pass_.shader_storage.push_back(handle);
+  return *this;
+}
+
+ComputePassBuilder& ComputePassBuilder::run_on_request_only() {
+  compute_pass_.on_request_only = true;
   return *this;
 }
 
@@ -739,6 +749,10 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
   std::vector<vk::ImageMemoryBarrier2> image_memory_barriers;
   std::vector<vk::BufferMemoryBarrier2> buffer_memory_barriers;
   for (const auto& pass : passes_) {
+    if (std::visit([](const auto& p) { return p.on_request_only && !p.requested; }, pass)) {
+      continue;
+    }
+
     image_memory_barriers.clear();
     buffer_memory_barriers.clear();
 
@@ -1074,6 +1088,12 @@ const ShaderStorageImage& RenderGraph::shader_storage_image(ShaderStorageHandle 
 
 const ComputePass& RenderGraph::compute_pass(ComputePassHandle handle) const {
   return std::get<ComputePass>(passes_[handle.index]);
+}
+
+void RenderGraph::request_pass(std::variant<ComputePassHandle, RenderPassHandle> handle) {
+  auto index = std::visit([](auto h) -> uint32_t { return h.index; }, handle);
+  auto pass  = passes_[index];
+  std::visit([](auto& p) { p.requested = true; }, pass);
 }
 
 }  // namespace eray::vkren

@@ -88,6 +88,9 @@ struct RenderPass {
   std::optional<RenderPassAttachmentImageInfo> depth_attachment                     = std::nullopt;
   std::optional<RenderPassAttachmentImageInfo> stencil_attachment                   = std::nullopt;
   std::function<void(Device& device, vk::CommandBuffer& cmd_buff)> on_cmd_emit_func = [](auto&, auto&) {};
+
+  bool on_request_only = false;
+  bool requested       = false;
 };
 
 class RenderGraph;
@@ -97,8 +100,10 @@ class RenderPassBuilder {
   RenderPassBuilder() = delete;
   static RenderPassBuilder create(RenderGraph& render_graph,
                                   vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
-    auto rpb                 = RenderPassBuilder(&render_graph);
-    rpb.render_pass_.samples = sample_count;
+    auto rpb                         = RenderPassBuilder(&render_graph);
+    rpb.render_pass_.samples         = sample_count;
+    rpb.render_pass_.on_request_only = false;
+    rpb.render_pass_.requested       = false;
     return rpb;
   }
 
@@ -135,6 +140,8 @@ class RenderPassBuilder {
 
   RenderPassBuilder& with_shader_storage(ShaderStorageHandle handle);
 
+  RenderPassBuilder& run_on_request_only();
+
   RenderPassBuilder& on_emit(const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func);
 
   /**
@@ -160,13 +167,18 @@ struct ComputePass {
   std::vector<ShaderStorageHandle> shader_storage;
 
   std::function<void(Device& device, vk::CommandBuffer& cmd_buff)> on_cmd_emit_func = [](auto&, auto&) {};
+
+  bool on_request_only = false;
+  bool requested       = false;
 };
 
 class ComputePassBuilder {
  public:
   ComputePassBuilder() = delete;
   static ComputePassBuilder create(RenderGraph& render_graph) {
-    auto cpb = ComputePassBuilder(&render_graph);
+    auto cpb                          = ComputePassBuilder(&render_graph);
+    cpb.compute_pass_.on_request_only = false;
+    cpb.compute_pass_.requested       = false;
     return cpb;
   }
 
@@ -185,6 +197,8 @@ class ComputePassBuilder {
                                              vk::AccessFlagBits2 access_mask = vk::AccessFlagBits2::eShaderStorageRead);
 
   ComputePassBuilder& with_shader_storage(ShaderStorageHandle handle);
+
+  ComputePassBuilder& run_on_request_only();
 
   ComputePassBuilder& on_emit(const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func);
 
@@ -302,6 +316,8 @@ class RenderGraph {
   const ShaderStorageImage& shader_storage_image(ShaderStorageHandle handle) const;
 
   const ComputePass& compute_pass(ComputePassHandle handle) const;
+
+  void request_pass(std::variant<ComputePassHandle, RenderPassHandle> handle);
 
  private:
   friend RenderPassBuilder;
