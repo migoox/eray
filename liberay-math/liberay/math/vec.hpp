@@ -340,6 +340,8 @@ struct Vec {
 
   auto length() const { return length(std::make_index_sequence<N>{}, data); }
 
+  auto length_sq() const { return length_sq(std::make_index_sequence<N>{}, data); }
+
   Vec normalized() const { return *this / this->length(); }
 
   Vec abs() const {
@@ -454,6 +456,13 @@ struct Vec {
   }
 
   template <std::size_t... Is>
+  static constexpr auto length_sq(std::index_sequence<Is...>, const T data[N]) {
+    T val = 0;
+    ((val += data[Is] * data[Is]), ...);
+    return val;
+  }
+
+  template <std::size_t... Is>
   static constexpr auto abs(std::index_sequence<Is...>, T data[N]) {
     ((data[Is] = std::abs(data[Is])), ...);
   }
@@ -465,6 +474,20 @@ constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
 }
 
 namespace internal {
+
+template <std::size_t... Is, CFloatingPoint T>
+static constexpr T base_distance_sq(std::index_sequence<Is...>, const T* data1, const T* data2) {
+  T val = 0;
+  ((val += (data1[Is] - data2[Is]) * (data1[Is] - data2[Is])), ...);
+  return val;
+}
+
+template <std::size_t... Is, CFloatingPoint T>
+static constexpr T base_distance(std::index_sequence<Is...>, const T* data1, const T* data2) {
+  T val = 0;
+  ((val += (data1[Is] - data2[Is]) * (data1[Is] - data2[Is])), ...);
+  return std::sqrt(val);
+}
 
 template <std::size_t... Is, CPrimitive T>
 constexpr T dot_base(std::index_sequence<Is...>, const T* lhs, const T* rhs) {
@@ -644,11 +667,19 @@ constexpr auto mix(const Vec<N, T>& x, const Vec<N, T>& y, T a) {
  */
 template <std::size_t N, CPrimitive T>
 constexpr T distance(const Vec<N, T>& lhs, const Vec<N, T>& rhs) {
-  T val = 0;
-  for (std::size_t i = 0; i < N; ++i) {
-    val += (rhs[i] - lhs[i]) * (rhs[i] - lhs[i]);
-  }
-  return std::sqrt(val);
+  return internal::base_distance(std::make_index_sequence<N>(), lhs.data, rhs.data);
+}
+
+/**
+ * @brief Computes the square of the distance between two vectors.
+ *
+ * @param lhs The first vector.
+ * @param rhs The second vector.
+ * @return T The squared distance between lhs and rhs.
+ */
+template <std::size_t N, CPrimitive T>
+constexpr T distance_sq(const Vec<N, T>& lhs, const Vec<N, T>& rhs) {
+  return internal::base_distance_sq(std::make_index_sequence<N>(), lhs.data, rhs.data);
 }
 
 template <std::size_t N, CFloatingPoint T>
@@ -699,18 +730,33 @@ void unwrap_angles_pair(T& a1, T& a2) {
   }
 }
 
+/**
+ * @brief Interpolates between two angles using linear interpolation while handling wrap-around.
+ *
+ * The angles are first unwrapped to ensure that the interpolation is performed on the shortest path.
+ *
+ * @param a1 - The starting angle in radians.
+ * @param a2 - The ending angle in radians.
+ * @param t  - The interpolation parameter, ranging from 0 (at `a1`) to 1 (at `a2`).
+ * @return T - The interpolated angle in radians.
+ */
 template <CFloatingPoint T>
 T lerp_angle(T a1, T a2, T t) {
-  static constexpr auto kPi  = std::numbers::pi_v<T>;
-  static constexpr auto k2Pi = 2.F * kPi;
   unwrap_angles_pair(a1, a2);
   return std::lerp(a1, a2, t);
 }
 
+/**
+ * @brief Calculates the shortest angular distance between two angles.
+ *
+ * @param a1 - The first angle in radians.
+ * @param a2 - The second angle in radians.
+ * @return T - The shortest angular distance between `a1` and `a2`.
+ */
 template <CFloatingPoint T>
 T shortest_angles_distance(T a1, T a2) {
   unwrap_angles_pair(a1, a2);
-  return a2 - a1;
+  return std::abs(a2 - a1);
 }
 
 namespace internal {
