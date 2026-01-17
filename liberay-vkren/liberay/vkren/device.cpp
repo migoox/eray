@@ -419,7 +419,7 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
         });
       }
 
-      compute_queue_family_ = graphics_queue_family_ =
+      graphics_compute_queue_family_ = compute_queue_family_ = graphics_queue_family_ =
           static_cast<uint32_t>(std::distance(queue_family_props.begin(), graphics_queue_family_prop_it));
 
       auto surface_queue_family_prop_it =
@@ -439,7 +439,7 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
       presentation_queue_family_ =
           static_cast<uint32_t>(std::distance(indexed_queue_family_props.begin(), surface_queue_family_prop_it));
     } else {
-      compute_queue_family_ = graphics_queue_family_ = presentation_queue_family_ =
+      graphics_compute_queue_family_ = compute_queue_family_ = graphics_queue_family_ = presentation_queue_family_ =
           static_cast<uint32_t>(std::distance(indexed_queue_family_props.begin(), queue_family_prop_it));
     }
   }
@@ -509,6 +509,17 @@ Result<void, Error> Device::create_logical_device(const CreateInfo& info) noexce
     eray::util::Logger::err("Failed to create a compute queue. {}", vk::to_string(result.error()));
     return std::unexpected(Error{
         .msg     = "Vulkan Compute Queue creation failure",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = result.error(),
+    });
+  }
+
+  if (auto result = device_.getQueue(graphics_compute_queue_family_, 0)) {
+    graphics_compute_queue_ = std::move(*result);
+  } else {
+    eray::util::Logger::err("Failed to create a graphics compute queue. {}", vk::to_string(result.error()));
+    return std::unexpected(Error{
+        .msg     = "Vulkan Graphics Compute Queue creation failure",
         .code    = ErrorCode::VulkanObjectCreationFailure{},
         .vk_code = result.error(),
     });
