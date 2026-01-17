@@ -768,8 +768,14 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
   std::vector<vk::RenderingAttachmentInfo> color_attachment_infos;
   std::vector<vk::ImageMemoryBarrier2> image_memory_barriers;
   std::vector<vk::BufferMemoryBarrier2> buffer_memory_barriers;
-  for (const auto& pass : passes_) {
-    if (std::visit([](const auto& p) { return p.on_request_only && !p.requested; }, pass)) {
+  for (auto& pass : passes_) {
+    if (std::visit(
+            [](auto& p) {
+              bool result = p.on_request_only && !p.requested;
+              p.requested = false;
+              return result;
+            },
+            pass)) {
       continue;
     }
 
@@ -1112,8 +1118,7 @@ const ComputePass& RenderGraph::compute_pass(ComputePassHandle handle) const {
 
 void RenderGraph::request_pass(std::variant<ComputePassHandle, RenderPassHandle> handle) {
   auto index = std::visit([](auto h) -> uint32_t { return h.index; }, handle);
-  auto pass  = passes_[index];
-  std::visit([](auto& p) { p.requested = true; }, pass);
+  std::visit([](auto& p) { p.requested = true; }, passes_[index]);
 }
 
 }  // namespace eray::vkren
