@@ -498,8 +498,8 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_push_constant_ranges(
 }
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_input_state(
-    std::span<vk::VertexInputBindingDescription> binding_descriptions,
-    std::span<vk::VertexInputAttributeDescription> attributes_descriptions) {
+    std::span<const vk::VertexInputBindingDescription> binding_descriptions,
+    std::span<const vk::VertexInputAttributeDescription> attributes_descriptions) {
   _vertex_input_state.vertexBindingDescriptionCount   = static_cast<uint32_t>(binding_descriptions.size());
   _vertex_input_state.pVertexBindingDescriptions      = binding_descriptions.data();
   _vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes_descriptions.size());
@@ -509,7 +509,7 @@ GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_input_state(
 
 GraphicsPipelineBuilder& GraphicsPipelineBuilder::with_input_state(
     const vk::VertexInputBindingDescription& binding_descriptions,
-    std::span<vk::VertexInputAttributeDescription> attributes_descriptions) {
+    std::span<const vk::VertexInputAttributeDescription> attributes_descriptions) {
   _vertex_input_state.vertexBindingDescriptionCount   = 1;
   _vertex_input_state.pVertexBindingDescriptions      = &binding_descriptions;
   _vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes_descriptions.size());

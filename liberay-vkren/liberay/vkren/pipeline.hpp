@@ -50,10 +50,12 @@ struct GraphicsPipelineBuilder {
   GraphicsPipelineBuilder& with_primitive_topology(vk::PrimitiveTopology topology,
                                                    bool primitive_restart_enable = false);
 
-  GraphicsPipelineBuilder& with_input_state(std::span<vk::VertexInputBindingDescription> binding_descriptions,
-                                            std::span<vk::VertexInputAttributeDescription> attributes_descriptions);
-  GraphicsPipelineBuilder& with_input_state(const vk::VertexInputBindingDescription& binding_descriptions,
-                                            std::span<vk::VertexInputAttributeDescription> attributes_descriptions);
+  GraphicsPipelineBuilder& with_input_state(
+      std::span<const vk::VertexInputBindingDescription> binding_descriptions,
+      std::span<const vk::VertexInputAttributeDescription> attributes_descriptions);
+  GraphicsPipelineBuilder& with_input_state(
+      const vk::VertexInputBindingDescription& binding_descriptions,
+      std::span<const vk::VertexInputAttributeDescription> attributes_descriptions);
   GraphicsPipelineBuilder& with_input_state(const vk::VertexInputBindingDescription& binding_descriptions,
                                             const vk::VertexInputAttributeDescription& attributes_descriptions);
 
