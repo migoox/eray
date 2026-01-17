@@ -12,6 +12,7 @@
 #include <optional>
 #include <variant>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_to_string.hpp>
 
@@ -147,6 +148,12 @@ RenderPassBuilder& RenderPassBuilder::on_emit(
     const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func) {
   render_pass_.on_cmd_emit_func = emit_func;
   return *this;
+}
+
+Result<ComputePassHandle, Error> ComputePassBuilder::build() {
+  auto handle   = render_graph_->emplace_compute_pass(std::move(compute_pass_));
+  compute_pass_ = ComputePass{};
+  return handle;
 }
 
 Result<RenderPassHandle, Error> RenderPassBuilder::build(uint32_t width, uint32_t height) {
@@ -402,9 +409,13 @@ RenderPassAttachmentHandle RenderGraph::create_stencil_attachment(Device& device
   };
 }
 
-ShaderStorageHandle RenderGraph::create_shader_storage_buffer(Device& device, vk::DeviceSize size_bytes) {
+ShaderStorageHandle RenderGraph::create_shader_storage_buffer(Device& device, vk::DeviceSize size_bytes,
+                                                              vk::BufferUsageFlagBits additional_usage_flags) {
   auto buffer =
-      BufferResource::create_storage_buffer(device, size_bytes).or_panic("Could not create a shader storage buffer");
+      BufferResource::create_gpu_local_buffer(
+          device, size_bytes,
+          additional_usage_flags | vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)
+          .or_panic("Could not create a shader storage buffer");
 
   shader_storage_buffers_.emplace_back(ShaderStorageBuffer{
       .buffer = std::move(buffer),
@@ -415,6 +426,15 @@ ShaderStorageHandle RenderGraph::create_shader_storage_buffer(Device& device, vk
       static_cast<uint32_t>(shader_storage_buffers_.size() - 1),
       ShaderStorageType::Buffer,
   };
+}
+
+ShaderStorageHandle RenderGraph::create_shader_storage_buffer(Device& device, util::MemoryRegion mem_region,
+                                                              vk::BufferUsageFlagBits additional_usage_flags) {
+  auto handle = create_shader_storage_buffer(device, mem_region.size_bytes(), additional_usage_flags);
+  shader_storage_buffers_[handle.index()]
+      .buffer.write(mem_region)
+      .or_panic("Could not upload data to shader storage buffer");
+  return handle;
 }
 
 ShaderStorageHandle RenderGraph::create_shader_storage_texel_buffer(Device& device, vk::DeviceSize size_bytes) {
@@ -518,7 +538,7 @@ RenderPassHandle RenderGraph::emplace_render_pass(RenderPass&& render_pass) {
   return RenderPassHandle{.index = static_cast<uint32_t>(passes_.size() - 1)};
 }
 
-RenderPassHandle RenderGraph::emplace_compute_pass(ComputePass&& compute_pass) {
+ComputePassHandle RenderGraph::emplace_compute_pass(ComputePass&& compute_pass) {
   // It's impossible to create dependency cycles or provide incorrect ordering, because during render pass creation
   // client can only refer to already emplaced render passes (via handles).
   passes_.emplace_back(std::move(compute_pass));
@@ -534,7 +554,7 @@ RenderPassHandle RenderGraph::emplace_compute_pass(ComputePass&& compute_pass) {
     util::panic("Could not emplace a compute pass. Shader storage is not registered.");
   }
 
-  return RenderPassHandle{.index = static_cast<uint32_t>(passes_.size() - 1)};
+  return ComputePassHandle{.index = static_cast<uint32_t>(passes_.size() - 1)};
 }
 
 void RenderGraph::for_each_attachment(const std::function<void(RenderPassAttachmentImage& attachment_image)>& action) {
@@ -664,7 +684,7 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
     auto barrier      = vk::BufferMemoryBarrier2{
              .srcStageMask        = buffer_info.src_stage_mask,
              .srcAccessMask       = buffer_info.src_access_mask,
-             .dstStageMask        = dep.stage_mask,
+             .dstStageMask        = vk::PipelineStageFlagBits2::eComputeShader,
              .dstAccessMask       = dep.access_mask,
              .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
              .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -672,7 +692,7 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
              .offset              = 0,
              .size                = buffer_info.buffer.size_bytes,
     };
-    buffer_info.src_stage_mask  = dep.stage_mask;
+    buffer_info.src_stage_mask  = vk::PipelineStageFlagBits2::eComputeShader;
     buffer_info.src_access_mask = dep.access_mask;
 
     barriers.emplace_back(std::move(barrier));

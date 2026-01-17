@@ -3,8 +3,7 @@
 #include <imgui/imgui_impl_vulkan.h>
 #include <vulkan/vulkan_core.h>
 
-#include <cstdint>
-#include <filesystem>
+#include <compute_shader/particle.hpp>
 #include <liberay/math/mat.hpp>
 #include <liberay/math/vec.hpp>
 #include <liberay/math/vec_fwd.hpp>
@@ -18,6 +17,7 @@
 #include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/app.hpp>
 #include <liberay/vkren/buffer.hpp>
+#include <liberay/vkren/buffer/ubo.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/descriptor.hpp>
 #include <liberay/vkren/device.hpp>
@@ -28,7 +28,6 @@
 #include <liberay/vkren/render_graph.hpp>
 #include <liberay/vkren/shader.hpp>
 #include <liberay/vkren/swap_chain.hpp>
-#include <vector>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -37,206 +36,122 @@
 #include <vulkan/vulkan_to_string.hpp>
 
 namespace vkren = eray::vkren;
+namespace util  = eray::util;
 
-class ComputerShaderApplication : public vkren::VulkanApplication {
+class ComputeShaderApplication : public vkren::VulkanApplication {
  private:
-  vkren::BufferResource vert_buffer_;
-  vkren::BufferResource ind_buffer_;
+  vkren::ShaderStorageHandle ssbo_handle_;
+  vkren::MappedUniformBuffer<UniformBufferObject> ubo_gpu_;
+  UniformBufferObject ubo_cpu_;
 
-  vkren::ImageResource txt_image_;
-  vk::raii::ImageView txt_view_  = nullptr;
-  vk::raii::Sampler txt_sampler_ = nullptr;
+  vk::raii::PipelineLayout graphics_pipeline_layout_ = nullptr;
+  vk::raii::PipelineLayout compute_pipeline_layout_  = nullptr;
+  vk::raii::Pipeline graphics_pipeline_              = nullptr;
+  vk::raii::Pipeline compute_pipeline_               = nullptr;
 
-  static constexpr auto kViewportsCount = 4U;
-  static constexpr auto kViewportSize   = 500U;
+  vk::DescriptorSetLayout compute_ds_layout_;
+  vk::DescriptorSet compute_ds_;
 
-  vk::DescriptorSetLayout main_dsl_;
-  vk::raii::PipelineLayout main_pipeline_layout_ = nullptr;
-  vk::raii::Pipeline main_pipeline_              = nullptr;
+  static constexpr uint32_t kWinWidth  = 800;
+  static constexpr uint32_t kWinHeight = 600;
 
  public:
   void on_init() override {
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    window().set_window_size(kViewportSize * kViewportsCount / 2U, kViewportSize * kViewportsCount / 2U);
+    window().set_window_size(800, 600);
 
-    for (auto i = 0U; i < kViewportsCount; ++i) {
-      viewports_[i].name = std::format("Viewport {}", i);
-    }
+    // Buffers setup
+    auto particle_system =
+        ParticleSystem::create_on_circle(static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight));
+    auto region =
+        util::MemoryRegion{particle_system.particles.data(), particle_system.particles.size() * sizeof(Particle)};
+    ssbo_handle_ =
+        render_graph().create_shader_storage_buffer(device(), region, vk::BufferUsageFlagBits::eVertexBuffer);
 
-    // == Render graph setup ===========================================================================================
-    for (auto& viewport : viewports_) {
-      auto msaa_color_attachment = render_graph().create_color_attachment(device(), kViewportSize, kViewportSize, false,
-                                                                          vk::SampleCountFlagBits::e8);
-      auto color_attachment      = render_graph().create_color_attachment(device(), kViewportSize, kViewportSize, true);
-      auto depth_attachment      = render_graph().create_depth_attachment(device(), kViewportSize, kViewportSize, true,
-                                                                          vk::SampleCountFlagBits::e8);
+    ubo_gpu_            = vkren::MappedUniformBuffer<UniformBufferObject>::create(device()).or_panic();
+    ubo_cpu_.delta_time = 0.F;
 
-      viewport.render_pass = render_graph()
-                                 .render_pass_builder(vk::SampleCountFlagBits::e8)
-                                 .with_msaa_color_attachment(msaa_color_attachment, color_attachment)
-                                 .with_depth_attachment(depth_attachment)
-                                 .on_emit([this, &viewport](vkren::Device&, vk::CommandBuffer& cmd_buff) {
-                                   this->record_render_pass(cmd_buff, viewport);
-                                 })
-                                 .build(kViewportSize, kViewportSize)
-                                 .or_panic("Could not create render pass");
-
-      render_graph().emplace_final_pass_dependency(color_attachment);
-
-      viewport.color_attachment = color_attachment;
-    }
-
-    // == Buffers setup ================================================================================================
+    // Descriptor set
     {
-      auto vb = VertexBuffer::create();
-
-      auto vertices_region = eray::util::MemoryRegion{vb.vertices.data(), vb.vertices_size_bytes()};
-      vert_buffer_         = vkren::BufferResource::create_vertex_buffer(device(), vertices_region.size_bytes())
-                         .or_panic("Could not create the vertex buffer");
-      vert_buffer_.write(vertices_region).or_panic("Could not fill the vertex buffer");
-
-      auto indices_region = eray::util::MemoryRegion{vb.indices.data(), vb.indices_size_bytes()};
-      ind_buffer_         = vkren::BufferResource::create_index_buffer(device(), indices_region.size_bytes())
-                        .or_panic("Could not create a Vertex Buffer");
-      ind_buffer_.write(indices_region).or_panic("Could not fill the index buffer");
-
-      for (auto& viewport : viewports_) {
-        vk::DeviceSize size_bytes = sizeof(UniformBufferObject);
-        auto ubo = vkren::BufferResource::create_persistently_mapped_uniform_buffer(device(), size_bytes)
-                       .or_panic("Could not create the uniform buffer");
-        viewport.uniform_buffer_ = std::move(ubo.buffer);
-
-        // Copying to uniform buffer each frame means that staging buffer makes no sense.
-        viewport.uniform_buffer_mapped_ = ubo.mapped_data;
-      }
-    }
-
-    // == Images setup =================================================================================================
-    {
-      auto img = eray::res::Image::load_from_path(eray::os::System::executable_dir() / "assets" / "cad.jpeg")
-                     .or_panic("cad is not there :(");
-      txt_image_ = vkren::ImageResource::create_texture(device(), vkren::ImageDescription::from(img))
-                       .or_panic("Could not create a texture image");
-      txt_image_.upload(img.memory_region()).or_panic("Could not upload the image");
-      txt_view_ = txt_image_.create_image_view().or_panic("Could not create the image view");
-
-      auto pdev_props   = device().physical_device().getProperties();
-      auto sampler_info = vk::SamplerCreateInfo{
-          .magFilter        = vk::Filter::eLinear,
-          .minFilter        = vk::Filter::eLinear,
-          .mipmapMode       = vk::SamplerMipmapMode::eLinear,
-          .addressModeU     = vk::SamplerAddressMode::eRepeat,
-          .addressModeV     = vk::SamplerAddressMode::eRepeat,
-          .addressModeW     = vk::SamplerAddressMode::eRepeat,
-          .mipLodBias       = 0.0F,
-          .anisotropyEnable = vk::True,
-          .maxAnisotropy    = pdev_props.limits.maxSamplerAnisotropy,
-          .compareEnable    = vk::False,
-          .compareOp        = vk::CompareOp::eAlways,
-          .minLod           = 0.F,
-          .maxLod           = vk::LodClampNone,
-      };
-      txt_sampler_ = vkren::Result(device().vk().createSampler(sampler_info)).or_panic("Could not create the sampler");
-    }
-
-    // == Descriptors setup ============================================================================================
-    for (auto& viewport : viewports_) {
       auto result = vkren::DescriptorSetBuilder::create(device())
-                        .with_binding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
-                        .with_binding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+                        .with_binding(vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eCompute)
+                        .with_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute)
                         .build()
-                        .or_panic("Could not create descriptor sets");
-
-      viewport.render_pass_ds_ = std::move(result.descriptor_set);
-      main_dsl_                = std::move(result.layout);
+                        .or_panic();
+      compute_ds_layout_ = result.layout;
+      compute_ds_        = result.descriptor_set;
 
       auto binder = vkren::DescriptorSetBinder::create(device());
-      binder.bind_buffer(0, viewport.uniform_buffer_.desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
-      binder.bind_combined_image_sampler(1, txt_view_, txt_sampler_, vk::ImageLayout::eShaderReadOnlyOptimal);
-      binder.apply(viewport.render_pass_ds_);
-      binder.clear();
-
-      viewport.imgui_txt_ds_ = ImGui_ImplVulkan_AddTexture(
-          static_cast<VkSampler>(vk::Sampler{txt_sampler_}),
-          static_cast<VkImageView>(vk::ImageView{render_graph().attachment(viewport.color_attachment).view}),
-          static_cast<VkImageLayout>(vk::ImageLayout::eShaderReadOnlyOptimal));
+      binder.bind_buffer(0, ubo_gpu_.desc_buffer_info(), vk::DescriptorType::eUniformBuffer);
+      binder.bind_buffer(1, render_graph().shader_storage_buffer(ssbo_handle_).buffer.desc_buffer_info(),
+                         vk::DescriptorType::eStorageBuffer);
+      binder.apply(compute_ds_);
     }
 
-    // == Shaders + Graphics Pipeline ==================================================================================
+    // Pipelines setup
     {
-      auto main_binary =
-          eray::res::SPIRVShaderBinary::load_from_path(eray::os::System::executable_dir() / "shaders" / "main.spv")
-              .or_panic("Could not find main_sh.spv");
+      auto particle_shader_module =
+          vkren::ShaderModule::load_from_path(device(), eray::os::System::executable_dir() / "shaders" / "particle.spv")
+              .or_panic("Could not create a compute shader module");
+
+      auto pipeline = vkren::ComputePipelineBuilder::create()
+                          .with_descriptor_set_layout(compute_ds_layout_)
+                          .with_shader(particle_shader_module.shader_module)
+                          .build(device())
+                          .or_panic("Could not create a compute pipeline");
+
+      compute_pipeline_        = std::move(pipeline.pipeline);
+      compute_pipeline_layout_ = std::move(pipeline.layout);
+    }
+
+    {
       auto main_shader_module =
-          vkren::ShaderModule::create(device(), main_binary).or_panic("Could not create a main shader module");
+          vkren::ShaderModule::load_from_path(device(), eray::os::System::executable_dir() / "shaders" / "main.spv")
+              .or_panic("Could not create a main shader module");
 
-      auto binding_desc = Vertex::binding_desc();
-      auto attribs_desc = Vertex::attribs_desc();
+      auto binding_desc = ParticleSystem::binding_desc();
+      auto attribs_desc = ParticleSystem::attribs_desc();
 
-      // All pipelines are the same for each viewport, so only one is created
-      auto pipeline = vkren::GraphicsPipelineBuilder::create(render_graph(), viewports_[0].render_pass)
+      auto pipeline = vkren::GraphicsPipelineBuilder::create(swap_chain())
                           .with_shaders(main_shader_module.shader_module, main_shader_module.shader_module)
+                          .with_polygon_mode(vk::PolygonMode::eFill)
+                          .with_cull_mode(vk::CullModeFlagBits::eBack, vk::FrontFace::eClockwise)
                           .with_input_state(binding_desc, attribs_desc)
-                          .with_descriptor_set_layout(main_dsl_)
-                          .with_depth_test()
+                          .with_primitive_topology(vk::PrimitiveTopology::ePointList)
                           .build(device())
                           .or_panic("Could not create a graphics pipeline");
 
-      main_pipeline_        = std::move(pipeline.pipeline);
-      main_pipeline_layout_ = std::move(pipeline.layout);
+      graphics_pipeline_        = std::move(pipeline.pipeline);
+      graphics_pipeline_layout_ = std::move(pipeline.layout);
     }
+
+    render_graph()
+        .compute_pass_builder()
+        .with_shader_storage(ssbo_handle_)
+        .on_emit([this](vkren::Device&, vk::CommandBuffer& cmd_buff) {
+          cmd_buff.bindPipeline(vk::PipelineBindPoint::eCompute, compute_pipeline_);
+          cmd_buff.bindDescriptorSets(vk::PipelineBindPoint::eCompute, compute_pipeline_layout_, 0, {compute_ds_}, {});
+          cmd_buff.dispatch(ParticleSystem::kParticleCount / 256, 1, 1);
+        })
+        .build()
+        .or_panic();
+
+    render_graph().emplace_final_pass_storage_buffer_dependency(ssbo_handle_);
   }
 
-  void on_process(float /*delta*/) override {
+  void on_process(float delta) override {
+    ubo_cpu_.delta_time = delta;
+    ubo_gpu_.mark_dirty();
+
     mark_frame_data_dirty();
-    auto window_size = window().window_size();
-
-    for (auto i = 0U; i < kViewportsCount; ++i) {
-      auto t = std::chrono::duration<float>(time()).count();
-      auto s = std::sin(t * 0.7F);
-      s      = (s * s - 0.5F) * 90.F;
-
-      auto axis         = eray::math::Vec3f::filled(0.F);
-      axis.data[i % 3U] = 1.F;
-
-      viewports_[i].ubo.model = eray::math::rotation_axis(eray::math::radians(s), axis);
-      viewports_[i].ubo.view  = eray::math::translation(eray::math::Vec3f(0.F, 0.F, -4.F));
-      viewports_[i].ubo.proj  = eray::math::perspective_vk_rh(
-          eray::math::radians(80.0F), static_cast<float>(window_size.width) / static_cast<float>(window_size.height),
-          0.01F, 10.F);
-    }
   }
 
-  void on_frame_prepare_sync(Duration /*delta*/) override {
-    for (auto& viewport : viewports_) {
-      memcpy(viewport.uniform_buffer_mapped_, &viewport.ubo, sizeof(viewport.ubo));
-    }
-  }
+  void on_frame_prepare_sync(Duration /*delta*/) override { ubo_gpu_.sync(ubo_cpu_); }
 
-  void on_imgui() override {
-    ImGui::DockSpaceOverViewport();
-    for (auto i = 0U; i < kViewportsCount; ++i) {
-      ImGui::PushID(static_cast<int>(i));
-      ImGui::Begin(viewports_[i].name.c_str());
-      ImGui::Image(viewports_[i].imgui_txt_ds_, ImVec2(kViewportSize, kViewportSize));
-      ImGui::End();
-      ImGui::PopID();
-    }
-  }
-
-  void record_render_pass(vk::CommandBuffer& cmd_buff, ViewportInfo& viewport) {
-    cmd_buff.bindPipeline(vk::PipelineBindPoint::eGraphics, main_pipeline_);
-    cmd_buff.bindVertexBuffers(0, vert_buffer_.vk_buffer(), {0});
-    cmd_buff.bindIndexBuffer(ind_buffer_.vk_buffer(), 0, vk::IndexType::eUint16);
-    cmd_buff.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, main_pipeline_layout_, 0, viewport.render_pass_ds_,
-                                nullptr);
-    cmd_buff.drawIndexed(12, 1, 0, 0, 0);
-  }
-
-  void on_destroy() override {
-    for (auto& viewport : viewports_) {
-      ImGui_ImplVulkan_RemoveTexture(viewport.imgui_txt_ds_);
-    }
+  void on_record_graphics(vk::CommandBuffer cmd, uint32_t) override {
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
+    cmd.bindVertexBuffers(0, {render_graph().shader_storage_buffer(ssbo_handle_).buffer.vk_buffer()}, {0});
+    cmd.draw(ParticleSystem::kParticleCount, 1, 0, 0);
   }
 };
 
@@ -252,7 +167,7 @@ int main() {
   System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
 
   // == Application ====================================================================================================
-  auto app = eray::vkren::VulkanApplication::create<ComputerShaderApplication>();
+  auto app = eray::vkren::VulkanApplication::create<ComputeShaderApplication>();
   app.run();
 
   // == Cleanup ========================================================================================================

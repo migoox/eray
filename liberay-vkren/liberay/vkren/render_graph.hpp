@@ -11,6 +11,8 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
+#include "liberay/util/memory_region.hpp"
+
 namespace eray::vkren {
 
 template <typename TEnum, uint32_t TEnumBits>
@@ -209,7 +211,7 @@ class ComputePassBuilder {
    * @warning After build is invoked it returns to default state (it
    * does not preserve the current state).
    */
-  [[nodiscard]] Result<ComputePass, Error> build(uint32_t width, uint32_t height);
+  [[nodiscard]] Result<ComputePassHandle, Error> build();
 
  private:
   explicit ComputePassBuilder(RenderGraph* render_graph) : render_graph_(render_graph) {}
@@ -274,14 +276,20 @@ class RenderGraph {
                                                        bool readable                   = false,
                                                        vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1);
 
-  ShaderStorageHandle create_shader_storage_buffer(Device& device, vk::DeviceSize size_bytes);
+  ShaderStorageHandle create_shader_storage_buffer(
+      Device& device, vk::DeviceSize size_bytes,
+      vk::BufferUsageFlagBits additional_usage_flags = vk::BufferUsageFlagBits{});
+  ShaderStorageHandle create_shader_storage_buffer(
+      Device& device, util::MemoryRegion mem_region,
+      vk::BufferUsageFlagBits additional_usage_flags = vk::BufferUsageFlagBits{});
+
   ShaderStorageHandle create_shader_storage_texel_buffer(Device& device, vk::DeviceSize size_bytes);
   ShaderStorageHandle create_shader_storage_image(Device& device, const ImageDescription& img_desc,
                                                   vk::ImageAspectFlags image_aspect = vk::ImageAspectFlagBits::eColor);
 
   RenderPassAttachmentHandle emplace_attachment(ImageResource&& attachment, ImageAttachmentType type);
   RenderPassHandle emplace_render_pass(RenderPass&& render_pass);
-  RenderPassHandle emplace_compute_pass(ComputePass&& compute_pass);
+  ComputePassHandle emplace_compute_pass(ComputePass&& compute_pass);
 
   RenderPassBuilder render_pass_builder(vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1) {
     return RenderPassBuilder::create(*this, sample_count);

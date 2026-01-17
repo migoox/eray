@@ -1,4 +1,4 @@
-#include <compute_particles/particle.hpp>
+#include <compute_shader/particle.hpp>
 #include <liberay/math/color.hpp>
 #include <liberay/math/vec.hpp>
 #include <numbers>

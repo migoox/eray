@@ -9,8 +9,6 @@ struct VertexOutput {
   float4 color;
 };
 
-// Slang and SPIR-V both support having multiple entry points in one file. This means
-// 2 entry points for vertex and fragment shaders.
 [shader("vertex")]
 VertexOutput mainVert(VertexInput input) {
   VertexOutput output;
@@ -24,4 +22,3 @@ VertexOutput mainVert(VertexInput input) {
 float4 mainFrag(VertexOutput input) : SV_Target {
   return input.color;
 }
-
