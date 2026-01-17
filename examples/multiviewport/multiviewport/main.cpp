@@ -1,40 +1,13 @@
-#include <GLFW/glfw3.h>
 #include <imgui/imgui.h>
 #include <imgui/imgui_impl_vulkan.h>
-#include <vulkan/vulkan_core.h>
 
-#include <cstdint>
-#include <filesystem>
-#include <liberay/math/mat.hpp>
-#include <liberay/math/vec.hpp>
-#include <liberay/math/vec_fwd.hpp>
 #include <liberay/os/system.hpp>
-#include <liberay/res/image.hpp>
-#include <liberay/res/shader.hpp>
-#include <liberay/util/logger.hpp>
-#include <liberay/util/memory_region.hpp>
-#include <liberay/util/panic.hpp>
-#include <liberay/util/try.hpp>
-#include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/app.hpp>
-#include <liberay/vkren/buffer.hpp>
-#include <liberay/vkren/common.hpp>
-#include <liberay/vkren/descriptor.hpp>
-#include <liberay/vkren/device.hpp>
+#include <liberay/vkren/buffer/ubo.hpp>
 #include <liberay/vkren/glfw/vk_glfw_window_creator.hpp>
-#include <liberay/vkren/image.hpp>
-#include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/pipeline.hpp>
 #include <liberay/vkren/render_graph.hpp>
 #include <liberay/vkren/shader.hpp>
-#include <liberay/vkren/swap_chain.hpp>
-#include <vector>
-#include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_handles.hpp>
-#include <vulkan/vulkan_raii.hpp>
-#include <vulkan/vulkan_structs.hpp>
-#include <vulkan/vulkan_to_string.hpp>
 
 namespace vkren = eray::vkren;
 

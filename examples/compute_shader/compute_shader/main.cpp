@@ -1,39 +1,14 @@
-#include <GLFW/glfw3.h>
 #include <imgui/imgui.h>
 #include <imgui/imgui_impl_vulkan.h>
-#include <vulkan/vulkan_core.h>
 
 #include <compute_shader/particle.hpp>
-#include <liberay/math/mat.hpp>
-#include <liberay/math/vec.hpp>
-#include <liberay/math/vec_fwd.hpp>
 #include <liberay/os/system.hpp>
-#include <liberay/res/image.hpp>
-#include <liberay/res/shader.hpp>
-#include <liberay/util/logger.hpp>
-#include <liberay/util/memory_region.hpp>
-#include <liberay/util/panic.hpp>
-#include <liberay/util/try.hpp>
-#include <liberay/util/zstring_view.hpp>
 #include <liberay/vkren/app.hpp>
-#include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/buffer/ubo.hpp>
-#include <liberay/vkren/common.hpp>
-#include <liberay/vkren/descriptor.hpp>
-#include <liberay/vkren/device.hpp>
 #include <liberay/vkren/glfw/vk_glfw_window_creator.hpp>
-#include <liberay/vkren/image.hpp>
-#include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/pipeline.hpp>
 #include <liberay/vkren/render_graph.hpp>
 #include <liberay/vkren/shader.hpp>
-#include <liberay/vkren/swap_chain.hpp>
-#include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_handles.hpp>
-#include <vulkan/vulkan_raii.hpp>
-#include <vulkan/vulkan_structs.hpp>
-#include <vulkan/vulkan_to_string.hpp>
 
 namespace vkren = eray::vkren;
 namespace util  = eray::util;
@@ -52,17 +27,27 @@ class ComputeShaderApplication : public vkren::VulkanApplication {
   vk::DescriptorSetLayout compute_ds_layout_;
   vk::DescriptorSet compute_ds_;
 
-  static constexpr uint32_t kWinWidth  = 800;
-  static constexpr uint32_t kWinHeight = 600;
+  struct Viewport {
+    VkDescriptorSet imgui_txt_ds_;
+    vk::raii::Sampler txt_sampler_ = nullptr;
+    vkren::RenderPassHandle render_pass;
+    vkren::RenderPassAttachmentHandle color_attachment;
+  } viewport_;
+
+  static constexpr uint32_t kWinWidth  = 1280;
+  static constexpr uint32_t kWinHeight = 720;
+
+  static constexpr uint32_t kViewportWidth  = 800;
+  static constexpr uint32_t kViewportHeight = 600;
 
  public:
   void on_init() override {
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    window().set_window_size(800, 600);
+    window().set_window_size(kWinWidth, kWinHeight);
 
     // Buffers setup
     auto particle_system =
-        ParticleSystem::create_on_circle(static_cast<float>(kWinWidth) / static_cast<float>(kWinHeight));
+        ParticleSystem::create_on_circle(static_cast<float>(kViewportWidth) / static_cast<float>(kViewportHeight));
     auto region =
         util::MemoryRegion{particle_system.particles.data(), particle_system.particles.size() * sizeof(Particle)};
     ssbo_handle_ =
@@ -125,18 +110,75 @@ class ComputeShaderApplication : public vkren::VulkanApplication {
       graphics_pipeline_layout_ = std::move(pipeline.layout);
     }
 
-    render_graph()
-        .compute_pass_builder()
-        .with_shader_storage(ssbo_handle_)
-        .on_emit([this](vkren::Device&, vk::CommandBuffer& cmd_buff) {
-          cmd_buff.bindPipeline(vk::PipelineBindPoint::eCompute, compute_pipeline_);
-          cmd_buff.bindDescriptorSets(vk::PipelineBindPoint::eCompute, compute_pipeline_layout_, 0, {compute_ds_}, {});
-          cmd_buff.dispatch(ParticleSystem::kParticleCount / 256, 1, 1);
-        })
-        .build()
-        .or_panic();
+    // ImGui texture
+    {
+      auto pdev_props   = device().physical_device().getProperties();
+      auto sampler_info = vk::SamplerCreateInfo{
+          .magFilter        = vk::Filter::eLinear,
+          .minFilter        = vk::Filter::eLinear,
+          .mipmapMode       = vk::SamplerMipmapMode::eLinear,
+          .addressModeU     = vk::SamplerAddressMode::eRepeat,
+          .addressModeV     = vk::SamplerAddressMode::eRepeat,
+          .addressModeW     = vk::SamplerAddressMode::eRepeat,
+          .mipLodBias       = 0.0F,
+          .anisotropyEnable = vk::True,
+          .maxAnisotropy    = pdev_props.limits.maxSamplerAnisotropy,
+          .compareEnable    = vk::False,
+          .compareOp        = vk::CompareOp::eAlways,
+          .minLod           = 0.F,
+          .maxLod           = vk::LodClampNone,
+      };
+      viewport_.txt_sampler_ =
+          vkren::Result(device().vk().createSampler(sampler_info)).or_panic("Could not create the sampler");
+    }
 
-    render_graph().emplace_final_pass_storage_buffer_dependency(ssbo_handle_);
+    // Render graph setup
+    {
+      // Pass #1: Compute pass that updates particles
+      render_graph()
+          .compute_pass_builder()
+          .with_shader_storage(ssbo_handle_)
+          .on_emit([this](vkren::Device&, vk::CommandBuffer& cmd_buff) {
+            cmd_buff.bindPipeline(vk::PipelineBindPoint::eCompute, compute_pipeline_);
+            cmd_buff.bindDescriptorSets(vk::PipelineBindPoint::eCompute, compute_pipeline_layout_, 0, {compute_ds_},
+                                        {});
+            cmd_buff.dispatch(ParticleSystem::kParticleCount / 256, 1, 1);
+          })
+          .build()
+          .or_panic();
+
+      // Pass #2: Render pass that draws particles into a texture
+      auto msaa_color_attachment = render_graph().create_color_attachment(device(), kViewportWidth, kViewportHeight,
+                                                                          false, swap_chain().msaa_sample_count());
+      viewport_.color_attachment =
+          render_graph().create_color_attachment(device(), kViewportWidth, kViewportHeight, true);
+
+      viewport_.render_pass =
+          render_graph()
+              .render_pass_builder(swap_chain().msaa_sample_count())
+              .with_msaa_color_attachment(msaa_color_attachment, viewport_.color_attachment)
+              .on_emit([this](vkren::Device&, vk::CommandBuffer& cmd) {
+                cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
+                cmd.bindVertexBuffers(0, {render_graph().shader_storage_buffer(ssbo_handle_).buffer.vk_buffer()}, {0});
+                cmd.draw(ParticleSystem::kParticleCount, 1, 0, 0);
+              })
+
+              // Wait for particles until they are ready
+              .with_buffer_dependency(ssbo_handle_)
+
+              .build(kViewportWidth, kViewportHeight)
+              .or_panic("Could not create render pass");
+
+      // Pass #3: Final pass that renders imgui along with the viewport texture
+
+      // Wait for the viewport texture until it's ready
+      render_graph().emplace_final_pass_dependency(viewport_.color_attachment);
+    }
+
+    viewport_.imgui_txt_ds_ = ImGui_ImplVulkan_AddTexture(
+        static_cast<VkSampler>(vk::Sampler{viewport_.txt_sampler_}),
+        static_cast<VkImageView>(vk::ImageView{render_graph().attachment(viewport_.color_attachment).view}),
+        static_cast<VkImageLayout>(vk::ImageLayout::eShaderReadOnlyOptimal));
   }
 
   void on_process(float delta) override {
@@ -148,11 +190,14 @@ class ComputeShaderApplication : public vkren::VulkanApplication {
 
   void on_frame_prepare_sync(Duration /*delta*/) override { ubo_gpu_.sync(ubo_cpu_); }
 
-  void on_record_graphics(vk::CommandBuffer cmd, uint32_t) override {
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
-    cmd.bindVertexBuffers(0, {render_graph().shader_storage_buffer(ssbo_handle_).buffer.vk_buffer()}, {0});
-    cmd.draw(ParticleSystem::kParticleCount, 1, 0, 0);
+  void on_imgui() override {
+    ImGui::Begin("Viewport");
+    ImGui::Text("FPS: %d", fps());
+    ImGui::Image(viewport_.imgui_txt_ds_, ImVec2(kViewportWidth, kViewportHeight));
+    ImGui::End();
   }
+
+  void on_destroy() override { ImGui_ImplVulkan_RemoveTexture(viewport_.imgui_txt_ds_); }
 };
 
 int main() {
@@ -167,7 +212,9 @@ int main() {
   System::init(std::move(window_creator)).or_panic("Could not initialize Operating System API");
 
   // == Application ====================================================================================================
-  auto app = eray::vkren::VulkanApplication::create<ComputeShaderApplication>();
+  auto app = eray::vkren::VulkanApplication::create<ComputeShaderApplication>(eray::vkren::VulkanApplicationCreateInfo{
+      .vsync = false,
+  });
   app.run();
 
   // == Cleanup ========================================================================================================
