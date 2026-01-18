@@ -223,7 +223,7 @@ struct DescriptorSetBuilder {
    * @param stage_flags
    * @return DescriptorSetBuilder&
    */
-  DescriptorSetBuilder& with_binding(vk::DescriptorType type, vk::ShaderStageFlags stage_flags);
+  DescriptorSetBuilder& with_binding(vk::DescriptorType type, vk::ShaderStageFlags stage_flags, uint32_t count = 1);
 
   Result<vk::DescriptorSetLayout, Error> build_layout_only();
 

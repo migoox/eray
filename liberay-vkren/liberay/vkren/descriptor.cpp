@@ -369,11 +369,12 @@ DescriptorSetBuilder DescriptorSetBuilder::create(Device& device) {
 DescriptorSetBuilder::DescriptorSetBuilder(DescriptorSetLayoutManager& layout_manager, DescriptorAllocator& allocator)
     : _dsl_manager(&layout_manager), _allocator(&allocator) {}
 
-DescriptorSetBuilder& DescriptorSetBuilder::with_binding(vk::DescriptorType type, vk::ShaderStageFlags stage_flags) {
+DescriptorSetBuilder& DescriptorSetBuilder::with_binding(vk::DescriptorType type, vk::ShaderStageFlags stage_flags,
+                                                         uint32_t count) {
   auto binding = vk::DescriptorSetLayoutBinding{
       .binding            = _binding_count++,
       .descriptorType     = type,
-      .descriptorCount    = 1,
+      .descriptorCount    = count,
       .stageFlags         = stage_flags,
       .pImmutableSamplers = nullptr,
   };
