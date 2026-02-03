@@ -1,5 +1,6 @@
 #pragma once
 
+#include <liberay/util/memory_region.hpp>
 #include <liberay/vkren/buffer.hpp>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/image.hpp>
@@ -10,8 +11,6 @@
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan_structs.hpp>
-
-#include "liberay/util/memory_region.hpp"
 
 namespace eray::vkren {
 
@@ -77,6 +76,8 @@ struct ShaderStorageDependency {
   vk::ImageLayout layout;
 };
 
+class RenderGraph;
+
 struct RenderPass {
   vk::Extent2D extent;
   std::vector<RenderPassAttachmentDependency> attachment_dependencies;
@@ -90,12 +91,12 @@ struct RenderPass {
   std::optional<RenderPassAttachmentImageInfo> depth_attachment                     = std::nullopt;
   std::optional<RenderPassAttachmentImageInfo> stencil_attachment                   = std::nullopt;
   std::function<void(Device& device, vk::CommandBuffer& cmd_buff)> on_cmd_emit_func = [](auto&, auto&) {};
+  std::function<void(const RenderGraph& render_graph, vk::CommandBuffer& cmd_buff)> on_cmd_emit_func2 = [](auto&,
+                                                                                                           auto&) {};
 
   bool on_request_only = false;
   bool requested       = false;
 };
-
-class RenderGraph;
 
 class RenderPassBuilder {
  public:
@@ -120,7 +121,7 @@ class RenderPassBuilder {
       vk::AccessFlagBits2 access_mask = vk::AccessFlagBits2::eShaderStorageRead,
       vk::ImageLayout layout          = vk::ImageLayout::eReadOnlyOptimal);
 
-  RenderPassBuilder& with_buffer_dependency(ShaderStorageHandle handle,
+  RenderPassBuilder& with_buffer_dependency(ShaderStorageHandle handle, vk::PipelineStageFlags2 stage_mask,
                                             vk::AccessFlagBits2 access_mask = vk::AccessFlagBits2::eShaderStorageRead);
 
   RenderPassBuilder& with_color_attachment(RenderPassAttachmentHandle handle,
@@ -145,6 +146,8 @@ class RenderPassBuilder {
   RenderPassBuilder& run_on_request_only();
 
   RenderPassBuilder& on_emit(const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func);
+  RenderPassBuilder& on_emit(
+      const std::function<void(const RenderGraph& render_graph, vk::CommandBuffer& cmd_buff)>& emit_func);
 
   /**
    * @brief Builds the render pass.
@@ -169,6 +172,8 @@ struct ComputePass {
   std::vector<ShaderStorageHandle> shader_storage;
 
   std::function<void(Device& device, vk::CommandBuffer& cmd_buff)> on_cmd_emit_func = [](auto&, auto&) {};
+  std::function<void(const RenderGraph& render_graph, vk::CommandBuffer& cmd_buff)> on_cmd_emit_func2 = [](auto&,
+                                                                                                           auto&) {};
 
   bool on_request_only = false;
   bool requested       = false;
@@ -203,6 +208,8 @@ class ComputePassBuilder {
   ComputePassBuilder& run_on_request_only();
 
   ComputePassBuilder& on_emit(const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func);
+  ComputePassBuilder& on_emit(
+      const std::function<void(const RenderGraph& device, vk::CommandBuffer& cmd_buff)>& emit_func);
 
   /**
    * @brief Builds the render pass.
@@ -326,6 +333,10 @@ class RenderGraph {
   const ComputePass& compute_pass(ComputePassHandle handle) const;
 
   void request_pass(std::variant<ComputePassHandle, RenderPassHandle> handle);
+
+  vk::BufferMemoryBarrier2 create_dependency_storage_buffer_barrier(ShaderStorageHandle handle,
+                                                                    vk::PipelineStageFlags2 dst_stage_mask,
+                                                                    vk::AccessFlags2 access_mask) const;
 
  private:
   friend RenderPassBuilder;

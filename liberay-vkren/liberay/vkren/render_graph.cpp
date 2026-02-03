@@ -43,10 +43,11 @@ RenderPassBuilder& RenderPassBuilder::with_image_dependency(ShaderStorageHandle 
 }
 
 RenderPassBuilder& RenderPassBuilder::with_buffer_dependency(ShaderStorageHandle handle,
+                                                             vk::PipelineStageFlags2 stage_mask,
                                                              vk::AccessFlagBits2 access_mask) {
   render_pass_.shader_storage_dependencies.emplace_back(ShaderStorageDependency{
       .handle      = handle,
-      .stage_mask  = vk::PipelineStageFlagBits2::eNone,
+      .stage_mask  = stage_mask,
       .access_mask = access_mask,
       .layout      = vk::ImageLayout::eUndefined,
   });
@@ -150,6 +151,12 @@ RenderPassBuilder& RenderPassBuilder::on_emit(
   return *this;
 }
 
+RenderPassBuilder& RenderPassBuilder::on_emit(
+    const std::function<void(const RenderGraph& render_graph, vk::CommandBuffer& cmd_buff)>& emit_func) {
+  render_pass_.on_cmd_emit_func2 = emit_func;
+  return *this;
+}
+
 Result<ComputePassHandle, Error> ComputePassBuilder::build() {
   auto handle   = render_graph_->emplace_compute_pass(std::move(compute_pass_));
   compute_pass_ = ComputePass{};
@@ -232,7 +239,7 @@ ComputePassBuilder& ComputePassBuilder::with_buffer_dependency(ShaderStorageHand
                                                                vk::AccessFlagBits2 access_mask) {
   compute_pass_.shader_storage_dependencies.emplace_back(ShaderStorageDependency{
       .handle      = handle,
-      .stage_mask  = vk::PipelineStageFlagBits2::eNone,
+      .stage_mask  = vk::PipelineStageFlagBits2::eComputeShader,
       .access_mask = access_mask,
       .layout      = vk::ImageLayout::eUndefined,
   });
@@ -252,6 +259,12 @@ ComputePassBuilder& ComputePassBuilder::run_on_request_only() {
 ComputePassBuilder& ComputePassBuilder::on_emit(
     const std::function<void(Device& device, vk::CommandBuffer& cmd_buff)>& emit_func) {
   compute_pass_.on_cmd_emit_func = emit_func;
+  return *this;
+}
+
+ComputePassBuilder& ComputePassBuilder::on_emit(
+    const std::function<void(const RenderGraph& device, vk::CommandBuffer& cmd_buff)>& emit_func) {
+  compute_pass_.on_cmd_emit_func2 = emit_func;
   return *this;
 }
 
@@ -623,6 +636,25 @@ RenderPassAttachmentImage& RenderGraph::attachment(RenderPassAttachmentHandle ha
   };
 }
 
+vk::BufferMemoryBarrier2 RenderGraph::create_dependency_storage_buffer_barrier(ShaderStorageHandle handle,
+                                                                               vk::PipelineStageFlags2 dst_stage_mask,
+                                                                               vk::AccessFlags2 access_mask) const {
+  assert(handle.type() != ShaderStorageType::Image);
+  const auto& buffer_info = shader_storage_buffer(handle);
+
+  return vk::BufferMemoryBarrier2{
+      .srcStageMask        = buffer_info.src_stage_mask,
+      .srcAccessMask       = buffer_info.src_access_mask,
+      .dstStageMask        = dst_stage_mask,
+      .dstAccessMask       = access_mask,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .buffer              = buffer_info.buffer.vk_buffer(),  //
+      .offset              = 0,
+      .size                = buffer_info.buffer.size_bytes,
+  };
+}
+
 void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
   if (passes_.empty()) {
     return;
@@ -680,18 +712,8 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
       return;
     }
 
-    auto& buffer_info = shader_storage_buffer(dep.handle);
-    auto barrier      = vk::BufferMemoryBarrier2{
-             .srcStageMask        = buffer_info.src_stage_mask,
-             .srcAccessMask       = buffer_info.src_access_mask,
-             .dstStageMask        = vk::PipelineStageFlagBits2::eComputeShader,
-             .dstAccessMask       = dep.access_mask,
-             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-             .buffer              = buffer_info.buffer.vk_buffer(),  //
-             .offset              = 0,
-             .size                = buffer_info.buffer.size_bytes,
-    };
+    auto& buffer_info           = shader_storage_buffer(dep.handle);
+    auto barrier                = create_dependency_storage_buffer_barrier(dep.handle, dep.stage_mask, dep.access_mask);
     buffer_info.src_stage_mask  = vk::PipelineStageFlagBits2::eComputeShader;
     buffer_info.src_access_mask = dep.access_mask;
 
@@ -1025,6 +1047,7 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
                            });
 
       rp.on_cmd_emit_func(device, cmd_buff);
+      rp.on_cmd_emit_func2(*this, cmd_buff);
       cmd_buff.endRendering();
     } else {
       const auto& cp = std::get<ComputePass>(pass);
@@ -1038,6 +1061,7 @@ void RenderGraph::emit(Device& device, vk::CommandBuffer& cmd_buff) {
           .pImageMemoryBarriers     = image_memory_barriers.data(),
       });
       cp.on_cmd_emit_func(device, cmd_buff);
+      cp.on_cmd_emit_func2(*this, cmd_buff);
     }
   }
 
