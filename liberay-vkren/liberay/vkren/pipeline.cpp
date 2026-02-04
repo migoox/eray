@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/pipeline.hpp>
 #include <liberay/vkren/render_graph.hpp>
@@ -590,6 +592,45 @@ Result<Pipeline, Error> ComputePipelineBuilder::build(const Device& device) {
             .vk_code = err,
         };
       });
+}
+
+Result<Pipelines, Error> ComputePipelineBuilder::build_for_each_shader(
+    const Device& device, std::span<std::pair<vk::ShaderModule, const char*>> shaders) {
+  Pipelines pipelines;
+  if (auto pl = device->createPipelineLayout(_pipeline_layout); !pl) {
+    return std::unexpected(Error{
+        .msg     = "Compute Pipeline creation failure",
+        .code    = ErrorCode::VulkanObjectCreationFailure{},
+        .vk_code = pl.error(),
+    });
+  } else {  // NOLINT
+    pipelines.layout = std::move(pl.value());
+  }
+
+  for (const auto& shader : shaders) {
+    _shader_stage = vk::PipelineShaderStageCreateInfo{
+        .stage  = vk::ShaderStageFlagBits::eCompute,
+        .module = shader.first,
+        .pName  = shader.second,
+    };
+
+    auto pipeline_info = vk::ComputePipelineCreateInfo{
+        .stage  = _shader_stage,
+        .layout = pipelines.layout,
+    };
+
+    if (auto result = device->createComputePipeline(nullptr, pipeline_info); !result) {
+      return std::unexpected(Error{
+          .msg     = "Compute Pipeline creation failure",
+          .code    = ErrorCode::VulkanObjectCreationFailure{},
+          .vk_code = result.error(),
+      });
+    } else {  // NOLINT
+      pipelines.pipeline.push_back(std::move(*result));
+    }
+  }
+
+  return pipelines;
 }
 
 }  // namespace eray::vkren

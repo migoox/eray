@@ -16,6 +16,11 @@ struct Pipeline {
   vk::raii::PipelineLayout layout = nullptr;
 };
 
+struct Pipelines {
+  std::vector<vk::raii::Pipeline> pipeline;
+  vk::raii::PipelineLayout layout = nullptr;
+};
+
 struct GraphicsPipelineBuilder {
   GraphicsPipelineBuilder() = delete;
   static GraphicsPipelineBuilder create(const SwapChain& swap_chain);
@@ -181,6 +186,8 @@ struct ComputePipelineBuilder {
   ComputePipelineBuilder& with_push_constant_ranges(std::span<vk::PushConstantRange> push_constant_ranges);
 
   Result<Pipeline, Error> build(const Device& device);
+  Result<Pipelines, Error> build_for_each_shader(const Device& device,
+                                                 std::span<std::pair<vk::ShaderModule, const char*>> shaders);
 
   static constexpr util::zstring_view kDefaultComputeShaderEntryPoint = "mainComp";
 
