@@ -161,11 +161,11 @@ Result<BufferResource, Error> BufferResource::create_staging_buffer(Device& devi
 }
 
 Result<PersistentlyMappedBufferResource, Error> BufferResource::persistently_mapped_staging_buffer(
-    Device& device, vk::DeviceSize size_bytes) {
+    Device& device, vk::DeviceSize size_bytes, vk::BufferUsageFlags usage) {
   auto buf_create_info = vk::BufferCreateInfo{
       .sType = vk::StructureType::eBufferCreateInfo,
       .size  = size_bytes,
-      .usage = vk::BufferUsageFlagBits::eTransferSrc,
+      .usage = usage,
   };
 
   VmaAllocationCreateInfo alloc_create_info = {};

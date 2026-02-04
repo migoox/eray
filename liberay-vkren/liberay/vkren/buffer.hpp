@@ -125,7 +125,7 @@ struct BufferResource {
                                                                            const util::MemoryRegion& src_region);
 
   [[nodiscard]] static Result<PersistentlyMappedBufferResource, Error> persistently_mapped_staging_buffer(
-      Device& device, vk::DeviceSize size_bytes);
+      Device& device, vk::DeviceSize size_bytes, vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eTransferSrc);
 
   /**
    * @brief Creates a gpu local buffer, e.g. for vertex or index buffer.
