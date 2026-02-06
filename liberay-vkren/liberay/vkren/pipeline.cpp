@@ -1,5 +1,3 @@
-#include <unistd.h>
-
 #include <liberay/vkren/error.hpp>
 #include <liberay/vkren/pipeline.hpp>
 #include <liberay/vkren/render_graph.hpp>
