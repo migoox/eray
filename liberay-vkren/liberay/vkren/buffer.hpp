@@ -186,6 +186,17 @@ struct BufferResource {
   Result<void, Error> write_via_staging_buffer(const util::MemoryRegion& src_region, vk::DeviceSize offset = 0) const;
 
   /**
+   * @brief Uses provided staging buffer to fill the buffer.
+   * This function blocks the CPU until the write is ready.
+   *
+   * @param offset Represents the destination (GPU memory) offset. Zero by default.
+   * @param src_region
+   * @return Result<void, Error>
+   */
+  Result<void, Error> write_via_staging_buffer(BufferResource& staging_buffer, const util::MemoryRegion& src_region,
+                                               vk::DeviceSize offset = 0) const;
+
+  /**
    * @brief Fills the buffer. If the buffer is not `mappable` it will call `fill_via_staging_buffer()`.
    * This function blocks the CPU until the write is ready.
    *

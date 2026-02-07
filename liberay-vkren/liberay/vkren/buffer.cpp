@@ -291,6 +291,23 @@ Result<void, Error> BufferResource::write_via_staging_buffer(const util::MemoryR
   return {};
 }
 
+Result<void, Error> BufferResource::write_via_staging_buffer(BufferResource& staging_buffer,
+                                                             const util::MemoryRegion& src_region,
+                                                             vk::DeviceSize offset) const {
+  assert(offset < size_bytes && "Offset exceeds the buffer size");
+  assert(src_region.size_bytes() <= size_bytes - offset && "Region size exceeds available space in the buffer");
+
+  vmaCopyMemoryToAllocation(_p_device->vma_alloc_manager().allocator(), src_region.data(),
+                            staging_buffer._buffer._allocation, 0, src_region.size_bytes());
+
+  auto cmd_cpy_buff = _p_device->begin_single_time_commands();
+  cmd_cpy_buff.copyBuffer(staging_buffer._buffer._vk_handle, _buffer._vk_handle,
+                          vk::BufferCopy(0, offset, src_region.size_bytes()));
+  _p_device->end_single_time_commands(cmd_cpy_buff);
+
+  return {};
+}
+
 Result<BufferResource, Error> BufferResource::create_uniform_buffer(Device& device, vk::DeviceSize size_bytes) {
   vk::BufferCreateInfo buf_create_info = {
       .sType       = vk::StructureType::eBufferCreateInfo,
