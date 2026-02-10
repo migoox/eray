@@ -280,9 +280,10 @@ RenderPassAttachmentHandle RenderGraph::create_color_attachment(Device& device, 
   auto aspect = vk::ImageAspectFlagBits::eColor;
 
   if (!device.is_format_supported(format, vk::FormatFeatureFlagBits::eColorAttachment)) {
-    util::Logger::err("Requested format {} is not supported. Using default format", vk::to_string(format));
+    util::Logger::err("Requested format {} is not supported. Using default format (B8G8R8A8Srgb)",
+                      vk::to_string(format));
+    format = vk::Format::eB8G8R8A8Srgb;
   }
-  format   = vk::Format::eB8G8R8A8Srgb;
   auto img = ImageResource::create_attachment_image(device, ImageDescription::image2d_desc(format, width, height),
                                                     usage, aspect, samples)
                  .or_panic("Could not create image attachment");
