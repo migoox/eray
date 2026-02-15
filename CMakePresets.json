@@ -22,12 +22,17 @@
       "name": "linux-gcc-x64-release",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "generator": "Ninja",
-      "inherits": ["dev-options"],
+      "inherits": [ "dev-options" ],
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_C_COMPILER": "gcc",
         "CMAKE_CXX_COMPILER": "g++",
         "PROJ_CXX_FLAGS": "-O3;-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=2;-D_GLIBCXX_ASSERTIONS=1;-fstack-protector-strong;-fcf-protection=full;-Wall;-Wextra;-Wpedantic;-Wsign-conversion;-Wcast-qual;-Wformat=2;-Wundef;-Werror=switch;-Wshadow;-Wcast-align;-Wunused;-Wnull-dereference;-Wdouble-promotion;-Wimplicit-fallthrough;-Wextra-semi;-Woverloaded-virtual;-Wnon-virtual-dtor;-Wold-style-cast;-Werror=missing-field-initializers"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
       }
     },
     {
@@ -40,6 +45,11 @@
         "CMAKE_C_COMPILER": "gcc",
         "CMAKE_CXX_COMPILER": "g++",
         "PROJ_CXX_FLAGS": "-O0;-g3;-ggdb;-fno-omit-frame-pointer;-fno-inline;-D_GLIBCXX_ASSERTIONS=1;-fstack-protector-strong;-fcf-protection=full;-Wall;-Wextra;-Wpedantic;-Wconversion;-Wsign-conversion;-Wcast-qual;-Wformat=2;-Wundef;-Werror=float-equal;-Werror=switch;-Wshadow;-Wcast-align;-Wunused;-Wnull-dereference;-Wdouble-promotion;-Wimplicit-fallthrough;-Wextra-semi;-Woverloaded-virtual;-Wnon-virtual-dtor;-Wold-style-cast;-Werror=missing-field-initializers"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
       }
     },
     {
@@ -50,6 +60,11 @@
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
       }
     },
     {
@@ -60,6 +75,11 @@
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
       }
     },
     {
@@ -71,6 +91,11 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_LINKER": "link.exe"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
       }
     },
     {
@@ -84,6 +109,11 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_LINKER": "link.exe"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
       }
     },
     {
@@ -93,6 +123,11 @@
       "inherits": ["dev-options"],
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
       }
     },
     {
@@ -104,6 +139,11 @@
         "CMAKE_CONFIGURATION_TYPES": "Debug",
         "PROJ_CXX_FLAGS": "/Od;/Zi;/W3;/WX;/analyze;/permissive-;/EHsc;/sdl",
         "PROJ_EXE_LINKER_FLAGS": "/machine:x64"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
       }
     }
   ],
