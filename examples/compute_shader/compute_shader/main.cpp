@@ -164,7 +164,8 @@ class ComputeShaderApplication : public vkren::VulkanApplication {
               })
 
               // Wait for particles until they are ready
-              .with_buffer_dependency(ssbo_handle_)
+              .with_buffer_dependency(
+                  ssbo_handle_, vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eVertexShader)
 
               .build(kViewportWidth, kViewportHeight)
               .or_panic("Could not create render pass");
