@@ -15,6 +15,7 @@ class MemoryRegion {
 
   MemoryRegion() = delete;
   MemoryRegion(const_pointer data, size_type size_bytes) : data_(data), size_bytes_(size_bytes) {}
+  MemoryRegion(const_pointer data, size_type size_bytes, size_type offset_bytes) : data_(data), size_bytes_(size_bytes), offset_bytes_(offset_bytes) {}
 
   size_type size_bytes() const { return size_bytes_; }
   const_pointer data() const { return data_; }
@@ -22,6 +23,7 @@ class MemoryRegion {
  private:
   const_pointer data_{nullptr};
   size_type size_bytes_{0U};
+  size_type offset_bytes_{0U};
 };
 
 }  // namespace eray::util
