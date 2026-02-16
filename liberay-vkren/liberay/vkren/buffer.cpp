@@ -175,7 +175,7 @@ Result<PersistentlyMappedBufferResource, Error> BufferResource::persistently_map
   VmaAllocationInfo alloc_info;
   auto buff_opt = device.vma_alloc_manager().create_buffer(buf_create_info, alloc_create_info, alloc_info);
   if (!buff_opt) {
-    std::unexpected(buff_opt.error());
+    return std::unexpected(buff_opt.error());
   }
 
   if (!alloc_info.pMappedData) {
