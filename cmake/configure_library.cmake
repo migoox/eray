@@ -4,12 +4,8 @@ function(configure_library)
     # Parse arguments
     set(options HEADER_ONLY)
     set(oneValueArgs NAME)
-    set(multiValueArgs DEPS_PUBLIC INCLUDE_DIRS COMPILE_DEFINITIONS)
+    set(multiValueArgs DEPS_PUBLIC DEPS_SYSTEM INCLUDE_DIRS COMPILE_DEFINITIONS)
     cmake_parse_arguments(ARGS "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-
-    cmake_minimum_required(VERSION 3.28 FATAL_ERROR)
-
-    set(CMAKE_CXX_STANDARD 23)
 
     message(STATUS "Configuring " ${PROJECT_NAME})
     list(APPEND CMAKE_MESSAGE_INDENT "  [${PROJECT_NAME}] ")
@@ -38,6 +34,7 @@ function(configure_library)
         endif()
         message(STATUS "Requested libraries: ${DEPS_PUBLIC}")
         target_link_libraries(${PROJECT_NAME} INTERFACE ${DEPS_PUBLIC})
+        target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_23)
 
         # Compile definitions
         if(ARGS_COMPILE_DEFINITIONS)
@@ -54,13 +51,19 @@ function(configure_library)
             )
         endif()
     else()
-        file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/liberay/*.cpp")
+        file(GLOB_RECURSE SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/liberay/*.cpp"
+        )
 
-        if (NOT SOURCES)
-            message(FATAL_ERROR "No source files detected for target: ${PROJECT_NAME}. If it's header-only library, consider using HEADER_ONLY option")
-        endif()
+        file(GLOB_RECURSE HEADERS
+            "${CMAKE_CURRENT_SOURCE_DIR}/liberay/*.hpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/liberay/*.h"
+        )
 
-        add_library(${PROJECT_NAME} ${SOURCES})
+        add_library(${PROJECT_NAME}
+            ${SOURCES}
+            ${HEADERS}
+        )
         
         if(USE_SYSTEM_INCLUDE)
             target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC 
@@ -97,10 +100,10 @@ function(configure_library)
             target_compile_definitions(${PROJECT_NAME} PUBLIC ${ARGS_COMPILE_DEFINITIONS})
         endif()
 
-
         # Compiler and linker
         target_compile_options(${PROJECT_NAME} PRIVATE ${PROJ_CXX_FLAGS})
         target_link_options(${PROJECT_NAME} PRIVATE ${PROJ_SHARED_LINKER_FLAGS})
+        target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_23)
     endif()
 
     # Tests configuration

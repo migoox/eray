@@ -5,12 +5,14 @@
 #include <cstddef>
 #include <liberay/vkren/common.hpp>
 #include <liberay/vkren/image_description.hpp>
-#include <liberay/vkren/resource.hpp>
+#include <liberay/vkren/gpu_resources.hpp>
 #include <liberay/vkren/vma_object.hpp>
 #include <unordered_set>
 #include <variant>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_handles.hpp>
+#include <liberay/vkren/handle.hpp>
+#include <liberay/vkren/slot_map.hpp>
 
 namespace eray::vkren {
 
@@ -60,61 +62,9 @@ class ResourceManager {
   static Result<ResourceManager, Error> create(vk::PhysicalDevice physical_device, vk::Device device,
                                                vk::Instance instance);
 
-  [[nodiscard]] Result<BufferHandle, Error> create_buffer(const vk::BufferCreateInfo& buffer_create_info,
-                                                          const VmaAllocationCreateInfo& alloc_create_info,
-                                                          VmaAllocationInfo& out_alloc_info) noexcept;
+  // === Buffers managemenet ===
 
-  [[nodiscard]] Result<BufferHandle, Error> create_buffer(const vk::BufferCreateInfo& buffer_create_info,
-                                                          const VmaAllocationCreateInfo& alloc_create_info) noexcept;
-
-  [[nodiscard]] Result<ImageHandle, Error> create_image(const vk::ImageCreateInfo& image_create_info,
-                                                        const VmaAllocationCreateInfo& alloc_create_info,
-                                                        VmaAllocationInfo& out_alloc_info) noexcept;
-
-  [[nodiscard]] Result<ImageHandle, Error> create_image(const vk::ImageCreateInfo& image_create_info,
-                                                        const VmaAllocationCreateInfo& alloc_create_info) noexcept;
-
-  /**
-   * @brief A "staging" buffer than you want to map and fill from CPU code, then use as a source of transfer to some GPU
-   * resource.
-   *
-   * @param device
-   * @param size_bytes
-   * @return Result<Buffer, Error>
-   */
-  [[nodiscard]] Result<BufferHandle, Error> create_staging_buffer(vk::Device device,
-                                                                  const util::MemoryRegion& src_region);
-
-  /**
-   * @brief Creates a gpu local buffer, e.g. for vertex or index buffer.
-   *
-   * @param device
-   * @param size_bytes
-   * @param usage
-   * @return Result<Buffer, Error>
-   */
-  [[nodiscard]] Result<BufferHandle, Error> create_gpu_local_buffer(vk::Device device, vk::DeviceSize size_bytes,
-                                                                    vk::BufferUsageFlags usage);
-
-  [[nodiscard]] Result<BufferHandle, Error> create_index_buffer(vk::Device device, vk::DeviceSize size_bytes) {
-    return create_gpu_local_buffer(device, size_bytes, vk::BufferUsageFlagBits::eIndexBuffer);
-  }
-
-  [[nodiscard]] Result<BufferHandle, Error> create_vertex_buffer(vk::Device device, vk::DeviceSize size_bytes) {
-    return create_gpu_local_buffer(device, size_bytes, vk::BufferUsageFlagBits::eVertexBuffer);
-  }
-
-  /**
-   * @brief For resources that you frequently write on CPU via mapped pointer and frequently read on GPU e.g. uniform
-   * buffer (also called "dynamic"). This buffer might not be mappable, to upload data safely use `write()`.
-   *
-   * @return Result<Buffer, Error>
-   */
-  [[nodiscard]] Result<BufferHandle, Error> create_uniform_buffer(vk::Device device, vk::DeviceSize size_bytes);
-
-  [[nodiscard]] Result<BufferHandle, Error> create_storage_buffer(vk::Device device, vk::DeviceSize size_bytes) {
-    return create_gpu_local_buffer(device, size_bytes, vk::BufferUsageFlagBits::eStorageBuffer);
-  }
+  [[nodiscard]] Result<BufferHandle, Error> create_buffer(const BufferCreateInfo& create_info) noexcept;
 
   /**
    * @brief Creates a temporary staging buffer and uses it to fill the buffer.
@@ -170,6 +120,10 @@ class ResourceManager {
                                                          vk::DeviceSize range = vk::WholeSize) const;
 
   void delete_buffer(BufferHandle buffer);
+
+  // === Images managemenet ===
+
+  [[nodiscard]] Result<ImageHandle, Error> create_image(const BufferCreateInfo& create_info) noexcept;
 
   [[nodiscard]] Result<ImageHandle, Error> create_attachment_image(
       vk::Device device, const ImageDescription& desc, vk::ImageUsageFlags usage, vk::ImageAspectFlags aspect,

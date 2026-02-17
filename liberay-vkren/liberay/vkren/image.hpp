@@ -24,7 +24,7 @@ struct ImageResource {
   vk::ImageAspectFlags aspect;
   vk::ImageUsageFlags usage;
   vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1;
-
+	
   /**
    * @brief Any resources that you frequently write and read on GPU, e.g. images used as color attachments (aka "render
    * targets"), depth-stencil attachments, images/buffers used as storage image/buffer (aka "Unordered Access View
