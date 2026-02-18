@@ -65,6 +65,9 @@ Result<void, Error> ResourceManager::buffer_write(BufferHandle dst, void* src_da
   const auto* dst_entry = buffer_pool_.get_entry(dst);
 
   // == Bounds checking ==
+  if (dst_entry == nullptr) {
+    util::panic("Invalid buffer handle");
+  }
   if (dst_offset_bytes >= dst_entry->size_bytes) {
     util::panic("dst_offset_bytes exceeds or equals the source buffer size");
   }
@@ -111,7 +114,7 @@ Result<void, Error> ResourceManager::buffer_write(BufferHandle dst, void* src_da
       .dstOffset = dst_offset_bytes,
       .size      = src_size_bytes,
   };
-  device_->immediate_command_submit([&](VkCommandBuffer cmd_buff) {
+  device_->immediate_command_submit([&staging_buffer, &dst_entry, &cpy_info](VkCommandBuffer cmd_buff) {
     vkCmdCopyBuffer(cmd_buff, staging_buffer.buffer, dst_entry->buffer, 1, &cpy_info);
   });
   vmaDestroyBuffer(allocator_, staging_buffer.buffer, staging_buffer.allocation);
@@ -122,16 +125,13 @@ void ResourceManager::buffer_cpy(BufferHandle dst, BufferHandle src, VkDeviceSiz
   const auto* dst_entry = buffer_pool_.get_entry(dst);
   const auto* src_entry = buffer_pool_.get_entry(src);
 
-  auto dst_buffer = dst_entry->buffer;
-  auto src_buffer = src_entry->buffer;
-
-  VkBufferCopy cpy_info = {
-      .srcOffset = src_offset_bytes,
-      .dstOffset = dst_offset_bytes,
-      .size      = size_bytes,
-  };
-
   // == Bounds checking ==
+  if (dst_entry == nullptr) {
+    util::panic("Invalid buffer handle");
+  }
+  if (src_entry == nullptr) {
+    util::panic("Invalid buffer handle");
+  }
   if (src_offset_bytes >= src_entry->size_bytes) {
     util::panic("src_offset_bytes exceeds or equals the source buffer size");
   }
@@ -152,6 +152,9 @@ void ResourceManager::buffer_cpy(BufferHandle dst, BufferHandle src, VkDeviceSiz
   }
 
   // == Perform copy ==
+  auto dst_buffer = dst_entry->buffer;
+  auto src_buffer = src_entry->buffer;
+
   VkBufferCopy cpy_info = {
       .srcOffset = src_offset_bytes,
       .dstOffset = dst_offset_bytes,
@@ -161,8 +164,9 @@ void ResourceManager::buffer_cpy(BufferHandle dst, BufferHandle src, VkDeviceSiz
     cpy_info.size =
         src_entry->size_bytes - src_offset_bytes;  // == dst_entry->size_bytes - dst_offset_bytes, as checked above
   }
-  device_->immediate_command_submit(
-      [&](VkCommandBuffer cmd_buff) { vkCmdCopyBuffer(cmd_buff, src_buffer, dst_buffer, 1, &cpy_info); });
+  device_->immediate_command_submit([&src_buffer, &dst_buffer, &cpy_info](VkCommandBuffer cmd_buff) {
+    vkCmdCopyBuffer(cmd_buff, src_buffer, dst_buffer, 1, &cpy_info);
+  });
 }
 
 Result<void*, Error> ResourceManager::buffer_map(BufferHandle buffer) {
