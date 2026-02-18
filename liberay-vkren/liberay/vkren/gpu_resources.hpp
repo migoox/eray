@@ -87,6 +87,8 @@ struct BufferCreateInfo {
    */
   static BufferCreateInfo device_only_buffer(VkBufferUsageFlags usage, VkDeviceSize size_bytes);
 
+  static BufferCreateInfo staging_buffer(VkDeviceSize size_bytes, bool dst_transfer = false);
+
   /**
    * @note If VkBufferUsageFlags does not contain VK_BUFFER_USAGE_TRANSFER_DST_BIT, it will be automatically appended.
    * @param data

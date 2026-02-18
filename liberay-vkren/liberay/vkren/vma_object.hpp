@@ -1,28 +1,11 @@
 #pragma once
 #include <vma/vk_mem_alloc.h>
+#include <vulkan/vulkan.h>
 
 #include <liberay/util/hash_combine.hpp>
-#include <vulkan/vulkan.hpp>
 
 namespace eray::vkren {
 
-struct VmaImage {
-  vk::Image vk_image;
-  VmaAllocation allocation;
-
-  bool operator==(const VmaImage& other) const noexcept {
-    return vk_image == other.vk_image && allocation == other.allocation;
-  }
-};
-
-struct VmaBuffer {
-  vk::Buffer vk_buffer;
-  VmaAllocation allocation;
-
-  bool operator==(const VmaBuffer& other) const noexcept {
-    return vk_buffer == other.vk_buffer && allocation == other.allocation;
-  }
-};
 
 }  // namespace eray::vkren
 

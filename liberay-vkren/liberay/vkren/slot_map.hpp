@@ -18,7 +18,7 @@ class SlotMap {
 
   constexpr static uint32_t kChunkSize = 256;
 
-  THandle create_entry(const TEntry& entry) {
+  [[nodiscard]] THandle create_entry(TEntry&& entry) {
     if (free_.empty()) {
       TEntry* chunk = new TEntry[kChunkSize];
       for (size_t i = 0; i < kChunkSize; ++i) {
@@ -30,30 +30,26 @@ class SlotMap {
 
     THandle::IndexType free_index = free_.back();
     free_.pop_back();
-    entries_table_[free_index / kChunkSize][free_index % kChunkSize] = entry;
+    entries_table_[free_index / kChunkSize][free_index % kChunkSize] = std::move(entry);
     return THandle::create(free_index, versions_[free_index]);
   }
 
-  bool is_valid(THandle handle) { return handle.index() < versions_.size() && versions_[handle.index()] == handle.version(); }
+  bool is_valid(THandle handle) const {
+    return handle.index() < versions_.size() && versions_[handle.index()] == handle.version();
+  }
 
   TEntry* get_entry(THandle handle) {
-    if (handle.index() >= versions_.size() || versions_[handle.index()] != handle.version()) {
-      return nullptr;
-    }
+    assert(is_valid(handle) && "Entry does not exist!");
     return &entries_table_[handle.index() / kChunkSize][handle.index() % kChunkSize];
   }
 
   const TEntry* get_entry(THandle handle) const {
-    if (handle.index() >= versions_.size() || versions_[handle.index()] != handle.version()) {
-      return nullptr;
-    }
+    assert(is_valid(handle) && "Entry does not exist!");
     return &entries_table_[handle.index() / kChunkSize][handle.index() % kChunkSize];
   }
 
   void delete_entry(THandle handle) {
-    if (handle.index() >= versions_.size() || versions_[handle.index()] != handle.version()) {
-      return;
-    }
+    assert(is_valid(handle) && "Entry does not exist!");
     versions_[handle.index()]++;
     free_.push_back(handle.index());
   }

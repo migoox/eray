@@ -1,20 +1,22 @@
 #pragma once
 #include <vma/vk_mem_alloc.h>
+#include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
 #include <cstddef>
 #include <liberay/vkren/common.hpp>
-#include <liberay/vkren/image_description.hpp>
 #include <liberay/vkren/gpu_resources.hpp>
+#include <liberay/vkren/handle.hpp>
+#include <liberay/vkren/image_description.hpp>
+#include <liberay/vkren/slot_map.hpp>
 #include <liberay/vkren/vma_object.hpp>
 #include <unordered_set>
 #include <variant>
-#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_handles.hpp>
-#include <liberay/vkren/handle.hpp>
-#include <liberay/vkren/slot_map.hpp>
 
 namespace eray::vkren {
+
+class Device;
 
 enum class ImageType : uint8_t {
   Color,
@@ -25,22 +27,24 @@ enum class ImageType : uint8_t {
 };
 
 struct BufferResourceEntry {
-  VmaBuffer buffer;
+  VkBuffer buffer;
   VmaAllocation allocation;
-  vk::DeviceSize size_bytes;
-  vk::BufferUsageFlags usage;
+  VkDeviceSize size_bytes;
+  void* mapping = nullptr;  // nullptr if the buffer is not mapped
+  VkBufferUsageFlags usage;
+  bool mappable;
 };
 
 struct ImageResourceEntry {
   ImageDescription description;
-  vk::ImageAspectFlags aspect;
-  VmaImage image;
+  VkImageAspectFlags aspect;
+  VkImage image;
   VmaAllocation allocation;
   uint32_t mip_levels;
-  vk::ImageUsageFlags usage;
-  vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1;
+  VkImageUsageFlags usage;
+  VkImageView image_view;  // lazy, create it on demand
+  VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT;
   ImageType type;
-  vk::ImageView image_view;  // lazy, create it on demand
 };
 
 struct SamplerResourceEntry {
@@ -67,59 +71,52 @@ class ResourceManager {
   [[nodiscard]] Result<BufferHandle, Error> create_buffer(const BufferCreateInfo& create_info) noexcept;
 
   /**
-   * @brief Creates a temporary staging buffer and uses it to fill the buffer.
+   * @brief Fills the buffer (CPU->GPU). If the buffer is not mappable it will create temporary staging buffer.
    * This function blocks the CPU until the write is ready.
    *
    * @return Result<void, Error>
    */
-  Result<void, Error> buffer_write_via_staging_buffer(BufferHandle dst, const util::MemoryRegion& src_region) const;
+  Result<void, Error> buffer_write(BufferHandle dst, void* src_data, VkDeviceSize src_size_bytes,
+                                   VkDeviceSize dst_offset_bytes = 0, VkDeviceSize src_offset_bytes = 0) const;
 
   /**
-   * @brief Uses provided staging buffer to fill the buffer.
-   * This function blocks the CPU until the write is ready.
-   *
-   * @return Result<void, Error>
-   */
-  Result<void, Error> buffer_write_via_staging_buffer(BufferHandle dst, BufferHandle staging_buffer,
-                                                      const util::MemoryRegion& src_region) const;
-
-  /**
-   * @brief Fills the buffer. If the buffer is not mappable it will call `write_via_staging_buffer()`.
-   * This function blocks the CPU until the write is ready.
-   *
-   * @return Result<void, Error>
-   */
-  Result<void, Error> buffer_write(BufferHandle dst, const util::MemoryRegion& src_region) const;
-
-  /**
-   * @brief Copies data between GPU buffers.
+   * @brief Copies data between GPU buffers (GPU->GPU).
    *
    * @param buffer
    * @param offset
    */
-  void buffer_cpy(BufferHandle dst, BufferHandle src) const;
+  void buffer_cpy(BufferHandle dst, BufferHandle src, VkDeviceSize size_bytes = VK_WHOLE_SIZE,
+                  VkDeviceSize dst_offset_bytes = 0, VkDeviceSize src_offset_bytes = 0) const;
 
   /**
    * @brief Maps the buffer and returns a pointer to the mapped memory. The caller is responsible for unmapping the
    * buffer after use.
    */
-  Result<void*, Error> buffer_map(BufferHandle buffer) const;
+  Result<void*, Error> buffer_map(BufferHandle buffer);
 
   /**
    * @brief Unmaps the buffer. The caller should call this function after finishing using the mapped memory from
-   * `map()`.
+   * `buffer_map()`.
    *
    */
-  void buffer_unmap(BufferHandle buffer) const;
+  void buffer_unmap(BufferHandle buffer);
 
-  vk::DeviceSize get_buffer_size_bytes(BufferHandle buffer) const;
+  /**
+   * @brief If buffer is mapped, returns a pointer to the mapped memory (never nullptr). Otherwise, returns
+   * an error.
+   * @param buffer
+   * @return
+   */
+  Result<void*, Error> get_buffer_mapping(BufferHandle buffer) const;
 
-  vk::Buffer get_buffer_vk(BufferHandle buffer) const;
+  VkDeviceSize get_buffer_size_bytes(BufferHandle buffer) const;
 
-  vk::DescriptorBufferInfo get_buffer_descriptor_info(BufferHandle buffer, vk::DeviceSize offset = 0,
-                                                         vk::DeviceSize range = vk::WholeSize) const;
+  VkBuffer get_buffer_vk(BufferHandle buffer) const;
 
-  void delete_buffer(BufferHandle buffer);
+  VkDescriptorBufferInfo get_buffer_descriptor_info(BufferHandle buffer, VkDeviceSize offset = 0,
+                                                    VkDeviceSize range = VK_WHOLE_SIZE) const;
+
+  void destroy_buffer(BufferHandle buffer);
 
   // === Images managemenet ===
 
@@ -180,7 +177,7 @@ class ResourceManager {
   vk::Extent3D get_image_extent(ImageHandle image) const;
 
   vk::ImageSubresourceLayers get_image_subresource_layers(ImageHandle image, uint32_t mip_level = 0,
-                                                         uint32_t base_layer = 0, uint32_t layer_count = 1) const;
+                                                          uint32_t base_layer = 0, uint32_t layer_count = 1) const;
 
   vk::ImageSubresourceRange get_image_full_resource_range() const;
 
@@ -199,7 +196,11 @@ class ResourceManager {
   void destroy();
 
  private:
+  BufferResourceEntry create_temp_staging_buffer(VkDeviceSize size_bytes) const;
+
+ private:
   VmaAllocator allocator_ = nullptr;
+  Device* device_         = nullptr;
 
   SlotMap<BufferHandle, BufferResourceEntry> buffer_pool_;
   SlotMap<ImageHandle, ImageResourceEntry> image_pool_;

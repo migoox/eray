@@ -201,7 +201,7 @@ class Device {
    *
    * @param cmd_buff
    */
-  void immediate_command_submit(const std::function<void(vk::CommandBuffer)>& function) const;
+  void immediate_command_submit(const std::function<void(VkCommandBuffer)>& function) const;
 
   /**
    * @brief Non-blocking, defines a pipeline barrier.
