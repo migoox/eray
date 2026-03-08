@@ -1,8 +1,8 @@
 #pragma once
-#include <vma/vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <liberay/vkren/gpu_enum.hpp>
 
 namespace eray::vkren {
 
@@ -37,65 +37,26 @@ using SamplerHandle = GPUResourceHandle<struct SamplerTag>;
 // === Resource creation info structs ===
 
 struct BufferCreateInfo {
-  VmaAllocationCreateFlags alloc_flags{0};
-  VmaMemoryUsage mem_usage{};
+  BufferMemoryType memory_type;
   VkSharingMode sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
   VkBufferUsageFlags usage{0};
-  VkDeviceSize size_bytes   = 0;
-  VkDeviceSize offset_bytes = 0;
-  void* initial_data        = nullptr;
-  const char* name          = nullptr;
+
+  VkDeviceSize size_bytes   = 0;        // optional
+  VkDeviceSize offset_bytes = 0;        // optional
+  void* initial_data        = nullptr;  // optional
+  const char* name          = nullptr;  // optional
 
   /**
-   * @brief Creates buffer creation info with provided VMA allocation flags, memory usage and buffer usage.
+   * @brief Initializes buffer creation info with mandatory fields.
    * @param alloc_flags
    * @param mem_usage
    * @param usage
    * @param size_bytes
    */
-  static BufferCreateInfo buffer(VmaAllocationCreateFlags alloc_flags, VmaMemoryUsage mem_usage,
-                                 VkBufferUsageFlags usage, VkDeviceSize size_bytes);
+  static BufferCreateInfo create(BufferMemoryType memory_type, VkBufferUsageFlags usage, VkDeviceSize size_bytes);
 
-  /**
-   * @brief Creates buffer creation info for a mappable buffer with provided buffer usage and size. VMA flags are set to
-   * VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT and memory usage is set to VMA_MEMORY_USAGE_AUTO.
-   * @warning Only use `memcpy` to update the mapped memory if `random_access` is false (it is by default).
-   * @param usage
-   * @param size_bytes
-   * @param random_access If set to true, the buffer will be allocated with VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT.
-   */
-  static BufferCreateInfo mappable_buffer(VkBufferUsageFlags usage, VkDeviceSize size_bytes,
-                                          bool random_access = false);
-
-  /**
-   * @brief Creates buffer creation info for a persistently mapped buffer with provided buffer usage and size. VMA flags
-   * are set to VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT and memory
-   * usage is set to VMA_MEMORY_USAGE_AUTO.
-   * @warning Only use `memcpy` to update the mapped memory if `random_access` is false (it is by default).
-   * @param usage
-   * @param size_bytes
-   * @param random_access If set to true, the buffer will be allocated with VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT.
-   */
-  static BufferCreateInfo persistently_mapped_buffer(VkBufferUsageFlags usage, VkDeviceSize size_bytes,
-                                                     bool random_access = false);
-
-  /**
-   * @brief Creates buffer creation info for a device local buffer with provided buffer usage and size. VMA flags are
-   * set to 0 and memory usage is set to VMA_MEMORY_USAGE_AUTO.
-   * @param usage
-   * @param size_bytes
-   */
-  static BufferCreateInfo device_only_buffer(VkBufferUsageFlags usage, VkDeviceSize size_bytes);
-
-  static BufferCreateInfo staging_buffer(VkDeviceSize size_bytes, bool dst_transfer = false);
-
-  /**
-   * @note If VkBufferUsageFlags does not contain VK_BUFFER_USAGE_TRANSFER_DST_BIT, it will be automatically appended.
-   * @param data
-   * @param offset_bytes
-   */
   BufferCreateInfo& with_initial_data(void* data, VkDeviceSize offset_bytes = 0);
-
+  BufferCreateInfo& with_sharing_mode_concurrent();
   BufferCreateInfo& with_name(const char* name);
 };
 

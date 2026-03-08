@@ -2,6 +2,10 @@
 #include <liberay/vkren/gpu_resource_manager.hpp>
 
 namespace eray::vkren {
+Result<ResourceManager, Error> ResourceManager::create(vk::PhysicalDevice physical_device, vk::Device device,
+                                                       vk::Instance instance) {
+  return Result<ResourceManager, Error>();
+}
 
 [[nodiscard]] Result<BufferHandle, Error> ResourceManager::create_buffer(const BufferCreateInfo& create_info) noexcept {
   auto buff_create_info = VkBufferCreateInfo{
@@ -11,9 +15,33 @@ namespace eray::vkren {
       .sharingMode = create_info.sharing_mode,
   };
 
+  // TODO: think about flushing
   VmaAllocationCreateInfo alloc_create_info = {};
-  alloc_create_info.usage                   = create_info.mem_usage;
-  alloc_create_info.flags                   = create_info.alloc_flags;
+  switch (create_info.memory_type) {
+    case BufferMemoryType::DeviceOnly:
+      alloc_create_info.usage         = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+      alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      break;
+    case BufferMemoryType::DeviceUpload:
+      alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+      alloc_create_info.flags =
+          VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+      alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      break;
+    case BufferMemoryType::HostUpload:
+      alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+      alloc_create_info.flags =
+          VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+      alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      break;
+    case BufferMemoryType::HostReadback:
+      alloc_create_info.usage         = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+      alloc_create_info.flags         = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+      alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      break;
+    default:
+      util::panic("Invalid BufferMemoryType");
+  };
 
   VmaAllocationInfo alloc_info;
   VkBuffer buffer     = VK_NULL_HANDLE;
@@ -28,7 +56,7 @@ namespace eray::vkren {
     });
   }
 
-  bool persistently_mapped = (create_info.alloc_flags & VMA_ALLOCATION_CREATE_MAPPED_BIT) != 0;
+  bool persistently_mapped = (alloc_create_info.flags & VMA_ALLOCATION_CREATE_MAPPED_BIT) != 0;
   if (!alloc_info.pMappedData && persistently_mapped) {
     vmaDestroyBuffer(allocator_, buffer, alloc);
     return std::unexpected(Error{

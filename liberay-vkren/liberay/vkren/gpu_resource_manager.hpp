@@ -89,19 +89,6 @@ class ResourceManager {
                   VkDeviceSize dst_offset_bytes = 0, VkDeviceSize src_offset_bytes = 0) const;
 
   /**
-   * @brief Maps the buffer and returns a pointer to the mapped memory. The caller is responsible for unmapping the
-   * buffer after use.
-   */
-  Result<void*, Error> buffer_map(BufferHandle buffer);
-
-  /**
-   * @brief Unmaps the buffer. The caller should call this function after finishing using the mapped memory from
-   * `buffer_map()`.
-   *
-   */
-  void buffer_unmap(BufferHandle buffer);
-
-  /**
    * @brief If buffer is mapped, returns a pointer to the mapped memory (never nullptr). Otherwise, returns
    * an error.
    * @param buffer
