@@ -25,37 +25,6 @@ macro(loader_end)
 endmacro()
 
 # =============================================================================
-# GLAD
-# =============================================================================
-function(fetch_glad)
-  if(NOT TARGET glad)
-    loader_begin("GLAD")
-
-    FetchContent_Declare(
-      glad
-      GIT_REPOSITORY "https://github.com/Dav1dde/glad.git"
-      GIT_TAG "v2.0.7"
-      PATCH_COMMAND git apply --ignore-whitespace
-                    "${PATCHES_DIR}/glad.patch"
-      UPDATE_DISCONNECTED 1)
-    FetchContent_MakeAvailable(glad)
-    FetchContent_GetProperties(glad)
-
-    add_subdirectory("${glad_SOURCE_DIR}/cmake" glad_cmake)
-    glad_add_library(
-      glad
-      STATIC
-      REPRODUCIBLE
-      EXCLUDE_FROM_ALL
-      LOADER
-      API
-      gl:core=4.6)
-
-    loader_end()
-  endif()
-endfunction()
-
-# =============================================================================
 # GLFW
 # =============================================================================
 function(fetch_glfw)
@@ -92,20 +61,6 @@ endfunction()
 # ImGui
 # =============================================================================
 function(fetch_imgui)
-  if(NOT TARGET imgui)
-    loader_begin("ImGui")
-
-    FetchContent_Declare(
-      imgui
-      GIT_REPOSITORY "https://github.com/ocornut/imgui.git"
-      GIT_TAG "v1.91.1-docking"
-      PATCH_COMMAND git apply --ignore-whitespace
-                    "${PATCHES_DIR}/imgui.patch"
-      UPDATE_DISCONNECTED 1)
-    FetchContent_MakeAvailable(imgui)
-
-    loader_end()
-  endif()
 endfunction()
 
 # =============================================================================
