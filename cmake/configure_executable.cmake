@@ -1,70 +1,65 @@
 include_guard(GLOBAL)
 
-function(configure_binary)
-    # Parse arguments
-    set(options HEADER_ONLY)
-    set(oneValueArgs NAME)
-    set(multiValueArgs DEPS_PUBLIC INCLUDE_DIRS COMPILE_DEFINITIONS SHADER_TARGETS)
+function(configure_executable)
+    set(options)
+    set(oneValueArgs TARGET_NAME)
+    set(multiValueArgs
+        PUBLIC_LINK_DEPS
+        PUBLIC_INCLUDE_DIRS
+        PUBLIC_COMPILE_DEFINITIONS
+        POST_BUILD_COPY_DIRS
+    )
+
     cmake_parse_arguments(ARGS "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-    cmake_minimum_required(VERSION 3.28)
+    if(NOT ARGS_TARGET_NAME)
+        message(FATAL_ERROR "configure_executable requires TARGET_NAME")
+    endif()
 
-    project(${ARGS_NAME} CXX)
-    message(STATUS "Configuring " ${PROJECT_NAME})
+    set(target ${ARGS_TARGET_NAME})
 
-    set(CMAKE_CXX_STANDARD 23)
+    message(STATUS "Configuring executable ${target}")
+    list(APPEND CMAKE_MESSAGE_INDENT "  [${target}] ")
 
-    message(STATUS "Configuring binary ${PROJECT_NAME}")
-    list(APPEND CMAKE_MESSAGE_INDENT "  [${PROJECT_NAME}] ")
+    set(PUBLIC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/public")
 
-    # Executable target configuration
-    file(GLOB_RECURSE SOURCES 
-        "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}/*.cpp"
+    file(GLOB_RECURSE SOURCE_FILES CONFIGURE_DEPENDS
+        "${PUBLIC_SOURCE_DIR}/*.cpp"
+        "${PUBLIC_SOURCE_DIR}/*.hpp"
+        "${PUBLIC_SOURCE_DIR}/*.h"
     )
-    add_executable(${PROJECT_NAME} ${SOURCES})
-    target_link_libraries(${PROJECT_NAME} PUBLIC ${ARGS_DEPS_PUBLIC})
-    target_include_directories(${PROJECT_NAME}
-                            PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} "${CMAKE_BINARY_DIR}/generated" "${ARGS_INCLUDE_DIRS}")
-    target_compile_options(${PROJECT_NAME} PRIVATE ${PROJ_CXX_FLAGS})
-    if(BUILD_SHARED_LIBS AND PROJ_EXE_LINKER_FLAGS)
-        target_link_options(${PROJECT_NAME} PRIVATE ${PROJ_EXE_LINKER_FLAGS})
-    endif()
-    if(ARGS_COMPILE_DEFINITIONS)
-        message(STATUS "Default compile definitions: ERAY_ABS_BUILD_PATH=${CMAKE_SOURCE_DIR}")
-        message(STATUS "Requested compile definitions: ${ARGS_COMPILE_DEFINITIONS}")
-        target_compile_definitions(${PROJECT_NAME} PRIVATE
-            ${ARGS_COMPILE_DEFINITIONS}
-            ERAY_ABS_BUILD_PATH="${CMAKE_SOURCE_DIR}"
-        )
-    else()
-        message(STATUS "Default compile definitions: ERAY_ABS_BUILD_PATH=${CMAKE_SOURCE_DIR}")
-        target_compile_definitions(${PROJECT_NAME} PRIVATE
-            ERAY_ABS_BUILD_PATH="${CMAKE_SOURCE_DIR}"
-        )
+
+    add_executable(${target} ${SOURCE_FILES})
+
+    if(ARGS_PUBLIC_LINK_DEPS)
+        message(STATUS "Public link libraries dependencies: ${ARGS_PUBLIC_LINK_DEPS}")
+        target_link_libraries(${target} PUBLIC ${ARGS_PUBLIC_LINK_DEPS})
     endif()
 
-    if (ARGS_SHADER_TARGETS)
-        add_dependencies(${PROJECT_NAME} ${ARGS_SHADER_TARGETS})
+    target_include_directories(${target} PUBLIC ${PUBLIC_SOURCE_DIR})
+
+    if(ARGS_PUBLIC_INCLUDE_DIRS)
+        target_include_directories(${target} PUBLIC ${ARGS_PUBLIC_INCLUDE_DIRS})
+    endif()
+    message(STATUS "Public include directories: ${PUBLIC_SOURCE_DIR} ${ARGS_PUBLIC_INCLUDE_DIRS}")
+
+    if(ARGS_PUBLIC_COMPILE_DEFINITIONS)
+        message(STATUS "Public compile definitinos: ${ARGS_PUBLIC_COMPILE_DEFINITIONS}")
+        target_compile_definitions(${target} PUBLIC ${ARGS_PUBLIC_COMPILE_DEFINITIONS})
     endif()
 
-    # Copy assets folder to build directory
-    if(EXISTS "${PROJECT_SOURCE_DIR}/assets")
-        add_custom_target("${PROJECT_NAME}__copy_assets"
-        COMMAND ${CMAKE_COMMAND} -DASSETS_SOURCE_DIR=${PROJECT_SOURCE_DIR}/assets
-                                -DASSETS_DEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>
-                                -P ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/copy_assets.cmake
-        )
-        add_dependencies(${PROJECT_NAME} "${PROJECT_NAME}__copy_assets")
-    endif()
+    target_compile_options(${target} PRIVATE ${GLOBAL_CXX_FLAGS})
 
-    if(ARGS_SHADER_TARGETS AND EXISTS "${PROJECT_SOURCE_DIR}/shaders")
-        add_custom_target("${PROJECT_NAME}__copy_shaders"
-            COMMAND ${CMAKE_COMMAND} -DASSETS_SOURCE_DIR=${PROJECT_SOURCE_DIR}/shaders
-                                -DASSETS_DEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>
-                                -P ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/copy_assets.cmake
-        )
-        add_dependencies("${PROJECT_NAME}__copy_shaders" ${ARGS_SHADER_TARGETS})
-        add_dependencies(${PROJECT_NAME} "${PROJECT_NAME}__copy_shaders")
+    if(ARGS_POST_BUILD_COPY_DIRS)
+        foreach(DIR ${ARGS_POST_BUILD_COPY_DIRS})
+            set(ABS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${DIR}")
+            message(STATUS "Post build copy directory: ${ABS_DIR}")
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    ${ABS_DIR}
+                    "$<TARGET_FILE_DIR:${target}>/${DIR}"
+            )
+        endforeach()
     endif()
 
     list(POP_BACK CMAKE_MESSAGE_INDENT)

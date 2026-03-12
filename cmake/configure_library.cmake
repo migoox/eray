@@ -101,7 +101,7 @@ function(configure_library)
         endif()
 
         # Compiler and linker
-        target_compile_options(${PROJECT_NAME} PRIVATE ${PROJ_CXX_FLAGS})
+        target_compile_options(${PROJECT_NAME} PRIVATE ${GLOBAL_CXX_FLAGS})
         target_link_options(${PROJECT_NAME} PRIVATE ${PROJ_SHARED_LINKER_FLAGS})
         target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_23)
     endif()

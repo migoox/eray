@@ -1,0 +1,10 @@
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+find_package(Vulkan REQUIRED)
+if(NOT Vulkan_FOUND)
+    message(FATAL_ERROR "Vulkan could not be found")
+endif()
+message(STATUS "Vulkan Include Directory: ${Vulkan_INCLUDE_DIR}")
+
+add_library(vulkan INTERFACE)
+target_include_directories(vulkan SYSTEM INTERFACE ${Vulkan_INCLUDE_DIR})
+add_library(third_party::vulkan ALIAS vulkan)

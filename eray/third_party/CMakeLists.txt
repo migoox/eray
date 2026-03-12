@@ -1,6 +1,6 @@
+add_subdirectory(vulkan)
 add_subdirectory(glfw)
-add_subdirectory(google_test)
 add_subdirectory(imgui)
 add_subdirectory(nfd)
 add_subdirectory(stb_image)
-add_subdirectory(vma)
+add_subdirectory(google_test)

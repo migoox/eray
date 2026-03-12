@@ -1,10 +1,9 @@
-include(../../../cmake/CPM.cmake)
+include(CPM)
 
 CPMAddPackage(
   NAME glfw 
   GITHUB_REPOSITORY glfw/glfw
   GIT_TAG 3.4 
-  PATCHES "glfw.patch"
   SYSTEM YES
 
   OPTIONS 
@@ -13,3 +12,5 @@ CPMAddPackage(
   "GLFW_BUILD_DOCS OFF"
   "GLFW_INSTALL OFF"
 )
+
+add_library(third_party::glfw ALIAS glfw)

@@ -1,9 +1,9 @@
-include(../../../cmake/CPM.cmake)
+include(CPM)
 
 CPMAddPackage(
-  NAME googletest
+  NAME nfd 
   GITHUB_REPOSITORY btzy/nativefiledialog-extended
-  GIT_TAG 1.2.1v
+  GIT_TAG v1.3.0
   SYSTEM YES
 
   OPTIONS 
@@ -12,3 +12,5 @@ CPMAddPackage(
   # However not every DEs supports them, see https://wiki.archlinux.org/title/XDG_Desktop_Portal.
   "NFD_PORTAL ON"
 )
+
+add_library(third_party::nfd ALIAS nfd)
