@@ -22,7 +22,6 @@ function(configure_executable)
     list(APPEND CMAKE_MESSAGE_INDENT "  [${target}] ")
 
     set(PUBLIC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/public")
-
     file(GLOB_RECURSE SOURCE_FILES CONFIGURE_DEPENDS
         "${PUBLIC_SOURCE_DIR}/*.cpp"
         "${PUBLIC_SOURCE_DIR}/*.hpp"

@@ -17,6 +17,7 @@ option(ERAY_BUILD_SANDBOX "Build liberay sandbox executable" ON)
 option(ERAY_BUILD_EXAMPLES "Build liberay example executables" ON)
 option(ERAY_BUILD_VULKAN_RHI "Build vulkan Rendering Hardware Interface" ON)
 option(ERAY_BUILD_DX12_RHI "Build DirectX12 Rendering Hardware Interface" OFF) # not supported yet
+option(ERAY_BUILD_TESTS "Build tests" ON)
 
 # Feature flags
 option(ERAY_ENABLE_PROFILING "Enables profiling with tracy" OFF)
@@ -25,7 +26,9 @@ option(ERAY_ENABLE_PROFILING "Enables profiling with tracy" OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 # Include CTest in order to generate `DartConfiguration.tcl`
-include(CTest)
+if(ERAY_BUILD_TESTS)
+    include(CTest)
+endif()
 
 include(configure_executable)
 include(configure_slang_shader)
