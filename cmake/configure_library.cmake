@@ -2,7 +2,7 @@ include_guard(GLOBAL)
 
 function(configure_library)
     # Parse arguments
-    set(options SYSTEM)
+    set(options SYSTEM FORCE_NO_PCH)
     set(oneValueArgs TARGET_NAME)
     set(multiValueArgs
         PUBLIC_LINK_DEPS
@@ -95,6 +95,10 @@ function(configure_library)
     if(ARGS_PRIVATE_LINK_DEPS)
         message(STATUS "Private link libraries dependencies: ${ARGS_PRIVATE_LINK_DEPS}")
         target_link_libraries(${target} PRIVATE ${ARGS_PRIVATE_LINK_DEPS})
+    endif()
+
+    if(ERAY_GENERATE_PCH AND NOT FORCE_NO_PCH)
+        target_link_libraries(${target} PRIVATE eray_pch)
     endif()
 
     # Compile definitions

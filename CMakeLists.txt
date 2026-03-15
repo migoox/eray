@@ -10,7 +10,7 @@ project(
 option(ERAY_GENERATE_CLANGD_FILE
   "Generate the .clangd file basing on ERAY_GLOBAL_CXX_FLAGS and compiler" ON)
 option(ERAY_GENERATE_PCH
-  "Generates and uses precompiled header" ON)
+  "Generate precompiled headers" ON)
 
 # Build options
 option(ERAY_BUILD_SANDBOX "Build liberay sandbox executable" ON)
@@ -37,10 +37,9 @@ set(ERAY_GLOBAL_GENERATED_CONFIG_PATH "${ERAY_GLOBAL_GENERATED_DIR}/build/config
 configure_file(
     cmake/config.hpp.in
     ${ERAY_GLOBAL_GENERATED_CONFIG_PATH}
-    @ONLY
 )
 
-# Include CTest in order to generate `DartConfiguration.tcl`
+# Include cmake modules
 if(ERAY_BUILD_TESTS)
     include(CTest)
     include(GoogleTest)
@@ -54,9 +53,21 @@ include(configure_slang_shader)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(GENERATE_CLANGD_FILE)
-    include(cmake/generate_clangd_file.cmake)
-    generate_clangd_file(${ERAY_GLOBAL_CXX_FLAGS})
+# Generate clangd file
+if(ERAY_GENERATE_CLANGD_FILE)
+    include(generate_clangd_file)
+    generate_clangd_file("${ERAY_GLOBAL_CXX_FLAGS}")
+endif()
+
+# Precompiled headers
+if(ERAY_GENERATE_PCH)
+    add_library(eray_pch INTERFACE)
+    target_precompile_headers(eray_pch 
+        INTERFACE 
+        <unordered_map>
+        <vector>
+        # TODO: Add precompile headers
+    )
 endif()
 
 add_subdirectory(eray)
