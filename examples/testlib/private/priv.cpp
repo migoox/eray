@@ -15,6 +15,6 @@ int Counter::Increment() { return ++counter_; }
 
 int Counter::Decrement() { return --counter_; }
 
-void Counter::Print() const { std::print("Counter value: {}", counter_); }
+void Counter::Print() const { std::println("Counter value: {}", counter_); }
 
 }  // namespace test
