@@ -19,44 +19,51 @@ function(configure_library)
     cmake_parse_arguments(ARGS "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     if(NOT ARGS_TARGET_NAME)
-        message(FATAL_ERROR "configure_executable requires TARGET_NAME")
+        message(FATAL_ERROR "configure_library requires TARGET_NAME")
     endif()
 
     set(target ${ARGS_TARGET_NAME})
+    set(testsTarget "${ARGS_TARGET_NAME}_tests")
+
+    set(PUBLIC_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/public")
+    set(PRIVATE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/private")
+    set(TESTS_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/test")
 
     message(STATUS "Configuring library ${target}")
     list(APPEND CMAKE_MESSAGE_INDENT "  [${target}] ")
 
-    set(PUBLIC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/public")
     file(GLOB_RECURSE PUBLIC_SOURCE_FILES CONFIGURE_DEPENDS
         "${PUBLIC_SOURCE_DIR}/*.cpp"
         "${PUBLIC_SOURCE_DIR}/*.hpp"
         "${PUBLIC_SOURCE_DIR}/*.h"
     )
-
-    set(PRIVATE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/private")
-    file(GLOB_RECURSE PUBLIC_SOURCE_FILES CONFIGURE_DEPENDS
+    file(GLOB_RECURSE PRIVATE_SOURCE_FILES CONFIGURE_DEPENDS
         "${PRIVATE_SOURCE_DIR}/*.cpp"
         "${PRIVATE_SOURCE_DIR}/*.hpp"
         "${PRIVATE_SOURCE_DIR}/*.h"
+    )
+    file(GLOB_RECURSE TEST_SOURCE_FILES CONFIGURE_DEPENDS
+        "${TESTS_SOURCE_DIR}/*.cpp"
+        "${TESTS_SOURCE_DIR}/*.hpp"
+        "${TESTS_SOURCE_DIR}/*.h"
     )
 
     add_library(${target})
     target_sources(${target}
 
         PUBLIC 
-        ${PUBLIC_SOURCE_DIR}
+        ${PUBLIC_SOURCE_FILES}
 
         PRIVATE
-        ${PRIVATE_SOURCE_DIR}
+        ${PRIVATE_SOURCE_FILES}
     )
     
     if(ARGS_SYSTEM)
-        target_include_directories(${target} SYSTEM PUBLIC ${PUBLIC_SOURCE_DIR})
-        target_include_directories(${target} SYSTEM PRIVATE ${PRIVATE_SOURCE_DIR})
+        target_include_directories(${target} SYSTEM PUBLIC  ${PUBLIC_SOURCE_DIR})
+        target_include_directories(${target} SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}) # enforce full include paths internally
     else()
-        target_include_directories(${target} PUBLIC ${PUBLIC_SOURCE_DIR})
-        target_include_directories(${target} PRIVATE ${PRIVATE_SOURCE_DIR})
+        target_include_directories(${target} PUBLIC  ${PUBLIC_SOURCE_DIR})
+        target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}) # enforce full include paths internally
     endif()
 
     if(ARGS_PUBLIC_INCLUDE_DIRS)
@@ -88,42 +95,29 @@ function(configure_library)
     # Compile definitions
     if(ARGS_PUBLIC_COMPILE_DEFINITIONS)
         message(STATUS "Public compile definitinos: ${ARGS_PUBLIC_COMPILE_DEFINITIONS}")
-        target_compile_definitions(${ARGS_TARGET_NAME} PUBLIC ${ARGS_COMPILE_DEFINITIONS})
+        target_compile_definitions(${ARGS_TARGET_NAME} PUBLIC ${ARGS_PUBLIC_COMPILE_DEFINITIONS})
     endif()
     if(ARGS_PRIVATE_COMPILE_DEFINITIONS)
         message(STATUS "Private compile definitinos: ${ARGS_PRIVATE_COMPILE_DEFINITIONS}")
-        target_compile_definitions(${ARGS_TARGET_NAME} PRIVATE ${ARGS_COMPILE_DEFINITIONS})
+        target_compile_definitions(${ARGS_TARGET_NAME} PRIVATE ${ARGS_PRIVATE_COMPILE_DEFINITIONS})
     endif()
 
-    target_compile_options(${ARGS_TARGET_NAME} PRIVATE ${GLOBAL_CXX_FLAGS})
+    if(ERAY_GLOBAL_CXX_FLAGS)
+        target_compile_options(${target} PRIVATE ${ERAY_GLOBAL_CXX_FLAGS})
+    endif()
 
     # Tests configuration
     if(ERAY_BUILD_TESTS)
-        # Include CTest in order to generate `DartConfiguration.tcl`
-        include(CTest)
-
-        message(STATUS "Configuring ${ARGS_TARGET_NAME}_tests executable")
-        file(GLOB_RECURSE TESTS_SOURCES 
-            "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
-        )
-        if(NOT TESTS_SOURCES)
-            message(STATUS "No tests sources found, tests executable configuration stopped")
+        message(STATUS "Configuring ${testsTarget} executable")
+        if(NOT TEST_SOURCE_FILES)
+            message(STATUS "No tests sources found for ${target}, ${testsTarget} will not be created")
         else()
-            enable_testing()
+            add_executable(${testsTarget})
+            target_sources(${testsTarget} PUBLIC ${TEST_SOURCE_FILES})
+            target_include_directories(${testsTarget} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}) # we want access to private
+            target_link_libraries(${testsTarget} GTest::gtest_main ${target})
 
-            add_executable(
-                "${ARGS_TARGET_NAME}_tests"
-                ${TESTS_SOURCES} 
-            )
-            target_link_libraries(
-                "${ARGS_TARGET_NAME}_tests"
-                GTest::gtest_main
-                ${ARGS_TARGET_NAME}
-            )
-
-            include(CTest)
-            include(GoogleTest)
-            gtest_discover_tests("${ARGS_TARGET_NAME}_tests")
+            gtest_discover_tests(${testsTarget})
         endif()
     endif()
 

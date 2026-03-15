@@ -47,7 +47,9 @@ function(configure_executable)
         target_compile_definitions(${target} PUBLIC ${ARGS_PUBLIC_COMPILE_DEFINITIONS})
     endif()
 
-    target_compile_options(${target} PRIVATE ${GLOBAL_CXX_FLAGS})
+    if(ERAY_GLOBAL_CXX_FLAGS)
+        target_compile_options(${target} PRIVATE ${ERAY_GLOBAL_CXX_FLAGS})
+    endif()
 
     if(ARGS_POST_BUILD_COPY_DIRS)
         foreach(DIR ${ARGS_POST_BUILD_COPY_DIRS})

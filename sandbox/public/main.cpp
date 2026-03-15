@@ -2,6 +2,7 @@
 #include <imgui.h>
 #include <nfd.h>
 #include <stb_image/stb_image.h>
+#include <testlib/pub.hpp>
 
 #include <print>
 
@@ -15,6 +16,8 @@ int main() {
     const char* version = ImGui::GetVersion();
     std::println("ImGui Version: {}", version);
   }
+
+  test::init();
   
   return 0;
 }
