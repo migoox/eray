@@ -25,6 +25,21 @@ option(ERAY_ENABLE_PROFILING "Enables profiling with tracy" OFF)
 # CMake module
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
+find_package(Git)
+include(find_repo_info)
+find_repo_info(ERAY_VERSION)
+message("Build version: ${ERAY_VERSION}")
+
+# Generate build config header
+set(ERAY_ABSOLUTE_BUILD_PATH "${CMAKE_CURRENT_BINARY_DIR}")
+set(ERAY_GLOBAL_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(ERAY_GLOBAL_GENERATED_CONFIG_PATH "${ERAY_GLOBAL_GENERATED_DIR}/build/config.hpp")
+configure_file(
+    cmake/config.hpp.in
+    ${ERAY_GLOBAL_GENERATED_CONFIG_PATH}
+    @ONLY
+)
+
 # Include CTest in order to generate `DartConfiguration.tcl`
 if(ERAY_BUILD_TESTS)
     include(CTest)

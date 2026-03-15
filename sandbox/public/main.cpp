@@ -3,6 +3,7 @@
 #include <nfd.h>
 #include <stb_image/stb_image.h>
 #include <testlib/pub.hpp>
+#include <build/config.hpp>
 
 #include <print>
 
@@ -18,6 +19,8 @@ int main() {
   }
 
   test::init();
+  std::println("abs path: {}", ERAY_ABSOLUTE_BUILD_PATH);
+  std::println("eray version: {}", ERAY_VERSION);
   
   return 0;
 }

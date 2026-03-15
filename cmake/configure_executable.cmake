@@ -15,6 +15,9 @@ function(configure_executable)
     if(NOT ARGS_TARGET_NAME)
         message(FATAL_ERROR "configure_executable requires TARGET_NAME")
     endif()
+    if (NOT ERAY_GLOBAL_GENERATED_DIR)
+        message(FATAL_ERROR "ERAY_GLOBAL_GENERATED_DIR not defined")
+    endif()
 
     set(target ${ARGS_TARGET_NAME})
 
@@ -36,6 +39,7 @@ function(configure_executable)
     endif()
 
     target_include_directories(${target} PUBLIC ${PUBLIC_SOURCE_DIR})
+    target_include_directories(${target} PRIVATE ${ERAY_GLOBAL_GENERATED_DIR})
 
     if(ARGS_PUBLIC_INCLUDE_DIRS)
         target_include_directories(${target} PUBLIC ${ARGS_PUBLIC_INCLUDE_DIRS})

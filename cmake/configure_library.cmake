@@ -21,6 +21,9 @@ function(configure_library)
     if(NOT ARGS_TARGET_NAME)
         message(FATAL_ERROR "configure_library requires TARGET_NAME")
     endif()
+    if (NOT ERAY_GLOBAL_GENERATED_DIR)
+        message(FATAL_ERROR "ERAY_GLOBAL_GENERATED_DIR not defined")
+    endif()
 
     set(target ${ARGS_TARGET_NAME})
     set(testsTarget "${ARGS_TARGET_NAME}_tests")
@@ -61,9 +64,11 @@ function(configure_library)
     if(ARGS_SYSTEM)
         target_include_directories(${target} SYSTEM PUBLIC  ${PUBLIC_SOURCE_DIR})
         target_include_directories(${target} SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}) # enforce full include paths internally
+        target_include_directories(${target} SYSTEM PRIVATE ${ERAY_GLOBAL_GENERATED_DIR})
     else()
         target_include_directories(${target} PUBLIC  ${PUBLIC_SOURCE_DIR})
         target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}) # enforce full include paths internally
+        target_include_directories(${target} PRIVATE ${ERAY_GLOBAL_GENERATED_DIR})
     endif()
 
     if(ARGS_PUBLIC_INCLUDE_DIRS)
