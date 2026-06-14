@@ -285,6 +285,8 @@ void VulkanApplication::record_graphics_command_buffer(size_t frame_index, uint3
     auto cmd_buff = vk::CommandBuffer{graphics_command_buffers_[frame_index]};
     context_.render_graph.emit(*context_.device, cmd_buff);
   }
+  on_record_pre_graphics(graphics_command_buffers_[frame_index], static_cast<uint32_t>(frame_index));
+
   context_.swap_chain->begin_rendering(graphics_command_buffers_[frame_index], image_index, clear_color_value,
                                        clear_depth_stencil_value);
 

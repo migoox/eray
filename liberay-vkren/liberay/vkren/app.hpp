@@ -194,7 +194,14 @@ class VulkanApplication {
   virtual void on_imgui(float /*delta*/) {}
 
   /**
-   * @brief Invoked when the graphics command buffer gets recorded.
+   * @brief Invoked after frame graph and before `beginRendering` for swap chain image.
+   */
+  virtual void on_record_pre_graphics(vk::CommandBuffer /*graphics_command_buffer*/,
+                                      uint32_t /*current_frame_in_flight*/) {}
+
+  /**
+   * @brief Invoked after `beginRendering` for swap chain image is invoked. Do not use `beginRendering` and
+   * `endRendering`.
    */
   virtual void on_record_graphics(vk::CommandBuffer /*graphics_command_buffer*/, uint32_t /*current_frame_in_flight*/) {
   }
